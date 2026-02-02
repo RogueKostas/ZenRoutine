@@ -22,8 +22,8 @@ interface TabIconProps {
 function TabIcon({ icon, label, focused }: TabIconProps) {
   return (
     <View style={styles.tabIconContainer}>
-      <Text style={[styles.tabIcon, focused && styles.tabIconFocused]}>{icon}</Text>
-      <Text style={[styles.tabLabel, focused && styles.tabLabelFocused]}>{label}</Text>
+      <Text style={[styles.tabIcon, focused ? styles.tabIconFocused : undefined]}>{icon}</Text>
+      <Text style={[styles.tabLabel, focused ? styles.tabLabelFocused : undefined]}>{label}</Text>
     </View>
   );
 }
@@ -106,7 +106,7 @@ const styles = StyleSheet.create({
     marginBottom: 4,
   },
   tabIconFocused: {
-    transform: [{ scale: 1.1 }],
+    fontSize: 24,  // Slightly larger when focused (transforms on Text can cause iOS issues)
   },
   tabLabel: {
     fontSize: 10,
