@@ -318,7 +318,6 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: '700',
     color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
   timerLabel: {
     fontSize: 12,
@@ -378,7 +377,6 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '600',
     color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
 
   // Mini styles
@@ -405,7 +403,6 @@ const styles = StyleSheet.create({
     fontSize: 13,
     fontWeight: '600',
     color: colors.error,
-    fontVariant: ['tabular-nums'],
   },
 
   // Large styles
@@ -455,7 +452,6 @@ const styles = StyleSheet.create({
     fontSize: 48,
     fontWeight: '700',
     color: colors.text,
-    fontVariant: ['tabular-nums'],
   },
   largeTimeLabel: {
     fontSize: 12,
