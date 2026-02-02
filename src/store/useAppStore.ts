@@ -658,13 +658,31 @@ export const useAppStore = create<AppStore>()(
 );
 
 // Selector hooks for common queries
+// Note: For derived data (filter/find), we select the base data and derive in the component
+// to avoid creating new object references that cause infinite re-renders
+
 export const useActivityTypes = () => useAppStore((s) => s.activityTypes);
 export const useGoals = () => useAppStore((s) => s.goals);
-export const useActiveGoals = () => useAppStore((s) => s.goals.filter((g) => g.status === 'active'));
 export const useRoutines = () => useAppStore((s) => s.routines);
-export const useActiveRoutine = () => useAppStore((s) => s.routines.find((r) => r.id === s.activeRoutineId));
 export const useTrackingEntries = () => useAppStore((s) => s.trackingEntries);
-export const useCurrentTracking = () => useAppStore((s) => {
-  if (!s.currentTrackingEntryId) return null;
-  return s.trackingEntries.find((e) => e.id === s.currentTrackingEntryId);
-});
+
+// For derived selectors, we select primitive/stable values and compute in the hook
+export const useActiveGoals = () => {
+  const goals = useAppStore((s) => s.goals);
+  // useMemo would be ideal here, but to keep it simple we'll accept the filter on each render
+  // The key fix is that we're selecting `goals` (stable reference) not the filtered result
+  return goals.filter((g) => g.status === 'active');
+};
+
+export const useActiveRoutine = () => {
+  const routines = useAppStore((s) => s.routines);
+  const activeRoutineId = useAppStore((s) => s.activeRoutineId);
+  return routines.find((r) => r.id === activeRoutineId);
+};
+
+export const useCurrentTracking = () => {
+  const trackingEntries = useAppStore((s) => s.trackingEntries);
+  const currentTrackingEntryId = useAppStore((s) => s.currentTrackingEntryId);
+  if (!currentTrackingEntryId) return null;
+  return trackingEntries.find((e) => e.id === currentTrackingEntryId);
+};
