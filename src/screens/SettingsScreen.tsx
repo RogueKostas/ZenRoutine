@@ -9,9 +9,10 @@ import {
   Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import { useAppStore, useActivityTypes } from '../store';
 import type { TabScreenProps } from '../navigation/types';
+import type { ThemeMode } from '../theme';
 
 interface SettingItemProps {
   title: string;
@@ -19,8 +20,9 @@ interface SettingItemProps {
   onPress?: () => void;
   value?: boolean;
   onValueChange?: (value: boolean) => void;
-  type?: 'navigation' | 'toggle' | 'action';
+  type?: 'navigation' | 'toggle' | 'action' | 'select';
   destructive?: boolean;
+  rightText?: string;
 }
 
 function SettingItem({
@@ -31,18 +33,25 @@ function SettingItem({
   onValueChange,
   type = 'navigation',
   destructive = false,
+  rightText,
 }: SettingItemProps) {
+  const { colors } = useTheme();
+
   return (
     <TouchableOpacity
-      style={styles.settingItem}
+      style={[styles.settingItem, { borderBottomColor: colors.border }]}
       onPress={onPress}
       disabled={type === 'toggle'}
     >
       <View style={styles.settingContent}>
-        <Text style={[styles.settingTitle, destructive && styles.destructiveText]}>
+        <Text style={[styles.settingTitle, { color: destructive ? colors.error : colors.text }]}>
           {title}
         </Text>
-        {subtitle && <Text style={styles.settingSubtitle}>{subtitle}</Text>}
+        {subtitle && (
+          <Text style={[styles.settingSubtitle, { color: colors.textSecondary }]}>
+            {subtitle}
+          </Text>
+        )}
       </View>
       {type === 'toggle' && onValueChange && (
         <Switch
@@ -53,19 +62,46 @@ function SettingItem({
         />
       )}
       {type === 'navigation' && (
-        <Text style={styles.chevron}>›</Text>
+        <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
+      )}
+      {type === 'select' && rightText && (
+        <View style={styles.selectRight}>
+          <Text style={[styles.selectText, { color: colors.textSecondary }]}>{rightText}</Text>
+          <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
+        </View>
       )}
     </TouchableOpacity>
   );
 }
 
+const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
+  { label: 'System', value: 'system' },
+  { label: 'Light', value: 'light' },
+  { label: 'Dark', value: 'dark' },
+];
+
 export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   const [notificationsEnabled, setNotificationsEnabled] = useState(true);
   const [soundEnabled, setSoundEnabled] = useState(true);
-  const [darkMode, setDarkMode] = useState(false);
 
+  const { colors, mode, setMode, isDark } = useTheme();
   const activityTypes = useActivityTypes();
   const { resetState, _addSampleData } = useAppStore();
+
+  const handleThemeChange = () => {
+    Alert.alert(
+      'Theme',
+      'Choose your preferred theme',
+      THEME_OPTIONS.map((option) => ({
+        text: option.label + (mode === option.value ? ' ✓' : ''),
+        onPress: () => setMode(option.value),
+      }))
+    );
+  };
+
+  const getThemeLabel = () => {
+    return THEME_OPTIONS.find((o) => o.value === mode)?.label || 'System';
+  };
 
   const handleExportData = () => {
     Alert.alert('Export Data', 'Data export will be available in a future update.');
@@ -111,21 +147,20 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Settings</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Settings</Text>
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Activity Types Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Activity Types</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Activity Types</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Manage Activity Types"
               subtitle={`${activityTypes.length} types configured`}
               onPress={() => {
-                // TODO: Navigate to activity types manager
                 Alert.alert('Coming Soon', 'Activity type management will be available in a future update.');
               }}
             />
@@ -134,8 +169,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
         {/* Notifications Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Notifications</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Notifications</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Enable Notifications"
               subtitle="Get reminders for scheduled blocks"
@@ -143,7 +178,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               value={notificationsEnabled}
               onValueChange={setNotificationsEnabled}
             />
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Sound"
               subtitle="Play sound with notifications"
@@ -156,37 +191,34 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
         {/* Appearance Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Appearance</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Appearance</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
-              title="Dark Mode"
-              subtitle="Use dark color scheme"
-              type="toggle"
-              value={darkMode}
-              onValueChange={(value) => {
-                setDarkMode(value);
-                Alert.alert('Coming Soon', 'Dark mode will be available in a future update.');
-              }}
+              title="Theme"
+              subtitle={isDark ? 'Currently using dark mode' : 'Currently using light mode'}
+              type="select"
+              rightText={getThemeLabel()}
+              onPress={handleThemeChange}
             />
           </View>
         </View>
 
         {/* Data Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Data</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Data</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Export Data"
               subtitle="Download your data as JSON"
               onPress={handleExportData}
             />
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Import Data"
               subtitle="Restore from a backup file"
               onPress={handleImportData}
             />
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Load Sample Data"
               subtitle="Add example goals and routines"
@@ -197,8 +229,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
         {/* Danger Zone */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Danger Zone</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Danger Zone</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Reset All Data"
               subtitle="Delete all goals, routines, and history"
@@ -210,19 +242,19 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
         {/* About Section */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>About</Text>
-          <View style={styles.card}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>About</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Version"
               subtitle="1.0.0"
               type="action"
             />
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Privacy Policy"
               onPress={() => Alert.alert('Privacy', 'Your data stays on your device.')}
             />
-            <View style={styles.separator} />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Open Source Licenses"
               onPress={() => Alert.alert('Licenses', 'License information will be added here.')}
@@ -233,8 +265,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         {/* Debug Section (Development Only) */}
         {__DEV__ && (
           <View style={styles.section}>
-            <Text style={styles.sectionTitle}>Developer</Text>
-            <View style={styles.card}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Developer</Text>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <SettingItem
                 title="Debug Panel"
                 subtitle="Access development tools"
@@ -248,8 +280,10 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         )}
 
         <View style={styles.footer}>
-          <Text style={styles.footerText}>ZenRoutine</Text>
-          <Text style={styles.footerSubtext}>Track your time, achieve your goals</Text>
+          <Text style={[styles.footerText, { color: colors.textSecondary }]}>ZenRoutine</Text>
+          <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>
+            Track your time, achieve your goals
+          </Text>
         </View>
 
         <View style={{ height: 40 }} />
@@ -261,7 +295,6 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 20,
@@ -270,7 +303,6 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.text,
   },
   content: {
     flex: 1,
@@ -281,18 +313,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 13,
     fontWeight: '600',
-    color: colors.textSecondary,
     textTransform: 'uppercase',
     letterSpacing: 0.5,
     marginBottom: 8,
     marginHorizontal: 20,
   },
   card: {
-    backgroundColor: colors.surface,
     marginHorizontal: 20,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
     overflow: 'hidden',
   },
   settingItem: {
@@ -306,24 +335,24 @@ const styles = StyleSheet.create({
   },
   settingTitle: {
     fontSize: 16,
-    color: colors.text,
   },
   settingSubtitle: {
     fontSize: 13,
-    color: colors.textSecondary,
     marginTop: 2,
-  },
-  destructiveText: {
-    color: colors.error,
   },
   chevron: {
     fontSize: 20,
-    color: colors.textMuted,
     marginLeft: 8,
+  },
+  selectRight: {
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  selectText: {
+    fontSize: 15,
   },
   separator: {
     height: 1,
-    backgroundColor: colors.border,
     marginLeft: 16,
   },
   footer: {
@@ -333,11 +362,9 @@ const styles = StyleSheet.create({
   footerText: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.textSecondary,
   },
   footerSubtext: {
     fontSize: 13,
-    color: colors.textMuted,
     marginTop: 4,
   },
 });

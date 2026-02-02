@@ -9,3 +9,12 @@ export { ProgressBar, ProgressRing } from './ProgressBar';
 
 export { Badge, ColorDot, StatusIndicator } from './Badge';
 export type { BadgeVariant, BadgeSize } from './Badge';
+
+export {
+  FadeInView,
+  ScaleInView,
+  SlideInView,
+  StaggeredList,
+  PressableScale,
+  AnimatedProgress,
+} from './Animated';
