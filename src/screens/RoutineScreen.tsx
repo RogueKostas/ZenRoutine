@@ -1,20 +1,25 @@
-import React, { useState } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
+import React, { useState, useCallback } from 'react';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../theme/colors';
+import { spacing, borderRadius } from '../theme/spacing';
 import { useRoutines, useActiveRoutine, useActivityTypes, useAppStore } from '../store';
 import { getDayName, minutesToTimeString, formatDuration } from '../core/utils/time';
+import { BlockEditor, SimpleBlockList } from '../components/routine';
 import type { TabScreenProps } from '../navigation/types';
-import type { DayOfWeek } from '../core/types';
+import type { DayOfWeek, RoutineBlock } from '../core/types';
 
 const DAYS: DayOfWeek[] = [0, 1, 2, 3, 4, 5, 6];
 
 export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(new Date().getDay() as DayOfWeek);
+  const [showBlockEditor, setShowBlockEditor] = useState(false);
+  const [editingBlock, setEditingBlock] = useState<RoutineBlock | undefined>(undefined);
+
   const routines = useRoutines();
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
-  const { addRoutine, setActiveRoutine } = useAppStore();
+  const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
 
   const dayBlocks = activeRoutine?.blocks
     .filter((b) => b.dayOfWeek === selectedDay)
@@ -24,6 +29,47 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
     const duration = b.endMinutes - b.startMinutes;
     return sum + (duration > 0 ? duration : duration + 1440);
   }, 0);
+
+  const handleAddBlock = useCallback(() => {
+    setEditingBlock(undefined);
+    setShowBlockEditor(true);
+  }, []);
+
+  const handleEditBlock = useCallback((block: RoutineBlock) => {
+    setEditingBlock(block);
+    setShowBlockEditor(true);
+  }, []);
+
+  const handleCloseEditor = useCallback(() => {
+    setShowBlockEditor(false);
+    setEditingBlock(undefined);
+  }, []);
+
+  const handleCopyDay = useCallback((targetDay: DayOfWeek) => {
+    if (!activeRoutine) return;
+
+    const targetBlocks = activeRoutine.blocks.filter((b) => b.dayOfWeek === targetDay);
+
+    if (targetBlocks.length > 0) {
+      Alert.alert(
+        'Replace existing blocks?',
+        `${getDayName(targetDay)} already has ${targetBlocks.length} block${targetBlocks.length > 1 ? 's' : ''}. This will replace them.`,
+        [
+          { text: 'Cancel', style: 'cancel' },
+          {
+            text: 'Replace',
+            style: 'destructive',
+            onPress: () => {
+              copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
+            },
+          },
+        ]
+      );
+    } else {
+      copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
+      Alert.alert('Copied', `Blocks copied to ${getDayName(targetDay)}`);
+    }
+  }, [activeRoutine, selectedDay, copyDayBlocks]);
 
   return (
     <SafeAreaView style={styles.container} edges={['top']}>
@@ -48,15 +94,15 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
               key={day}
               style={[
                 styles.dayButton,
-                isSelected && styles.dayButtonSelected,
-                isToday && !isSelected && styles.dayButtonToday,
+                isSelected ? styles.dayButtonSelected : undefined,
+                isToday && !isSelected ? styles.dayButtonToday : undefined,
               ]}
               onPress={() => setSelectedDay(day)}
             >
               <Text
                 style={[
                   styles.dayText,
-                  isSelected && styles.dayTextSelected,
+                  isSelected ? styles.dayTextSelected : undefined,
                 ]}
               >
                 {getDayName(day, true)}
@@ -71,7 +117,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
       <View style={styles.daySummary}>
         <Text style={styles.dayTitle}>{getDayName(selectedDay)}</Text>
         <Text style={styles.dayStats}>
-          {dayBlocks.length} blocks • {formatDuration(totalMinutes)} scheduled
+          {dayBlocks.length} block{dayBlocks.length !== 1 ? 's' : ''} • {formatDuration(totalMinutes)} scheduled
         </Text>
       </View>
 
@@ -79,43 +125,17 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
       <ScrollView style={styles.timeline} showsVerticalScrollIndicator={false}>
         {activeRoutine ? (
           dayBlocks.length > 0 ? (
-            <View style={styles.blockList}>
-              {dayBlocks.map((block, index) => {
-                const activity = activityTypes.find((a) => a.id === block.activityTypeId);
-                const duration = block.endMinutes - block.startMinutes;
-                const adjustedDuration = duration > 0 ? duration : duration + 1440;
-                return (
-                  <TouchableOpacity
-                    key={block.id}
-                    style={styles.blockCard}
-                    onPress={() => {
-                      // TODO: Navigate to block editor
-                    }}
-                  >
-                    <View style={[styles.blockColor, { backgroundColor: activity?.color || '#666' }]} />
-                    <View style={styles.blockContent}>
-                      <Text style={styles.blockTime}>
-                        {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
-                      </Text>
-                      <Text style={styles.blockActivity}>{activity?.name || 'Unknown'}</Text>
-                      {block.goalId && (
-                        <Text style={styles.blockGoal}>Goal linked</Text>
-                      )}
-                    </View>
-                    <View style={styles.blockMeta}>
-                      <Text style={styles.blockDuration}>{formatDuration(adjustedDuration)}</Text>
-                      <Text style={styles.blockEdit}>Edit</Text>
-                    </View>
-                  </TouchableOpacity>
-                );
-              })}
-            </View>
+            <SimpleBlockList
+              blocks={dayBlocks}
+              activityTypes={activityTypes}
+              onBlockPress={handleEditBlock}
+            />
           ) : (
             <View style={styles.emptyDay}>
               <Text style={styles.emptyIcon}>📭</Text>
               <Text style={styles.emptyTitle}>No blocks on {getDayName(selectedDay)}</Text>
               <Text style={styles.emptySubtitle}>Add a time block to start planning this day</Text>
-              <TouchableOpacity style={styles.addBlockButton}>
+              <TouchableOpacity style={styles.addBlockButton} onPress={handleAddBlock}>
                 <Text style={styles.addBlockButtonText}>+ Add Block</Text>
               </TouchableOpacity>
             </View>
@@ -143,7 +163,11 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
             <Text style={styles.copyTitle}>Copy this day to...</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
               {DAYS.filter((d) => d !== selectedDay).map((day) => (
-                <TouchableOpacity key={day} style={styles.copyButton}>
+                <TouchableOpacity
+                  key={day}
+                  style={styles.copyButton}
+                  onPress={() => handleCopyDay(day)}
+                >
                   <Text style={styles.copyButtonText}>{getDayName(day, true)}</Text>
                 </TouchableOpacity>
               ))}
@@ -156,9 +180,22 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
 
       {/* Floating Add Button */}
       {activeRoutine && (
-        <TouchableOpacity style={styles.fab}>
+        <TouchableOpacity style={styles.fab} onPress={handleAddBlock}>
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
+      )}
+
+      {/* Block Editor Modal */}
+      {activeRoutine && (
+        <BlockEditor
+          visible={showBlockEditor}
+          routineId={activeRoutine.id}
+          block={editingBlock}
+          dayOfWeek={selectedDay}
+          existingBlocks={dayBlocks}
+          onClose={handleCloseEditor}
+          onSave={handleCloseEditor}
+        />
       )}
     </SafeAreaView>
   );
@@ -173,8 +210,8 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
   },
   title: {
     fontSize: 28,
@@ -184,15 +221,15 @@ const styles = StyleSheet.create({
   routineSelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.xs,
     backgroundColor: colors.backgroundSecondary,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
   },
   routineName: {
     fontSize: 14,
     color: colors.text,
-    marginRight: 4,
+    marginRight: spacing.xs,
   },
   dropdownIcon: {
     fontSize: 10,
@@ -200,17 +237,17 @@ const styles = StyleSheet.create({
   },
   daySelector: {
     flexDirection: 'row',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
   dayButton: {
     flex: 1,
     alignItems: 'center',
-    paddingVertical: 8,
+    paddingVertical: spacing.sm,
     marginHorizontal: 2,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
   },
   dayButtonSelected: {
     backgroundColor: colors.primary,
@@ -231,11 +268,11 @@ const styles = StyleSheet.create({
     height: 4,
     borderRadius: 2,
     backgroundColor: colors.primary,
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   daySummary: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border,
   },
@@ -247,59 +284,10 @@ const styles = StyleSheet.create({
   dayStats: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginTop: 4,
+    marginTop: spacing.xs,
   },
   timeline: {
     flex: 1,
-  },
-  blockList: {
-    padding: 20,
-  },
-  blockCard: {
-    flexDirection: 'row',
-    backgroundColor: colors.surface,
-    borderRadius: 12,
-    marginBottom: 12,
-    borderWidth: 1,
-    borderColor: colors.border,
-    overflow: 'hidden',
-  },
-  blockColor: {
-    width: 4,
-  },
-  blockContent: {
-    flex: 1,
-    padding: 16,
-  },
-  blockTime: {
-    fontSize: 12,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  blockActivity: {
-    fontSize: 16,
-    fontWeight: '600',
-    color: colors.text,
-  },
-  blockGoal: {
-    fontSize: 12,
-    color: colors.primary,
-    marginTop: 4,
-  },
-  blockMeta: {
-    justifyContent: 'center',
-    alignItems: 'flex-end',
-    paddingRight: 16,
-  },
-  blockDuration: {
-    fontSize: 14,
-    color: colors.textSecondary,
-    marginBottom: 4,
-  },
-  blockEdit: {
-    fontSize: 12,
-    color: colors.primary,
-    fontWeight: '500',
   },
   emptyDay: {
     alignItems: 'center',
@@ -313,26 +301,26 @@ const styles = StyleSheet.create({
   },
   emptyIcon: {
     fontSize: 48,
-    marginBottom: 16,
+    marginBottom: spacing.md,
   },
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
     color: colors.text,
-    marginBottom: 8,
+    marginBottom: spacing.sm,
     textAlign: 'center',
   },
   emptySubtitle: {
     fontSize: 14,
     color: colors.textSecondary,
     textAlign: 'center',
-    marginBottom: 20,
+    marginBottom: spacing.lg,
   },
   addBlockButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
+    paddingHorizontal: spacing.xl,
+    paddingVertical: spacing.md,
     backgroundColor: colors.primary,
-    borderRadius: 8,
+    borderRadius: borderRadius.md,
   },
   addBlockButtonText: {
     color: '#fff',
@@ -340,22 +328,22 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   copySection: {
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    paddingHorizontal: spacing.lg,
+    paddingVertical: spacing.md,
     borderTopWidth: 1,
     borderTopColor: colors.border,
   },
   copyTitle: {
     fontSize: 14,
     color: colors.textSecondary,
-    marginBottom: 12,
+    marginBottom: spacing.md,
   },
   copyButton: {
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: spacing.md,
+    paddingVertical: spacing.sm,
     backgroundColor: colors.backgroundSecondary,
-    borderRadius: 6,
-    marginRight: 8,
+    borderRadius: borderRadius.sm,
+    marginRight: spacing.sm,
   },
   copyButtonText: {
     fontSize: 14,
