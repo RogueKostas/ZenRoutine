@@ -1,9 +1,10 @@
 import React, { useEffect } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { StyleSheet } from 'react-native';
-import { SafeAreaProvider, SafeAreaView } from 'react-native-safe-area-context';
+import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { DebugPanel } from './src/components/debug';
+import { NavigationContainer } from '@react-navigation/native';
+import { RootNavigator } from './src/navigation';
 import { useAppStore } from './src/store';
 
 export default function App() {
@@ -16,10 +17,10 @@ export default function App() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
-        <SafeAreaView style={styles.container} edges={['top', 'left', 'right']}>
+        <NavigationContainer>
           <StatusBar style="auto" />
-          <DebugPanel />
-        </SafeAreaView>
+          <RootNavigator />
+        </NavigationContainer>
       </SafeAreaProvider>
     </GestureHandlerRootView>
   );

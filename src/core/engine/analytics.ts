@@ -17,6 +17,7 @@ export interface WeeklyAnalytics {
 }
 
 const MINUTES_IN_WEEK = 7 * 24 * 60; // 10080
+export { MINUTES_IN_WEEK };
 
 /**
  * Calculate planned time breakdown from routine
