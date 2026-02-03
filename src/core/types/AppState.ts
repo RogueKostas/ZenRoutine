@@ -9,11 +9,12 @@ export interface AppState {
   goals: Goal[];
   routines: Routine[];
   trackingEntries: TrackingEntry[];
-  
+
   // UI State
   activeRoutineId: string | null;
   currentTrackingEntryId: string | null;
-  
+  hasCompletedOnboarding: boolean;
+
   // Meta
   lastSyncedAt?: string;
   schemaVersion: number;
