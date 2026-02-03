@@ -9,10 +9,10 @@ import {
   LayoutChangeEvent,
   Dimensions,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { minutesToTimeString, formatDuration } from '../../core/utils/time';
-import type { RoutineBlock, ActivityType } from '../../core/types';
+import type { RoutineBlock, ActivityType, Goal } from '../../core/types';
 
 interface BlockItemLayout {
   y: number;
@@ -34,6 +34,7 @@ export function DraggableBlockList({
   onReorder,
   onDelete,
 }: DraggableBlockListProps) {
+  const { colors } = useTheme();
   const [draggingIndex, setDraggingIndex] = useState<number | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const itemLayouts = useRef<BlockItemLayout[]>([]);
@@ -125,13 +126,14 @@ export function DraggableBlockList({
                 zIndex: 100,
                 elevation: 10,
               },
-              isHoverTarget && styles.hoverTarget,
+              isHoverTarget && { borderTopWidth: 2, borderTopColor: colors.primary, paddingTop: spacing.xs },
             ]}
           >
             <TouchableOpacity
               style={[
                 styles.blockCard,
-                isDragging && styles.blockCardDragging,
+                { backgroundColor: colors.surface, borderColor: colors.border },
+                isDragging && { borderColor: colors.primary, shadowOpacity: 0.3 },
               ]}
               onPress={() => onBlockPress(block)}
               activeOpacity={0.7}
@@ -142,25 +144,25 @@ export function DraggableBlockList({
 
               {/* Drag Handle */}
               <View {...panResponder.panHandlers} style={styles.dragHandle}>
-                <View style={styles.dragLine} />
-                <View style={styles.dragLine} />
-                <View style={styles.dragLine} />
+                <View style={[styles.dragLine, { backgroundColor: colors.borderLight }]} />
+                <View style={[styles.dragLine, { backgroundColor: colors.borderLight }]} />
+                <View style={[styles.dragLine, { backgroundColor: colors.borderLight }]} />
               </View>
 
               <View style={styles.blockContent}>
-                <Text style={styles.blockTime}>
+                <Text style={[styles.blockTime, { color: colors.textSecondary }]}>
                   {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
                 </Text>
-                <Text style={styles.blockActivity}>{activity?.name || 'Unknown'}</Text>
+                <Text style={[styles.blockActivity, { color: colors.text }]}>{activity?.name || 'Unknown'}</Text>
                 {block.goalId && (
-                  <View style={styles.goalTag}>
-                    <Text style={styles.goalTagText}>Goal linked</Text>
+                  <View style={[styles.goalTag, { backgroundColor: colors.primary + '15' }]}>
+                    <Text style={[styles.goalTagText, { color: colors.primary }]}>Goal linked</Text>
                   </View>
                 )}
               </View>
 
               <View style={styles.blockMeta}>
-                <Text style={styles.blockDuration}>{formatDuration(adjustedDuration)}</Text>
+                <Text style={[styles.blockDuration, { color: colors.textSecondary }]}>{formatDuration(adjustedDuration)}</Text>
                 <Text style={styles.activityIcon}>{activity?.icon || '📌'}</Text>
               </View>
             </TouchableOpacity>
@@ -171,20 +173,29 @@ export function DraggableBlockList({
   );
 }
 
-// Alternative simpler list without drag (for basic usage)
+// Enhanced block list with goal information
 interface SimpleBlockListProps {
   blocks: RoutineBlock[];
   activityTypes: ActivityType[];
+  goals?: Goal[];
   onBlockPress: (block: RoutineBlock) => void;
 }
 
 export function SimpleBlockList({
   blocks,
   activityTypes,
+  goals = [],
   onBlockPress,
 }: SimpleBlockListProps) {
+  const { colors } = useTheme();
+
   const getActivity = (activityTypeId: string) => {
     return activityTypes.find((a) => a.id === activityTypeId);
+  };
+
+  const getGoal = (goalId: string | undefined) => {
+    if (!goalId) return undefined;
+    return goals.find((g) => g.id === goalId);
   };
 
   if (blocks.length === 0) {
@@ -195,35 +206,87 @@ export function SimpleBlockList({
     <View style={styles.container}>
       {blocks.map((block) => {
         const activity = getActivity(block.activityTypeId);
+        const goal = getGoal(block.goalId);
         const duration = block.endMinutes - block.startMinutes;
         const adjustedDuration = duration > 0 ? duration : duration + 1440;
+
+        // Calculate goal progress if linked
+        const goalProgress = goal ? Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100) : 0;
+        const blockContribution = goal ? Math.min(100, (adjustedDuration / goal.estimatedMinutes) * 100) : 0;
 
         return (
           <TouchableOpacity
             key={block.id}
-            style={styles.blockCard}
+            style={[styles.enhancedBlockCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
             onPress={() => onBlockPress(block)}
             activeOpacity={0.7}
           >
-            <View
-              style={[styles.blockColor, { backgroundColor: activity?.color || '#666' }]}
-            />
+            {/* Left: Big icon with colored background */}
+            <View style={[styles.iconContainer, { backgroundColor: (activity?.color || '#666') + '20' }]}>
+              <Text style={styles.bigIcon}>{activity?.icon || '📌'}</Text>
+            </View>
 
-            <View style={styles.blockContent}>
-              <Text style={styles.blockTime}>
-                {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
+            {/* Middle: Content */}
+            <View style={styles.enhancedContent}>
+              {/* Time */}
+              <Text style={[styles.blockTime, { color: colors.textSecondary }]}>
+                {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)} • {formatDuration(adjustedDuration)}
               </Text>
-              <Text style={styles.blockActivity}>{activity?.name || 'Unknown'}</Text>
-              {block.goalId && (
-                <View style={styles.goalTag}>
-                  <Text style={styles.goalTagText}>Goal linked</Text>
+
+              {/* Goal name (prominent) or Activity name */}
+              {goal ? (
+                <>
+                  <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>
+                    {goal.name}
+                  </Text>
+                  <Text style={[styles.activitySubtitle, { color: colors.textSecondary }]}>
+                    {activity?.name || 'Unknown'}
+                  </Text>
+                </>
+              ) : (
+                <Text style={[styles.blockActivityLarge, { color: colors.text }]}>
+                  {activity?.name || 'Unknown'}
+                </Text>
+              )}
+
+              {/* Progress bar for linked goals */}
+              {goal && (
+                <View style={styles.progressContainer}>
+                  <View style={[styles.progressBarBg, { backgroundColor: colors.borderLight }]}>
+                    {/* Previous progress */}
+                    <View
+                      style={[
+                        styles.progressFillPrevious,
+                        { width: `${goalProgress}%`, backgroundColor: activity?.color || colors.primary, opacity: 0.5 },
+                      ]}
+                    />
+                    {/* This block's contribution (shown brighter) */}
+                    <View
+                      style={[
+                        styles.progressFillCurrent,
+                        {
+                          left: `${goalProgress}%`,
+                          width: `${Math.min(blockContribution, 100 - goalProgress)}%`,
+                          backgroundColor: activity?.color || colors.primary,
+                        },
+                      ]}
+                    />
+                  </View>
+                  <View style={styles.progressLabels}>
+                    <Text style={[styles.progressText, { color: colors.textMuted }]}>
+                      {formatDuration(goal.loggedMinutes)} logged
+                    </Text>
+                    <Text style={[styles.progressText, { color: colors.textMuted }]}>
+                      +{formatDuration(adjustedDuration)} this block
+                    </Text>
+                  </View>
                 </View>
               )}
             </View>
 
-            <View style={styles.blockMeta}>
-              <Text style={styles.blockDuration}>{formatDuration(adjustedDuration)}</Text>
-              <Text style={styles.activityIcon}>{activity?.icon || '📌'}</Text>
+            {/* Right: Chevron */}
+            <View style={styles.chevronContainer}>
+              <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
             </View>
           </TouchableOpacity>
         );
@@ -239,26 +302,11 @@ const styles = StyleSheet.create({
   blockWrapper: {
     marginBottom: spacing.sm,
   },
-  hoverTarget: {
-    borderTopWidth: 2,
-    borderTopColor: colors.primary,
-    paddingTop: spacing.xs,
-  },
   blockCard: {
     flexDirection: 'row',
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
     overflow: 'hidden',
-  },
-  blockCardDragging: {
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 8,
-    borderColor: colors.primary,
   },
   blockColor: {
     width: 4,
@@ -272,7 +320,6 @@ const styles = StyleSheet.create({
   dragLine: {
     width: 16,
     height: 2,
-    backgroundColor: colors.borderLight,
     marginVertical: 2,
     borderRadius: 1,
   },
@@ -282,25 +329,21 @@ const styles = StyleSheet.create({
   },
   blockTime: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginBottom: 4,
   },
   blockActivity: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
   },
   goalTag: {
     alignSelf: 'flex-start',
     marginTop: spacing.xs,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    backgroundColor: colors.primary + '15',
     borderRadius: borderRadius.sm,
   },
   goalTagText: {
     fontSize: 11,
-    color: colors.primary,
     fontWeight: '500',
   },
   blockMeta: {
@@ -311,10 +354,82 @@ const styles = StyleSheet.create({
   },
   blockDuration: {
     fontSize: 14,
-    color: colors.textSecondary,
     marginBottom: spacing.xs,
   },
   activityIcon: {
     fontSize: 20,
+  },
+
+  // Enhanced block styles
+  enhancedBlockCard: {
+    flexDirection: 'row',
+    borderRadius: borderRadius.lg,
+    borderWidth: 1,
+    padding: spacing.md,
+    marginBottom: spacing.sm,
+    alignItems: 'flex-start',
+  },
+  iconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginRight: spacing.md,
+  },
+  bigIcon: {
+    fontSize: 24,
+  },
+  enhancedContent: {
+    flex: 1,
+    paddingRight: spacing.sm,
+  },
+  goalName: {
+    fontSize: 16,
+    fontWeight: '600',
+    marginBottom: 2,
+  },
+  activitySubtitle: {
+    fontSize: 13,
+  },
+  blockActivityLarge: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  progressContainer: {
+    marginTop: spacing.sm,
+  },
+  progressBarBg: {
+    height: 6,
+    borderRadius: 3,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  progressFillPrevious: {
+    position: 'absolute',
+    left: 0,
+    top: 0,
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressFillCurrent: {
+    position: 'absolute',
+    top: 0,
+    height: '100%',
+    borderRadius: 3,
+  },
+  progressLabels: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    marginTop: 4,
+  },
+  progressText: {
+    fontSize: 10,
+  },
+  chevronContainer: {
+    justifyContent: 'center',
+  },
+  chevron: {
+    fontSize: 24,
   },
 });

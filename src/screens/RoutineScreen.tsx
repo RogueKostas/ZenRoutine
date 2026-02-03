@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-import { useRoutines, useActiveRoutine, useActivityTypes, useAppStore } from '../store';
+import { useRoutines, useActiveRoutine, useActivityTypes, useGoals, useAppStore } from '../store';
 import { getDayName, minutesToTimeString, formatDuration } from '../core/utils/time';
 import { BlockEditor, SimpleBlockList } from '../components/routine';
 import type { TabScreenProps } from '../navigation/types';
@@ -20,6 +20,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
   const routines = useRoutines();
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
+  const goals = useGoals();
   const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
 
   const dayBlocks = activeRoutine?.blocks
@@ -130,6 +131,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
             <SimpleBlockList
               blocks={dayBlocks}
               activityTypes={activityTypes}
+              goals={goals}
               onBlockPress={handleEditBlock}
             />
           ) : (

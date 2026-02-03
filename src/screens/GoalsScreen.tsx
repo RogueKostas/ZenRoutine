@@ -369,20 +369,20 @@ const styles = StyleSheet.create({
   filterTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginRight: 8,
-    borderRadius: 16,
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    marginRight: 6,
+    borderRadius: 12,
   },
   filterText: {
-    fontSize: 13,
-    marginRight: 6,
+    fontSize: 12,
+    marginRight: 4,
   },
   filterTextActive: {
     color: '#fff',
   },
   filterCount: {
-    fontSize: 12,
+    fontSize: 11,
     fontWeight: '600',
   },
   filterCountActive: {
