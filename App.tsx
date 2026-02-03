@@ -5,8 +5,9 @@ import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
 import { RootNavigator } from './src/navigation';
-import { useAppStore } from './src/store';
+import { useAppStore, useHasCompletedOnboarding } from './src/store';
 import { ThemeProvider, useTheme, colors, darkColors } from './src/theme';
+import { OnboardingScreen } from './src/screens';
 
 // Custom navigation themes
 const LightNavigationTheme = {
@@ -37,11 +38,23 @@ const DarkNavigationTheme = {
 
 function AppContent() {
   const initializeDefaults = useAppStore((state) => state.initializeDefaults);
+  const completeOnboarding = useAppStore((state) => state.completeOnboarding);
+  const hasCompletedOnboarding = useHasCompletedOnboarding();
   const { isDark, colors: themeColors } = useTheme();
 
   useEffect(() => {
     initializeDefaults();
   }, [initializeDefaults]);
+
+  // Show onboarding for first-time users
+  if (!hasCompletedOnboarding) {
+    return (
+      <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+        <StatusBar style={isDark ? 'light' : 'dark'} />
+        <OnboardingScreen onComplete={completeOnboarding} />
+      </View>
+    );
+  }
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>

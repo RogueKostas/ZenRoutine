@@ -7,6 +7,7 @@ export {
   useActiveRoutine,
   useTrackingEntries,
   useCurrentTracking,
+  useHasCompletedOnboarding,
 } from './useAppStore';
 
 export type { AppStore } from './useAppStore';

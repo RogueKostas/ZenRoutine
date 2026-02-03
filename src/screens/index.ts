@@ -6,3 +6,4 @@ export { SettingsScreen } from './SettingsScreen';
 export { DebugScreen } from './DebugScreen';
 export { ActivityTypesScreen } from './ActivityTypesScreen';
 export { CalendarScreen } from './CalendarScreen';
+export { OnboardingScreen } from './OnboardingScreen';

@@ -42,6 +42,7 @@ const createInitialState = (): AppState => ({
   trackingEntries: [],
   activeRoutineId: null,
   currentTrackingEntryId: null,
+  hasCompletedOnboarding: false,
   lastSyncedAt: undefined,
   schemaVersion: CURRENT_SCHEMA_VERSION,
 });
@@ -91,6 +92,7 @@ interface AppActions {
   resetState: () => void;
   hydrate: (state: Partial<AppState>) => void;
   initializeDefaults: () => void;
+  completeOnboarding: () => void;
 
   // Debug helpers
   _addSampleData: () => void;
@@ -564,6 +566,10 @@ export const useAppStore = create<AppStore>()(
         }
       },
 
+      completeOnboarding: () => {
+        set({ hasCompletedOnboarding: true });
+      },
+
       // ============================================
       // Debug Helpers
       // ============================================
@@ -736,3 +742,5 @@ export const useCurrentTracking = () => {
   if (!currentTrackingEntryId) return null;
   return trackingEntries.find((e) => e.id === currentTrackingEntryId);
 };
+
+export const useHasCompletedOnboarding = () => useAppStore((s) => s.hasCompletedOnboarding);
