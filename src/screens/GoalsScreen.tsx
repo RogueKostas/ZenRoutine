@@ -20,7 +20,8 @@ type FilterStatus = 'all' | GoalStatus;
 
 export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const { colors } = useTheme();
-  const [filter, setFilter] = useState<FilterStatus>('all');
+  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
+  const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGoalName, setNewGoalName] = useState('');
   const [newGoalMinutes, setNewGoalMinutes] = useState('');
@@ -32,9 +33,15 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const activeRoutine = useActiveRoutine();
   const { addGoal, setGoalStatus, deleteGoal, trackingEntries } = useAppStore();
 
-  const filteredGoals = filter === 'all'
+  // Filter by status
+  let filteredGoals = statusFilter === 'all'
     ? goals
-    : goals.filter((g) => g.status === filter);
+    : goals.filter((g) => g.status === statusFilter);
+
+  // Filter by activity type
+  if (activityFilter) {
+    filteredGoals = filteredGoals.filter((g) => g.activityTypeId === activityFilter);
+  }
 
   const predictions = activeRoutine
     ? predictAllGoals(goals, activeRoutine, trackingEntries)
@@ -89,11 +96,12 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         </TouchableOpacity>
       </View>
 
-      {/* Filter Tabs */}
+      {/* Status Filter Tabs */}
       <ScrollView
         horizontal
-        style={[styles.filterContainer, { borderBottomColor: colors.border }]}
+        style={styles.filterRow}
         showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRowContent}
       >
         {(['all', 'active', 'completed', 'paused', 'archived'] as FilterStatus[]).map((status) => (
           <TouchableOpacity
@@ -101,23 +109,68 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
             style={[
               styles.filterTab,
               { backgroundColor: colors.backgroundSecondary },
-              filter === status && { backgroundColor: colors.primary },
+              statusFilter === status && { backgroundColor: colors.primary },
             ]}
-            onPress={() => setFilter(status)}
+            onPress={() => setStatusFilter(status)}
           >
             <Text style={[
               styles.filterText,
               { color: colors.textSecondary },
-              filter === status && styles.filterTextActive,
+              statusFilter === status && styles.filterTextActive,
             ]}>
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </Text>
             <Text style={[
               styles.filterCount,
               { color: colors.textMuted },
-              filter === status && styles.filterCountActive,
+              statusFilter === status && styles.filterCountActive,
             ]}>
               {counts[status]}
+            </Text>
+          </TouchableOpacity>
+        ))}
+      </ScrollView>
+
+      {/* Activity Type Filter */}
+      <ScrollView
+        horizontal
+        style={[styles.filterRow, styles.activityFilterRow, { borderBottomColor: colors.border }]}
+        showsHorizontalScrollIndicator={false}
+        contentContainerStyle={styles.filterRowContent}
+      >
+        <TouchableOpacity
+          style={[
+            styles.activityFilterTab,
+            { backgroundColor: colors.backgroundSecondary },
+            !activityFilter && { backgroundColor: colors.primary },
+          ]}
+          onPress={() => setActivityFilter(null)}
+        >
+          <Text style={[
+            styles.filterText,
+            { color: colors.textSecondary },
+            !activityFilter && styles.filterTextActive,
+          ]}>
+            All types
+          </Text>
+        </TouchableOpacity>
+        {activityTypes.map((at) => (
+          <TouchableOpacity
+            key={at.id}
+            style={[
+              styles.activityFilterTab,
+              { backgroundColor: colors.backgroundSecondary },
+              activityFilter === at.id && { backgroundColor: at.color + '30', borderColor: at.color, borderWidth: 1 },
+            ]}
+            onPress={() => setActivityFilter(activityFilter === at.id ? null : at.id)}
+          >
+            <Text style={styles.activityFilterIcon}>{at.icon}</Text>
+            <Text style={[
+              styles.activityFilterText,
+              { color: colors.text },
+              activityFilter === at.id && { fontWeight: '600' },
+            ]} numberOfLines={1}>
+              {at.name}
             </Text>
           </TouchableOpacity>
         ))}
@@ -361,8 +414,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontSize: 14,
   },
-  filterContainer: {
+  filterRow: {
     paddingHorizontal: 16,
+    paddingVertical: 8,
+  },
+  filterRowContent: {
+    paddingRight: 16,
+  },
+  activityFilterRow: {
+    paddingTop: 4,
     paddingBottom: 12,
     borderBottomWidth: 1,
   },
@@ -387,6 +447,22 @@ const styles = StyleSheet.create({
   },
   filterCountActive: {
     color: 'rgba(255,255,255,0.8)',
+  },
+  activityFilterTab: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 10,
+    paddingVertical: 5,
+    marginRight: 6,
+    borderRadius: 12,
+  },
+  activityFilterIcon: {
+    fontSize: 14,
+    marginRight: 4,
+  },
+  activityFilterText: {
+    fontSize: 12,
+    maxWidth: 80,
   },
   goalsList: {
     flex: 1,
