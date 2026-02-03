@@ -14,7 +14,8 @@ import { useGoals, useActivityTypes, useActiveRoutine, useAppStore } from '../st
 import { predictAllGoals } from '../core/engine/prediction';
 import { formatDuration } from '../core/utils/time';
 import type { TabScreenProps } from '../navigation/types';
-import type { GoalStatus } from '../core/types';
+import type { GoalStatus, GoalPriority } from '../core/types';
+import { PRIORITY_LABELS, PRIORITY_COLORS } from '../core/types';
 
 type FilterStatus = 'all' | GoalStatus;
 
@@ -27,6 +28,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const [newGoalMinutes, setNewGoalMinutes] = useState('');
   const [newGoalDescription, setNewGoalDescription] = useState('');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
+  const [selectedPriority, setSelectedPriority] = useState<GoalPriority>(3); // Default to Medium
 
   const goals = useGoals();
   const activityTypes = useActivityTypes();
@@ -43,6 +45,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
     filteredGoals = filteredGoals.filter((g) => g.activityTypeId === activityFilter);
   }
 
+  // Sort by priority (highest = 1 first)
+  filteredGoals = [...filteredGoals].sort((a, b) => (a.priority ?? 3) - (b.priority ?? 3));
+
   const predictions = activeRoutine
     ? predictAllGoals(goals, activeRoutine, trackingEntries)
     : [];
@@ -55,12 +60,14 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
       description: newGoalDescription.trim(),
       estimatedMinutes: parseInt(newGoalMinutes, 10),
       activityTypeId: selectedActivityId,
+      priority: selectedPriority,
     });
 
     setNewGoalName('');
     setNewGoalMinutes('');
     setNewGoalDescription('');
     setSelectedActivityId(null);
+    setSelectedPriority(3);
     setShowAddModal(false);
   };
 
@@ -193,7 +200,17 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                   <View style={[styles.goalColor, { backgroundColor: activity?.color || '#666' }]} />
                   <View style={styles.goalInfo}>
                     <Text style={[styles.goalName, { color: colors.text }]}>{goal.name}</Text>
-                    <Text style={[styles.goalActivity, { color: colors.textSecondary }]}>{activity?.name}</Text>
+                    <View style={styles.goalMeta}>
+                      <Text style={[styles.goalActivity, { color: colors.textSecondary }]}>{activity?.name}</Text>
+                      {goal.priority && (
+                        <View style={[styles.priorityBadge, { backgroundColor: PRIORITY_COLORS[goal.priority] + '20' }]}>
+                          <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLORS[goal.priority] }]} />
+                          <Text style={[styles.priorityText, { color: PRIORITY_COLORS[goal.priority] }]}>
+                            {PRIORITY_LABELS[goal.priority]}
+                          </Text>
+                        </View>
+                      )}
+                    </View>
                   </View>
                   <View style={[styles.statusBadge, getStatusBadgeStyle(goal.status)]}>
                     <Text style={[styles.statusText, { color: colors.text }]}>{goal.status}</Text>
@@ -271,13 +288,13 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>🎯</Text>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No {filter !== 'all' ? filter : ''} goals</Text>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No {statusFilter !== 'all' ? statusFilter : ''} goals</Text>
             <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              {filter === 'all'
+              {statusFilter === 'all'
                 ? 'Create your first goal to start tracking progress'
-                : `You don't have any ${filter} goals`}
+                : `You don't have any ${statusFilter} goals`}
             </Text>
-            {filter === 'all' && (
+            {statusFilter === 'all' && (
               <TouchableOpacity
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => setShowAddModal(true)}
@@ -378,6 +395,36 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                     numberOfLines={1}
                   >
                     {at.name}
+                  </Text>
+                </TouchableOpacity>
+              ))}
+            </View>
+
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Priority</Text>
+            <View style={styles.priorityGrid}>
+              {([1, 2, 3, 4, 5] as GoalPriority[]).map((priority) => (
+                <TouchableOpacity
+                  key={priority}
+                  style={[
+                    styles.priorityOption,
+                    { backgroundColor: colors.backgroundSecondary },
+                    selectedPriority === priority && {
+                      borderColor: PRIORITY_COLORS[priority],
+                      backgroundColor: PRIORITY_COLORS[priority] + '15',
+                      borderWidth: 2,
+                    },
+                  ]}
+                  onPress={() => setSelectedPriority(priority)}
+                >
+                  <View style={[styles.priorityOptionDot, { backgroundColor: PRIORITY_COLORS[priority] }]} />
+                  <Text
+                    style={[
+                      styles.priorityOptionText,
+                      { color: colors.text },
+                      selectedPriority === priority && { fontWeight: '600' },
+                    ]}
+                  >
+                    {PRIORITY_LABELS[priority]}
                   </Text>
                 </TouchableOpacity>
               ))}
@@ -494,7 +541,30 @@ const styles = StyleSheet.create({
   },
   goalActivity: {
     fontSize: 12,
+  },
+  goalMeta: {
+    flexDirection: 'row',
+    alignItems: 'center',
     marginTop: 2,
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  priorityBadge: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  priorityDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    marginRight: 4,
+  },
+  priorityText: {
+    fontSize: 10,
+    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -664,5 +734,29 @@ const styles = StyleSheet.create({
   },
   activityNameSelected: {
     fontWeight: '600',
+  },
+  priorityGrid: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    marginTop: 8,
+    gap: 8,
+  },
+  priorityOption: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 8,
+    borderWidth: 1,
+    borderColor: 'transparent',
+  },
+  priorityOptionDot: {
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    marginRight: 8,
+  },
+  priorityOptionText: {
+    fontSize: 14,
   },
 });

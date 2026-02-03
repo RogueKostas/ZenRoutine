@@ -61,7 +61,7 @@ export function ActivityTypesScreen({ navigation }: any) {
       id: activity.id,
       name: activity.name,
       color: activity.color,
-      icon: activity.icon,
+      icon: activity.icon || '📌',
     });
     setShowEditModal(true);
   };

@@ -6,6 +6,7 @@ import {
   ActivityType,
   Goal,
   GoalStatus,
+  GoalPriority,
   Routine,
   RoutineBlock,
   TrackingEntry,
@@ -16,7 +17,7 @@ import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
 
 // Schema version for migrations
-const CURRENT_SCHEMA_VERSION = 2;
+const CURRENT_SCHEMA_VERSION = 3;
 
 // Icon name to emoji mapping for migration
 const ICON_NAME_TO_EMOJI: Record<string, string> = {
@@ -54,7 +55,7 @@ interface AppActions {
   reorderActivityTypes: (ids: string[]) => void;
 
   // Goal Actions
-  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status'>) => string;
+  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'priority'> & { priority?: GoalPriority }) => string;
   updateGoal: (id: string, data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>>) => void;
   deleteGoal: (id: string) => void;
   logMinutesToGoal: (id: string, minutes: number) => void;
@@ -175,6 +176,7 @@ export const useAppStore = create<AppStore>()(
           id,
           loggedMinutes: 0,
           status: 'active',
+          priority: data.priority ?? 3, // Default to Medium priority
           createdAt: now,
           updatedAt: now,
         };
@@ -579,6 +581,7 @@ export const useAppStore = create<AppStore>()(
           description: 'Finish the advanced TypeScript patterns course',
           estimatedMinutes: 1200,
           activityTypeId: sideProjectActivity.id,
+          priority: 2, // High priority
         });
 
         const goal2Id = get().addGoal({
@@ -586,6 +589,7 @@ export const useAppStore = create<AppStore>()(
           description: 'Cumulative running goal for the month',
           estimatedMinutes: 600,
           activityTypeId: fitnessActivity.id,
+          priority: 1, // Very High priority
         });
 
         // Add sample routine
@@ -680,6 +684,19 @@ export const useAppStore = create<AppStore>()(
               icon: at.icon && ICON_NAME_TO_EMOJI[at.icon]
                 ? ICON_NAME_TO_EMOJI[at.icon]
                 : at.icon,
+            })),
+          };
+          version = 2;
+        }
+
+        if (version === 2) {
+          // Migration from version 2 to 3: Add priority to goals
+          state = {
+            ...state,
+            schemaVersion: 3,
+            goals: state.goals.map((g) => ({
+              ...g,
+              priority: (g as any).priority ?? 3, // Default to Medium priority
             })),
           };
         }
