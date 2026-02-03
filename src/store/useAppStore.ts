@@ -16,7 +16,22 @@ import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
 
 // Schema version for migrations
-const CURRENT_SCHEMA_VERSION = 1;
+const CURRENT_SCHEMA_VERSION = 2;
+
+// Icon name to emoji mapping for migration
+const ICON_NAME_TO_EMOJI: Record<string, string> = {
+  'briefcase': '💼',
+  'rocket': '🚀',
+  'heart': '❤️',
+  'dumbbell': '💪',
+  'book': '📚',
+  'tv': '📺',
+  'users': '👥',
+  'car': '🚗',
+  'utensils': '🍴',
+  'droplet': '💧',
+  'moon': '🌙',
+};
 
 // Initial state factory
 const createInitialState = (): AppState => ({
@@ -646,12 +661,30 @@ export const useAppStore = create<AppStore>()(
       storage: createJSONStorage(() => AsyncStorage),
       version: CURRENT_SCHEMA_VERSION,
       migrate: (persistedState, version) => {
+        let state = persistedState as AppState;
+
         // Handle migrations here when schema changes
         if (version === 0) {
           // Migration from version 0 to 1
-          return { ...(persistedState as AppState), schemaVersion: 1 };
+          state = { ...state, schemaVersion: 1 };
+          version = 1;
         }
-        return persistedState as AppState & AppActions;
+
+        if (version === 1) {
+          // Migration from version 1 to 2: Convert text icons to emojis
+          state = {
+            ...state,
+            schemaVersion: 2,
+            activityTypes: state.activityTypes.map((at) => ({
+              ...at,
+              icon: at.icon && ICON_NAME_TO_EMOJI[at.icon]
+                ? ICON_NAME_TO_EMOJI[at.icon]
+                : at.icon,
+            })),
+          };
+        }
+
+        return state as AppState & AppActions;
       },
     }
   )

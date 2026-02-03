@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet } from 'react-native';
 import { createBottomTabNavigator } from '@react-navigation/bottom-tabs';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import {
   HomeScreen,
   RoutineScreen,
@@ -17,23 +17,38 @@ interface TabIconProps {
   icon: string;
   label: string;
   focused: boolean;
+  activeColor: string;
+  inactiveColor: string;
 }
 
-function TabIcon({ icon, label, focused }: TabIconProps) {
+function TabIcon({ icon, label, focused, activeColor, inactiveColor }: TabIconProps) {
   return (
     <View style={styles.tabIconContainer}>
       <Text style={[styles.tabIcon, focused ? styles.tabIconFocused : undefined]}>{icon}</Text>
-      <Text style={[styles.tabLabel, focused ? styles.tabLabelFocused : undefined]}>{label}</Text>
+      <Text style={[
+        styles.tabLabel,
+        { color: focused ? activeColor : inactiveColor },
+        focused ? styles.tabLabelFocused : undefined,
+      ]}>{label}</Text>
     </View>
   );
 }
 
 export function TabNavigator() {
+  const { colors } = useTheme();
+
   return (
     <Tab.Navigator
       screenOptions={{
         headerShown: false,
-        tabBarStyle: styles.tabBar,
+        tabBarStyle: {
+          backgroundColor: colors.surface,
+          borderTopWidth: 1,
+          borderTopColor: colors.border,
+          paddingTop: 8,
+          paddingBottom: 8,
+          height: 70,
+        },
         tabBarShowLabel: false,
         tabBarActiveTintColor: colors.primary,
         tabBarInactiveTintColor: colors.textMuted,
@@ -44,7 +59,7 @@ export function TabNavigator() {
         component={HomeScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon="🏠" label="Home" focused={focused} />
+            <TabIcon icon="🏠" label="Home" focused={focused} activeColor={colors.primary} inactiveColor={colors.textMuted} />
           ),
         }}
       />
@@ -53,7 +68,7 @@ export function TabNavigator() {
         component={RoutineScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon="📅" label="Routine" focused={focused} />
+            <TabIcon icon="📅" label="Routine" focused={focused} activeColor={colors.primary} inactiveColor={colors.textMuted} />
           ),
         }}
       />
@@ -62,7 +77,7 @@ export function TabNavigator() {
         component={GoalsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon="🎯" label="Goals" focused={focused} />
+            <TabIcon icon="🎯" label="Goals" focused={focused} activeColor={colors.primary} inactiveColor={colors.textMuted} />
           ),
         }}
       />
@@ -71,7 +86,7 @@ export function TabNavigator() {
         component={AnalyticsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon="📊" label="Analytics" focused={focused} />
+            <TabIcon icon="📊" label="Analytics" focused={focused} activeColor={colors.primary} inactiveColor={colors.textMuted} />
           ),
         }}
       />
@@ -80,7 +95,7 @@ export function TabNavigator() {
         component={SettingsScreen}
         options={{
           tabBarIcon: ({ focused }) => (
-            <TabIcon icon="⚙️" label="Settings" focused={focused} />
+            <TabIcon icon="⚙️" label="Settings" focused={focused} activeColor={colors.primary} inactiveColor={colors.textMuted} />
           ),
         }}
       />
@@ -89,14 +104,6 @@ export function TabNavigator() {
 }
 
 const styles = StyleSheet.create({
-  tabBar: {
-    backgroundColor: colors.surface,
-    borderTopWidth: 1,
-    borderTopColor: colors.border,
-    paddingTop: 8,
-    paddingBottom: 8,
-    height: 70,
-  },
   tabIconContainer: {
     alignItems: 'center',
     justifyContent: 'center',
@@ -110,11 +117,9 @@ const styles = StyleSheet.create({
   },
   tabLabel: {
     fontSize: 10,
-    color: colors.textMuted,
     fontWeight: '500',
   },
   tabLabelFocused: {
-    color: colors.primary,
     fontWeight: '600',
   },
 });

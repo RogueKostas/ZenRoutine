@@ -1,7 +1,7 @@
 import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import { useActiveRoutine, useActivityTypes, useTrackingEntries } from '../store';
 import { getRoutineBreakdown, getTrackedBreakdown, MINUTES_IN_WEEK } from '../core/engine/analytics';
 import { formatDuration } from '../core/utils/time';
@@ -10,6 +10,7 @@ import type { TabScreenProps } from '../navigation/types';
 type ViewMode = 'planned' | 'tracked' | 'comparison';
 
 export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
+  const { colors } = useTheme();
   const [viewMode, setViewMode] = useState<ViewMode>('planned');
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
@@ -47,13 +48,13 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
     const weekPercentage = (minutes / MINUTES_IN_WEEK) * 100;
 
     return (
-      <View key={index} style={styles.breakdownItem}>
+      <View key={index} style={[styles.breakdownItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
         <View style={styles.breakdownHeader}>
           <View style={[styles.colorDot, { backgroundColor: item.color }]} />
-          <Text style={styles.breakdownName}>{item.activityTypeName}</Text>
-          <Text style={styles.breakdownTime}>{formatDuration(minutes)}</Text>
+          <Text style={[styles.breakdownName, { color: colors.text }]}>{item.activityTypeName}</Text>
+          <Text style={[styles.breakdownTime, { color: colors.text }]}>{formatDuration(minutes)}</Text>
         </View>
-        <View style={styles.breakdownBarContainer}>
+        <View style={[styles.breakdownBarContainer, { backgroundColor: colors.borderLight }]}>
           <View
             style={[
               styles.breakdownBar,
@@ -62,8 +63,8 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
           />
         </View>
         <View style={styles.breakdownStats}>
-          <Text style={styles.breakdownPercent}>{percentage.toFixed(1)}% of total</Text>
-          <Text style={styles.breakdownWeek}>{weekPercentage.toFixed(1)}% of week</Text>
+          <Text style={[styles.breakdownPercent, { color: colors.textSecondary }]}>{percentage.toFixed(1)}% of total</Text>
+          <Text style={[styles.breakdownWeek, { color: colors.textMuted }]}>{weekPercentage.toFixed(1)}% of week</Text>
         </View>
       </View>
     );
@@ -110,15 +111,15 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
           const diff = item.tracked - item.planned;
           const diffPercent = item.planned > 0 ? (diff / item.planned) * 100 : 0;
           return (
-            <View key={index} style={styles.comparisonItem}>
+            <View key={index} style={[styles.comparisonItem, { backgroundColor: colors.surface, borderColor: colors.border }]}>
               <View style={styles.comparisonHeader}>
                 <View style={[styles.colorDot, { backgroundColor: item.color }]} />
-                <Text style={styles.comparisonName}>{item.name}</Text>
+                <Text style={[styles.comparisonName, { color: colors.text }]}>{item.name}</Text>
               </View>
               <View style={styles.comparisonBars}>
                 <View style={styles.comparisonRow}>
-                  <Text style={styles.comparisonLabel}>Planned</Text>
-                  <View style={styles.comparisonBarWrapper}>
+                  <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>Planned</Text>
+                  <View style={[styles.comparisonBarWrapper, { backgroundColor: colors.borderLight }]}>
                     <View
                       style={[
                         styles.comparisonBar,
@@ -127,11 +128,11 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
                       ]}
                     />
                   </View>
-                  <Text style={styles.comparisonValue}>{formatDuration(item.planned)}</Text>
+                  <Text style={[styles.comparisonValue, { color: colors.text }]}>{formatDuration(item.planned)}</Text>
                 </View>
                 <View style={styles.comparisonRow}>
-                  <Text style={styles.comparisonLabel}>Tracked</Text>
-                  <View style={styles.comparisonBarWrapper}>
+                  <Text style={[styles.comparisonLabel, { color: colors.textSecondary }]}>Tracked</Text>
+                  <View style={[styles.comparisonBarWrapper, { backgroundColor: colors.borderLight }]}>
                     <View
                       style={[
                         styles.comparisonBar,
@@ -140,14 +141,15 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
                       ]}
                     />
                   </View>
-                  <Text style={styles.comparisonValue}>{formatDuration(item.tracked)}</Text>
+                  <Text style={[styles.comparisonValue, { color: colors.text }]}>{formatDuration(item.tracked)}</Text>
                 </View>
               </View>
               {item.planned > 0 && (
                 <Text
                   style={[
                     styles.comparisonDiff,
-                    diff > 0 ? styles.diffPositive : diff < 0 ? styles.diffNegative : null,
+                    { color: colors.textSecondary },
+                    diff > 0 ? { color: colors.success } : diff < 0 ? { color: colors.warning } : undefined,
                   ]}
                 >
                   {diff > 0 ? '+' : ''}{formatDuration(Math.abs(diff))} ({diffPercent > 0 ? '+' : ''}{diffPercent.toFixed(0)}%)
@@ -161,20 +163,27 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
   };
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Analytics</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Analytics</Text>
       </View>
 
       {/* View Mode Selector */}
-      <View style={styles.modeSelector}>
+      <View style={[styles.modeSelector, { backgroundColor: colors.backgroundSecondary }]}>
         {(['planned', 'tracked', 'comparison'] as ViewMode[]).map((mode) => (
           <TouchableOpacity
             key={mode}
-            style={[styles.modeButton, viewMode === mode && styles.modeButtonActive]}
+            style={[
+              styles.modeButton,
+              viewMode === mode && [styles.modeButtonActive, { backgroundColor: colors.surface }],
+            ]}
             onPress={() => setViewMode(mode)}
           >
-            <Text style={[styles.modeText, viewMode === mode && styles.modeTextActive]}>
+            <Text style={[
+              styles.modeText,
+              { color: colors.textSecondary },
+              viewMode === mode && { color: colors.text, fontWeight: '600' },
+            ]}>
               {mode.charAt(0).toUpperCase() + mode.slice(1)}
             </Text>
           </TouchableOpacity>
@@ -183,28 +192,28 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Summary Card */}
-        <View style={styles.summaryCard}>
+        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
           <View style={styles.summaryRow}>
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{formatDuration(totalPlanned)}</Text>
-              <Text style={styles.summaryLabel}>Planned / week</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalPlanned)}</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Planned / week</Text>
             </View>
-            <View style={styles.summaryDivider} />
+            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
             <View style={styles.summaryItem}>
-              <Text style={styles.summaryValue}>{formatDuration(totalTracked)}</Text>
-              <Text style={styles.summaryLabel}>Tracked this week</Text>
+              <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalTracked)}</Text>
+              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Tracked this week</Text>
             </View>
           </View>
           <View style={styles.summaryProgress}>
-            <View style={styles.summaryProgressBar}>
+            <View style={[styles.summaryProgressBar, { backgroundColor: colors.borderLight }]}>
               <View
                 style={[
                   styles.summaryProgressFill,
-                  { width: `${Math.min(100, totalPlanned > 0 ? (totalTracked / totalPlanned) * 100 : 0)}%` },
+                  { width: `${Math.min(100, totalPlanned > 0 ? (totalTracked / totalPlanned) * 100 : 0)}%`, backgroundColor: colors.primary },
                 ]}
               />
             </View>
-            <Text style={styles.summaryProgressText}>
+            <Text style={[styles.summaryProgressText, { color: colors.textSecondary }]}>
               {totalPlanned > 0 ? ((totalTracked / totalPlanned) * 100).toFixed(0) : 0}% of plan
             </Text>
           </View>
@@ -213,7 +222,7 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
         {/* Breakdown Content */}
         {viewMode === 'planned' && (
           <View style={styles.breakdownSection}>
-            <Text style={styles.sectionTitle}>Planned Time Breakdown</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned Time Breakdown</Text>
             {plannedBreakdown.length > 0 ? (
               plannedBreakdown.map((item, index) =>
                 renderBreakdownItem(
@@ -224,9 +233,9 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
               )
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No routine set up yet</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No routine set up yet</Text>
                 <TouchableOpacity
-                  style={styles.emptyButton}
+                  style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                   onPress={() => navigation.navigate('Routine')}
                 >
                   <Text style={styles.emptyButtonText}>Set up routine</Text>
@@ -238,7 +247,7 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
 
         {viewMode === 'tracked' && (
           <View style={styles.breakdownSection}>
-            <Text style={styles.sectionTitle}>Tracked Time This Week</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Tracked Time This Week</Text>
             {trackedBreakdown.length > 0 ? (
               trackedBreakdown.map((item, index) =>
                 renderBreakdownItem(
@@ -249,8 +258,8 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
               )
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No time tracked this week</Text>
-                <Text style={styles.emptySubtext}>Start tracking to see your analytics</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No time tracked this week</Text>
+                <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Start tracking to see your analytics</Text>
               </View>
             )}
           </View>
@@ -258,13 +267,13 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
 
         {viewMode === 'comparison' && (
           <View style={styles.breakdownSection}>
-            <Text style={styles.sectionTitle}>Planned vs Tracked</Text>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned vs Tracked</Text>
             {plannedBreakdown.length > 0 || trackedBreakdown.length > 0 ? (
               renderComparison()
             ) : (
               <View style={styles.emptyState}>
-                <Text style={styles.emptyText}>No data to compare</Text>
-                <Text style={styles.emptySubtext}>Set up a routine and track some time</Text>
+                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No data to compare</Text>
+                <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Set up a routine and track some time</Text>
               </View>
             )}
           </View>
@@ -279,7 +288,6 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     paddingHorizontal: 20,
@@ -288,13 +296,11 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.text,
   },
   modeSelector: {
     flexDirection: 'row',
     marginHorizontal: 20,
     marginBottom: 16,
-    backgroundColor: colors.backgroundSecondary,
     borderRadius: 8,
     padding: 4,
   },
@@ -305,7 +311,6 @@ const styles = StyleSheet.create({
     borderRadius: 6,
   },
   modeButtonActive: {
-    backgroundColor: colors.surface,
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.1,
@@ -314,11 +319,6 @@ const styles = StyleSheet.create({
   },
   modeText: {
     fontSize: 14,
-    color: colors.textSecondary,
-  },
-  modeTextActive: {
-    color: colors.text,
-    fontWeight: '600',
   },
   content: {
     flex: 1,
@@ -327,10 +327,8 @@ const styles = StyleSheet.create({
     marginHorizontal: 20,
     marginBottom: 24,
     padding: 20,
-    backgroundColor: colors.surface,
     borderRadius: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   summaryRow: {
     flexDirection: 'row',
@@ -343,16 +341,13 @@ const styles = StyleSheet.create({
   summaryValue: {
     fontSize: 24,
     fontWeight: 'bold',
-    color: colors.text,
   },
   summaryLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginTop: 4,
   },
   summaryDivider: {
     width: 1,
-    backgroundColor: colors.border,
     marginHorizontal: 16,
   },
   summaryProgress: {
@@ -362,19 +357,16 @@ const styles = StyleSheet.create({
   summaryProgressBar: {
     flex: 1,
     height: 8,
-    backgroundColor: colors.borderLight,
     borderRadius: 4,
     overflow: 'hidden',
     marginRight: 12,
   },
   summaryProgressFill: {
     height: '100%',
-    backgroundColor: colors.primary,
     borderRadius: 4,
   },
   summaryProgressText: {
     fontSize: 12,
-    color: colors.textSecondary,
     width: 70,
     textAlign: 'right',
   },
@@ -384,16 +376,13 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 16,
   },
   breakdownItem: {
-    backgroundColor: colors.surface,
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   breakdownHeader: {
     flexDirection: 'row',
@@ -410,16 +399,13 @@ const styles = StyleSheet.create({
     flex: 1,
     fontSize: 16,
     fontWeight: '500',
-    color: colors.text,
   },
   breakdownTime: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
   },
   breakdownBarContainer: {
     height: 8,
-    backgroundColor: colors.borderLight,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
@@ -434,20 +420,16 @@ const styles = StyleSheet.create({
   },
   breakdownPercent: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   breakdownWeek: {
     fontSize: 12,
-    color: colors.textMuted,
   },
   comparisonContainer: {},
   comparisonItem: {
-    backgroundColor: colors.surface,
     borderRadius: 8,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   comparisonHeader: {
     flexDirection: 'row',
@@ -457,7 +439,6 @@ const styles = StyleSheet.create({
   comparisonName: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.text,
   },
   comparisonBars: {},
   comparisonRow: {
@@ -468,12 +449,10 @@ const styles = StyleSheet.create({
   comparisonLabel: {
     width: 60,
     fontSize: 12,
-    color: colors.textSecondary,
   },
   comparisonBarWrapper: {
     flex: 1,
     height: 12,
-    backgroundColor: colors.borderLight,
     borderRadius: 6,
     overflow: 'hidden',
     marginRight: 12,
@@ -485,20 +464,12 @@ const styles = StyleSheet.create({
   comparisonValue: {
     width: 50,
     fontSize: 12,
-    color: colors.text,
     textAlign: 'right',
   },
   comparisonDiff: {
     fontSize: 12,
-    color: colors.textSecondary,
     textAlign: 'right',
     marginTop: 4,
-  },
-  diffPositive: {
-    color: colors.success,
-  },
-  diffNegative: {
-    color: colors.warning,
   },
   emptyState: {
     alignItems: 'center',
@@ -506,18 +477,15 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 16,
-    color: colors.textSecondary,
     marginBottom: 8,
   },
   emptySubtext: {
     fontSize: 14,
-    color: colors.textMuted,
   },
   emptyButton: {
     marginTop: 16,
     paddingHorizontal: 20,
     paddingVertical: 10,
-    backgroundColor: colors.primary,
     borderRadius: 8,
   },
   emptyButtonText: {

@@ -9,7 +9,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import { useGoals, useActivityTypes, useActiveRoutine, useAppStore } from '../store';
 import { predictAllGoals } from '../core/engine/prediction';
 import { formatDuration } from '../core/utils/time';
@@ -19,6 +19,7 @@ import type { GoalStatus } from '../core/types';
 type FilterStatus = 'all' | GoalStatus;
 
 export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
+  const { colors } = useTheme();
   const [filter, setFilter] = useState<FilterStatus>('all');
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGoalName, setNewGoalName] = useState('');
@@ -66,12 +67,22 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
 
   const counts = getStatusCounts();
 
+  const getStatusBadgeStyle = (status: GoalStatus) => {
+    switch (status) {
+      case 'active': return { backgroundColor: colors.success + '20' };
+      case 'completed': return { backgroundColor: colors.primary + '20' };
+      case 'paused': return { backgroundColor: colors.warning + '20' };
+      case 'archived': return { backgroundColor: colors.textMuted + '20' };
+      default: return {};
+    }
+  };
+
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
-        <Text style={styles.title}>Goals</Text>
+        <Text style={[styles.title, { color: colors.text }]}>Goals</Text>
         <TouchableOpacity
-          style={styles.addButton}
+          style={[styles.addButton, { backgroundColor: colors.primary }]}
           onPress={() => setShowAddModal(true)}
         >
           <Text style={styles.addButtonText}>+ Add</Text>
@@ -81,19 +92,31 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
       {/* Filter Tabs */}
       <ScrollView
         horizontal
-        style={styles.filterContainer}
+        style={[styles.filterContainer, { borderBottomColor: colors.border }]}
         showsHorizontalScrollIndicator={false}
       >
         {(['all', 'active', 'completed', 'paused', 'archived'] as FilterStatus[]).map((status) => (
           <TouchableOpacity
             key={status}
-            style={[styles.filterTab, filter === status && styles.filterTabActive]}
+            style={[
+              styles.filterTab,
+              { backgroundColor: colors.backgroundSecondary },
+              filter === status && { backgroundColor: colors.primary },
+            ]}
             onPress={() => setFilter(status)}
           >
-            <Text style={[styles.filterText, filter === status && styles.filterTextActive]}>
+            <Text style={[
+              styles.filterText,
+              { color: colors.textSecondary },
+              filter === status && styles.filterTextActive,
+            ]}>
               {status.charAt(0).toUpperCase() + status.slice(1)}
             </Text>
-            <Text style={[styles.filterCount, filter === status && styles.filterCountActive]}>
+            <Text style={[
+              styles.filterCount,
+              { color: colors.textMuted },
+              filter === status && styles.filterCountActive,
+            ]}>
               {counts[status]}
             </Text>
           </TouchableOpacity>
@@ -109,53 +132,56 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
             const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
 
             return (
-              <TouchableOpacity key={goal.id} style={styles.goalCard}>
+              <TouchableOpacity
+                key={goal.id}
+                style={[styles.goalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
+              >
                 <View style={styles.goalHeader}>
                   <View style={[styles.goalColor, { backgroundColor: activity?.color || '#666' }]} />
                   <View style={styles.goalInfo}>
-                    <Text style={styles.goalName}>{goal.name}</Text>
-                    <Text style={styles.goalActivity}>{activity?.name}</Text>
+                    <Text style={[styles.goalName, { color: colors.text }]}>{goal.name}</Text>
+                    <Text style={[styles.goalActivity, { color: colors.textSecondary }]}>{activity?.name}</Text>
                   </View>
-                  <View style={[styles.statusBadge, styles[`status_${goal.status}`]]}>
-                    <Text style={styles.statusText}>{goal.status}</Text>
+                  <View style={[styles.statusBadge, getStatusBadgeStyle(goal.status)]}>
+                    <Text style={[styles.statusText, { color: colors.text }]}>{goal.status}</Text>
                   </View>
                 </View>
 
                 {goal.description ? (
-                  <Text style={styles.goalDescription} numberOfLines={2}>
+                  <Text style={[styles.goalDescription, { color: colors.textSecondary }]} numberOfLines={2}>
                     {goal.description}
                   </Text>
                 ) : null}
 
                 <View style={styles.progressSection}>
-                  <View style={styles.progressBar}>
-                    <View style={[styles.progressFill, { width: `${progress}%` }]} />
+                  <View style={[styles.progressBar, { backgroundColor: colors.borderLight }]}>
+                    <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
                   </View>
                   <View style={styles.progressStats}>
-                    <Text style={styles.progressText}>
+                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>
                       {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)}
                     </Text>
-                    <Text style={styles.progressPercent}>{progress.toFixed(0)}%</Text>
+                    <Text style={[styles.progressPercent, { color: colors.primary }]}>{progress.toFixed(0)}%</Text>
                   </View>
                 </View>
 
                 {prediction && goal.status === 'active' && (
-                  <View style={styles.predictionSection}>
-                    <Text style={styles.predictionLabel}>Estimated completion:</Text>
-                    <Text style={styles.predictionValue}>
+                  <View style={[styles.predictionSection, { borderTopColor: colors.borderLight }]}>
+                    <Text style={[styles.predictionLabel, { color: colors.textSecondary }]}>Estimated completion:</Text>
+                    <Text style={[styles.predictionValue, { color: colors.primary }]}>
                       {prediction.predictedCompletionDate || 'Add routine blocks'}
                     </Text>
                   </View>
                 )}
 
-                <View style={styles.goalActions}>
+                <View style={[styles.goalActions, { borderTopColor: colors.borderLight }]}>
                   {goal.status === 'active' && (
                     <>
                       <TouchableOpacity
                         style={styles.actionButton}
                         onPress={() => setGoalStatus(goal.id, 'paused')}
                       >
-                        <Text style={styles.actionButtonText}>Pause</Text>
+                        <Text style={[styles.actionButtonText, { color: colors.textSecondary }]}>Pause</Text>
                       </TouchableOpacity>
                       <TouchableOpacity
                         style={styles.actionButton}
@@ -182,7 +208,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                       style={styles.actionButton}
                       onPress={() => setGoalStatus(goal.id, 'archived')}
                     >
-                      <Text style={styles.actionButtonText}>Archive</Text>
+                      <Text style={[styles.actionButtonText, { color: colors.textSecondary }]}>Archive</Text>
                     </TouchableOpacity>
                   )}
                 </View>
@@ -192,15 +218,15 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         ) : (
           <View style={styles.emptyState}>
             <Text style={styles.emptyIcon}>🎯</Text>
-            <Text style={styles.emptyTitle}>No {filter !== 'all' ? filter : ''} goals</Text>
-            <Text style={styles.emptySubtitle}>
+            <Text style={[styles.emptyTitle, { color: colors.text }]}>No {filter !== 'all' ? filter : ''} goals</Text>
+            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
               {filter === 'all'
                 ? 'Create your first goal to start tracking progress'
                 : `You don't have any ${filter} goals`}
             </Text>
             {filter === 'all' && (
               <TouchableOpacity
-                style={styles.emptyButton}
+                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => setShowAddModal(true)}
               >
                 <Text style={styles.emptyButtonText}>Create Goal</Text>
@@ -218,12 +244,12 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         presentationStyle="pageSheet"
         onRequestClose={() => setShowAddModal(false)}
       >
-        <SafeAreaView style={styles.modalContainer}>
-          <View style={styles.modalHeader}>
+        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
+          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
             <TouchableOpacity onPress={() => setShowAddModal(false)}>
-              <Text style={styles.modalCancel}>Cancel</Text>
+              <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
-            <Text style={styles.modalTitle}>New Goal</Text>
+            <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
             <TouchableOpacity
               onPress={handleAddGoal}
               disabled={!newGoalName.trim() || !selectedActivityId || !newGoalMinutes}
@@ -231,8 +257,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               <Text
                 style={[
                   styles.modalSave,
+                  { color: colors.primary },
                   (!newGoalName.trim() || !selectedActivityId || !newGoalMinutes) &&
-                    styles.modalSaveDisabled,
+                    { color: colors.textMuted },
                 ]}
               >
                 Save
@@ -241,18 +268,18 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
           </View>
 
           <ScrollView style={styles.modalContent}>
-            <Text style={styles.inputLabel}>Goal Name</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Goal Name</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="e.g., Complete TypeScript Course"
               value={newGoalName}
               onChangeText={setNewGoalName}
               placeholderTextColor={colors.textMuted}
             />
 
-            <Text style={styles.inputLabel}>Description (optional)</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
             <TextInput
-              style={[styles.input, styles.inputMultiline]}
+              style={[styles.input, styles.inputMultiline, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="Add details about your goal..."
               value={newGoalDescription}
               onChangeText={setNewGoalDescription}
@@ -261,9 +288,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               placeholderTextColor={colors.textMuted}
             />
 
-            <Text style={styles.inputLabel}>Estimated Time (minutes)</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Estimated Time (minutes)</Text>
             <TextInput
-              style={styles.input}
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="e.g., 1200"
               value={newGoalMinutes}
               onChangeText={setNewGoalMinutes}
@@ -271,19 +298,20 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               placeholderTextColor={colors.textMuted}
             />
             {newGoalMinutes && (
-              <Text style={styles.inputHint}>
+              <Text style={[styles.inputHint, { color: colors.primary }]}>
                 = {formatDuration(parseInt(newGoalMinutes, 10) || 0)}
               </Text>
             )}
 
-            <Text style={styles.inputLabel}>Activity Type</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Activity Type</Text>
             <View style={styles.activityGrid}>
               {activityTypes.map((at) => (
                 <TouchableOpacity
                   key={at.id}
                   style={[
                     styles.activityOption,
-                    selectedActivityId === at.id && styles.activityOptionSelected,
+                    { backgroundColor: colors.backgroundSecondary },
+                    selectedActivityId === at.id && { borderColor: colors.primary, backgroundColor: colors.primary + '10' },
                   ]}
                   onPress={() => setSelectedActivityId(at.id)}
                 >
@@ -291,6 +319,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                   <Text
                     style={[
                       styles.activityName,
+                      { color: colors.text },
                       selectedActivityId === at.id && styles.activityNameSelected,
                     ]}
                     numberOfLines={1}
@@ -310,7 +339,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   header: {
     flexDirection: 'row',
@@ -322,12 +350,10 @@ const styles = StyleSheet.create({
   title: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.text,
   },
   addButton: {
     paddingHorizontal: 16,
     paddingVertical: 8,
-    backgroundColor: colors.primary,
     borderRadius: 8,
   },
   addButtonText: {
@@ -339,23 +365,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   filterTab: {
     flexDirection: 'row',
     alignItems: 'center',
-    paddingHorizontal: 16,
-    paddingVertical: 8,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
     marginRight: 8,
-    borderRadius: 20,
-    backgroundColor: colors.backgroundSecondary,
-  },
-  filterTabActive: {
-    backgroundColor: colors.primary,
+    borderRadius: 16,
   },
   filterText: {
-    fontSize: 14,
-    color: colors.textSecondary,
+    fontSize: 13,
     marginRight: 6,
   },
   filterTextActive: {
@@ -363,7 +383,6 @@ const styles = StyleSheet.create({
   },
   filterCount: {
     fontSize: 12,
-    color: colors.textMuted,
     fontWeight: '600',
   },
   filterCountActive: {
@@ -374,12 +393,10 @@ const styles = StyleSheet.create({
     padding: 20,
   },
   goalCard: {
-    backgroundColor: colors.surface,
     borderRadius: 12,
     padding: 16,
     marginBottom: 12,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   goalHeader: {
     flexDirection: 'row',
@@ -398,11 +415,9 @@ const styles = StyleSheet.create({
   goalName: {
     fontSize: 16,
     fontWeight: '600',
-    color: colors.text,
   },
   goalActivity: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   statusBadge: {
@@ -410,27 +425,13 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     borderRadius: 4,
   },
-  status_active: {
-    backgroundColor: colors.success + '20',
-  },
-  status_completed: {
-    backgroundColor: colors.primary + '20',
-  },
-  status_paused: {
-    backgroundColor: colors.warning + '20',
-  },
-  status_archived: {
-    backgroundColor: colors.textMuted + '20',
-  },
   statusText: {
     fontSize: 10,
     fontWeight: '600',
     textTransform: 'uppercase',
-    color: colors.text,
   },
   goalDescription: {
     fontSize: 14,
-    color: colors.textSecondary,
     marginBottom: 12,
   },
   progressSection: {
@@ -438,14 +439,12 @@ const styles = StyleSheet.create({
   },
   progressBar: {
     height: 8,
-    backgroundColor: colors.borderLight,
     borderRadius: 4,
     overflow: 'hidden',
     marginBottom: 8,
   },
   progressFill: {
     height: '100%',
-    backgroundColor: colors.primary,
     borderRadius: 4,
   },
   progressStats: {
@@ -454,11 +453,9 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   progressPercent: {
     fontSize: 12,
-    color: colors.primary,
     fontWeight: '600',
   },
   predictionSection: {
@@ -466,23 +463,19 @@ const styles = StyleSheet.create({
     justifyContent: 'space-between',
     paddingTop: 12,
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
     marginBottom: 12,
   },
   predictionLabel: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   predictionValue: {
     fontSize: 12,
-    color: colors.primary,
     fontWeight: '500',
   },
   goalActions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
     borderTopWidth: 1,
-    borderTopColor: colors.borderLight,
     paddingTop: 12,
   },
   actionButton: {
@@ -492,7 +485,6 @@ const styles = StyleSheet.create({
   },
   actionButtonText: {
     fontSize: 14,
-    color: colors.textSecondary,
     fontWeight: '500',
   },
   emptyState: {
@@ -506,12 +498,10 @@ const styles = StyleSheet.create({
   emptyTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
   },
   emptySubtitle: {
     fontSize: 14,
-    color: colors.textSecondary,
     textAlign: 'center',
     marginBottom: 20,
     paddingHorizontal: 40,
@@ -519,7 +509,6 @@ const styles = StyleSheet.create({
   emptyButton: {
     paddingHorizontal: 24,
     paddingVertical: 12,
-    backgroundColor: colors.primary,
     borderRadius: 8,
   },
   emptyButtonText: {
@@ -529,7 +518,6 @@ const styles = StyleSheet.create({
   },
   modalContainer: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   modalHeader: {
     flexDirection: 'row',
@@ -538,24 +526,17 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
     paddingVertical: 16,
     borderBottomWidth: 1,
-    borderBottomColor: colors.border,
   },
   modalCancel: {
     fontSize: 16,
-    color: colors.textSecondary,
   },
   modalTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
   },
   modalSave: {
     fontSize: 16,
-    color: colors.primary,
     fontWeight: '600',
-  },
-  modalSaveDisabled: {
-    color: colors.textMuted,
   },
   modalContent: {
     padding: 20,
@@ -563,18 +544,14 @@ const styles = StyleSheet.create({
   inputLabel: {
     fontSize: 14,
     fontWeight: '600',
-    color: colors.text,
     marginBottom: 8,
     marginTop: 16,
   },
   input: {
-    backgroundColor: colors.surface,
     borderWidth: 1,
-    borderColor: colors.border,
     borderRadius: 8,
     padding: 12,
     fontSize: 16,
-    color: colors.text,
   },
   inputMultiline: {
     minHeight: 80,
@@ -582,7 +559,6 @@ const styles = StyleSheet.create({
   },
   inputHint: {
     fontSize: 12,
-    color: colors.primary,
     marginTop: 4,
   },
   activityGrid: {
@@ -595,16 +571,11 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     paddingHorizontal: 12,
     paddingVertical: 8,
-    backgroundColor: colors.backgroundSecondary,
     borderRadius: 8,
     marginRight: 8,
     marginBottom: 8,
     borderWidth: 2,
     borderColor: 'transparent',
-  },
-  activityOptionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '10',
   },
   activityDot: {
     width: 10,
@@ -614,7 +585,6 @@ const styles = StyleSheet.create({
   },
   activityName: {
     fontSize: 14,
-    color: colors.text,
   },
   activityNameSelected: {
     fontWeight: '600',

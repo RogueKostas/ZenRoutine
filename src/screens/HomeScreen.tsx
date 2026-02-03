@@ -1,7 +1,7 @@
 import React from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
 import { useActiveRoutine, useCurrentTracking, useActiveGoals, useActivityTypes } from '../store';
 import { formatDuration, getDayName, minutesToTimeString } from '../core/utils/time';
@@ -9,6 +9,7 @@ import { ActiveTimer, QuickStartHorizontal } from '../components/tracking';
 import type { TabScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
+  const { colors } = useTheme();
   const activeRoutine = useActiveRoutine();
   const activeTracking = useCurrentTracking();
   const activeGoals = useActiveGoals();
@@ -25,11 +26,11 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const currentMinutes = today.getHours() * 60 + today.getMinutes();
 
   return (
-    <SafeAreaView style={styles.container} edges={['top']}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <View style={styles.header}>
-          <Text style={styles.greeting}>Good {getTimeOfDay()}</Text>
-          <Text style={styles.date}>
+          <Text style={[styles.greeting, { color: colors.text }]}>Good {getTimeOfDay()}</Text>
+          <Text style={[styles.date, { color: colors.textSecondary }]}>
             {getDayName(dayOfWeek)}, {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
           </Text>
         </View>
@@ -45,7 +46,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
 
         {/* Today's Schedule */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Today's Schedule</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Schedule</Text>
           {sortedBlocks.length > 0 ? (
             <View style={styles.scheduleList}>
               {sortedBlocks.map((block) => {
@@ -64,33 +65,34 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                     key={block.id}
                     style={[
                       styles.scheduleItem,
+                      { backgroundColor: colors.surface, borderColor: colors.border },
                       isPast ? styles.scheduleItemPast : undefined,
-                      isCurrent ? styles.scheduleItemCurrent : undefined,
-                      isNext ? styles.scheduleItemNext : undefined,
+                      isCurrent ? { borderColor: colors.primary, backgroundColor: colors.primary + '08' } : undefined,
+                      isNext ? { borderColor: colors.success + '60' } : undefined,
                     ]}
                   >
                     <View style={[styles.scheduleColor, { backgroundColor: activity?.color || '#666' }]} />
                     <View style={styles.scheduleContent}>
                       <View style={styles.scheduleTimeRow}>
-                        <Text style={[styles.scheduleTime, isPast ? styles.textMuted : undefined]}>
+                        <Text style={[styles.scheduleTime, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
                           {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
                         </Text>
                         {isCurrent && (
-                          <View style={styles.nowBadge}>
+                          <View style={[styles.nowBadge, { backgroundColor: colors.primary }]}>
                             <Text style={styles.nowBadgeText}>NOW</Text>
                           </View>
                         )}
                         {isNext && (
-                          <View style={styles.nextBadge}>
-                            <Text style={styles.nextBadgeText}>NEXT</Text>
+                          <View style={[styles.nextBadge, { backgroundColor: colors.success + '20' }]}>
+                            <Text style={[styles.nextBadgeText, { color: colors.success }]}>NEXT</Text>
                           </View>
                         )}
                       </View>
-                      <Text style={[styles.scheduleActivity, isPast ? styles.textMuted : undefined]}>
+                      <Text style={[styles.scheduleActivity, { color: isPast ? colors.textMuted : colors.text }]}>
                         {activity?.icon} {activity?.name || 'Unknown'}
                       </Text>
                     </View>
-                    <Text style={[styles.scheduleDuration, isPast ? styles.textMuted : undefined]}>
+                    <Text style={[styles.scheduleDuration, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
                       {formatDuration(adjustedDuration)}
                     </Text>
                   </View>
@@ -100,9 +102,9 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>📅</Text>
-              <Text style={styles.emptyText}>No blocks scheduled for today</Text>
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>No blocks scheduled for today</Text>
               <TouchableOpacity
-                style={styles.emptyButton}
+                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => navigation.navigate('Routine')}
               >
                 <Text style={styles.emptyButtonText}>Set up routine</Text>
@@ -114,9 +116,9 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
         {/* Active Goals */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitleInline}>Active Goals</Text>
+            <Text style={[styles.sectionTitleInline, { color: colors.text }]}>Active Goals</Text>
             <TouchableOpacity onPress={() => navigation.navigate('Goals')}>
-              <Text style={styles.seeAll}>See all</Text>
+              <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
             </TouchableOpacity>
           </View>
           {activeGoals.length > 0 ? (
@@ -125,18 +127,18 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                 const activity = activityTypes.find((a) => a.id === goal.activityTypeId);
                 const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
                 return (
-                  <View key={goal.id} style={styles.goalCard}>
+                  <View key={goal.id} style={[styles.goalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <View style={styles.goalHeader}>
                       <Text style={styles.goalIcon}>{activity?.icon || '🎯'}</Text>
                       <View style={styles.goalInfo}>
-                        <Text style={styles.goalName} numberOfLines={1}>{goal.name}</Text>
-                        <Text style={styles.goalMeta}>
+                        <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>{goal.name}</Text>
+                        <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
                           {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)}
                         </Text>
                       </View>
                     </View>
                     <View style={styles.goalProgress}>
-                      <View style={styles.progressBar}>
+                      <View style={[styles.progressBar, { backgroundColor: colors.borderLight }]}>
                         <View
                           style={[
                             styles.progressFill,
@@ -144,7 +146,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                           ]}
                         />
                       </View>
-                      <Text style={styles.progressText}>{progress.toFixed(0)}%</Text>
+                      <Text style={[styles.progressText, { color: colors.textSecondary }]}>{progress.toFixed(0)}%</Text>
                     </View>
                   </View>
                 );
@@ -153,9 +155,9 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>🎯</Text>
-              <Text style={styles.emptyText}>No active goals</Text>
+              <Text style={[styles.emptyText, { color: colors.textMuted }]}>No active goals</Text>
               <TouchableOpacity
-                style={styles.emptyButton}
+                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => navigation.navigate('Goals')}
               >
                 <Text style={styles.emptyButtonText}>Create a goal</Text>
@@ -166,28 +168,28 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
 
         {/* Quick Actions */}
         <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Quick Actions</Text>
           <View style={styles.quickActions}>
             <TouchableOpacity
-              style={styles.quickAction}
+              style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Routine')}
             >
               <Text style={styles.quickActionIcon}>📅</Text>
-              <Text style={styles.quickActionText}>Edit Routine</Text>
+              <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>Edit Routine</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.quickAction}
+              style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Goals')}
             >
               <Text style={styles.quickActionIcon}>🎯</Text>
-              <Text style={styles.quickActionText}>Add Goal</Text>
+              <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>Add Goal</Text>
             </TouchableOpacity>
             <TouchableOpacity
-              style={styles.quickAction}
+              style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Analytics')}
             >
               <Text style={styles.quickActionIcon}>📊</Text>
-              <Text style={styles.quickActionText}>View Stats</Text>
+              <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>View Stats</Text>
             </TouchableOpacity>
           </View>
         </View>
@@ -208,7 +210,6 @@ function getTimeOfDay(): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: colors.background,
   },
   scrollView: {
     flex: 1,
@@ -220,11 +221,9 @@ const styles = StyleSheet.create({
   greeting: {
     fontSize: 28,
     fontWeight: 'bold',
-    color: colors.text,
   },
   date: {
     fontSize: 16,
-    color: colors.textSecondary,
     marginTop: spacing.xs,
   },
   trackingSection: {
@@ -244,18 +243,15 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
   },
   sectionTitleInline: {
     fontSize: 18,
     fontWeight: '600',
-    color: colors.text,
   },
   seeAll: {
     fontSize: 14,
-    color: colors.primary,
     fontWeight: '500',
   },
   scheduleList: {
@@ -264,22 +260,13 @@ const styles = StyleSheet.create({
   scheduleItem: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.surface,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   scheduleItemPast: {
     opacity: 0.5,
-  },
-  scheduleItemCurrent: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '08',
-  },
-  scheduleItemNext: {
-    borderColor: colors.success + '60',
   },
   scheduleColor: {
     width: 4,
@@ -296,13 +283,11 @@ const styles = StyleSheet.create({
   },
   scheduleTime: {
     fontSize: 12,
-    color: colors.textSecondary,
   },
   nowBadge: {
     marginLeft: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    backgroundColor: colors.primary,
     borderRadius: borderRadius.sm,
   },
   nowBadgeText: {
@@ -314,37 +299,28 @@ const styles = StyleSheet.create({
     marginLeft: spacing.sm,
     paddingHorizontal: spacing.sm,
     paddingVertical: 2,
-    backgroundColor: colors.success + '20',
     borderRadius: borderRadius.sm,
   },
   nextBadgeText: {
     fontSize: 10,
     fontWeight: '700',
-    color: colors.success,
   },
   scheduleActivity: {
     fontSize: 16,
     fontWeight: '500',
-    color: colors.text,
     marginTop: 2,
   },
   scheduleDuration: {
     fontSize: 14,
-    color: colors.textSecondary,
-  },
-  textMuted: {
-    color: colors.textMuted,
   },
   goalsList: {
     paddingHorizontal: spacing.lg,
   },
   goalCard: {
-    backgroundColor: colors.surface,
     padding: spacing.md,
     borderRadius: borderRadius.md,
     marginBottom: spacing.sm,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   goalHeader: {
     flexDirection: 'row',
@@ -361,11 +337,9 @@ const styles = StyleSheet.create({
   goalName: {
     fontSize: 15,
     fontWeight: '500',
-    color: colors.text,
   },
   goalMeta: {
     fontSize: 12,
-    color: colors.textSecondary,
     marginTop: 2,
   },
   goalProgress: {
@@ -375,7 +349,6 @@ const styles = StyleSheet.create({
   progressBar: {
     flex: 1,
     height: 6,
-    backgroundColor: colors.borderLight,
     borderRadius: 3,
     overflow: 'hidden',
     marginRight: spacing.sm,
@@ -386,7 +359,6 @@ const styles = StyleSheet.create({
   },
   progressText: {
     fontSize: 12,
-    color: colors.textSecondary,
     width: 40,
     textAlign: 'right',
   },
@@ -401,13 +373,11 @@ const styles = StyleSheet.create({
   },
   emptyText: {
     fontSize: 14,
-    color: colors.textMuted,
     marginBottom: spacing.md,
   },
   emptyButton: {
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.sm,
-    backgroundColor: colors.primary,
     borderRadius: borderRadius.md,
   },
   emptyButtonText: {
@@ -424,10 +394,8 @@ const styles = StyleSheet.create({
     flex: 1,
     alignItems: 'center',
     padding: spacing.md,
-    backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,
     borderWidth: 1,
-    borderColor: colors.border,
   },
   quickActionIcon: {
     fontSize: 24,
@@ -435,7 +403,6 @@ const styles = StyleSheet.create({
   },
   quickActionText: {
     fontSize: 12,
-    color: colors.textSecondary,
     textAlign: 'center',
   },
 });
