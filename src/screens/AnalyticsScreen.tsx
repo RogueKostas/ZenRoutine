@@ -166,6 +166,15 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Analytics</Text>
+        <TouchableOpacity
+          style={[styles.calendarButton, { backgroundColor: colors.primary }]}
+          onPress={() => {
+            // @ts-ignore - Calendar screen exists in RootStack
+            navigation.navigate('Calendar');
+          }}
+        >
+          <Text style={styles.calendarButtonText}>📅 Calendar</Text>
+        </TouchableOpacity>
       </View>
 
       {/* View Mode Selector */}
@@ -290,12 +299,27 @@ const styles = StyleSheet.create({
     flex: 1,
   },
   header: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: 20,
     paddingVertical: 16,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
+  },
+  calendarButton: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 8,
+  },
+  calendarButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '600',
   },
   modeSelector: {
     flexDirection: 'row',
