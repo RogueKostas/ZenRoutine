@@ -1,13 +1,15 @@
 import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
-import { colors } from '../theme/colors';
+import { useTheme } from '../theme';
 import { TabNavigator } from './TabNavigator';
-import { DebugScreen } from '../screens';
+import { DebugScreen, ActivityTypesScreen } from '../screens';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
 
 export function RootNavigator() {
+  const { colors } = useTheme();
+
   return (
     <Stack.Navigator
       screenOptions={{
@@ -30,6 +32,14 @@ export function RootNavigator() {
         options={{ headerShown: false }}
       />
       <Stack.Screen
+        name="ActivityTypes"
+        component={ActivityTypesScreen}
+        options={{
+          headerShown: false,
+          presentation: 'modal',
+        }}
+      />
+      <Stack.Screen
         name="Debug"
         component={DebugScreen}
         options={{
@@ -37,32 +47,6 @@ export function RootNavigator() {
           presentation: 'modal',
         }}
       />
-      {/* Placeholder screens for future implementation */}
-      {/*
-      <Stack.Screen
-        name="GoalDetail"
-        component={GoalDetailScreen}
-        options={({ route }) => ({
-          title: 'Goal Details',
-        })}
-      />
-      <Stack.Screen
-        name="ActivityTypeEditor"
-        component={ActivityTypeEditorScreen}
-        options={({ route }) => ({
-          title: route.params?.activityTypeId ? 'Edit Activity' : 'New Activity',
-          presentation: 'modal',
-        })}
-      />
-      <Stack.Screen
-        name="BlockEditor"
-        component={BlockEditorScreen}
-        options={({ route }) => ({
-          title: route.params?.blockId ? 'Edit Block' : 'New Block',
-          presentation: 'modal',
-        })}
-      />
-      */}
     </Stack.Navigator>
   );
 }

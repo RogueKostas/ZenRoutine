@@ -4,3 +4,4 @@ export { GoalsScreen } from './GoalsScreen';
 export { AnalyticsScreen } from './AnalyticsScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { DebugScreen } from './DebugScreen';
+export { ActivityTypesScreen } from './ActivityTypesScreen';

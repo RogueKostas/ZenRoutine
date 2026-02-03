@@ -161,7 +161,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               title="Manage Activity Types"
               subtitle={`${activityTypes.length} types configured`}
               onPress={() => {
-                Alert.alert('Coming Soon', 'Activity type management will be available in a future update.');
+                // @ts-ignore - ActivityTypes screen exists in RootStack
+                navigation.navigate('ActivityTypes');
               }}
             />
           </View>

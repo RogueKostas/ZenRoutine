@@ -16,6 +16,7 @@ export type RootStackParamList = {
   Tabs: NavigatorScreenParams<TabParamList>;
   GoalDetail: { goalId: string };
   ActivityTypeEditor: { activityTypeId?: string };
+  ActivityTypes: undefined;
   BlockEditor: { routineId: string; blockId?: string };
   Debug: undefined;
 };
