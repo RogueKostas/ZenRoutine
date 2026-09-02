@@ -5,7 +5,7 @@ A cross-platform time management app that helps you design weekly routines, trac
 ## Development Setup
 
 ### Prerequisites
-- Node.js 18+ 
+- Node.js 22.13+
 - npm or yarn
 - Expo Go app on your mobile device (for testing)
 
@@ -55,8 +55,12 @@ The app follows a clean separation of concerns:
 - React Native + Expo
 - TypeScript
 - Zustand for state management
-- React Native Gesture Handler + Reanimated
+- React Native Gesture Handler
 - React Navigation
+
+## Project Status
+
+The project is being brought out of hibernation. See [the revival plan](docs/REVIVAL_PLAN.md) for the current assessment, product questions, staged upgrade path, and next milestone. Codex contributors should also read [AGENTS.md](AGENTS.md); multi-step work can use the repository $revival-loop skill.
 
 ## Building for Production
 

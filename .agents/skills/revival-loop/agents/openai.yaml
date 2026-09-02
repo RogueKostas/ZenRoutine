@@ -1,0 +1,4 @@
+interface:
+  display_name: "Revival Loop"
+  short_description: "Run bounded implementation, review, and verification loops"
+  default_prompt: "Use $revival-loop to complete the next approved project milestone."
