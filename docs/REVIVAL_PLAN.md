@@ -1,6 +1,6 @@
 # ZenRoutine revival plan
 
-Last reviewed: 2026-09-02
+Last reviewed: 2026-09-03
 
 ## Current assessment
 
@@ -14,7 +14,7 @@ The engineering direction is clear enough to stabilize the application. Product 
 - Expo SDK 54, React Native 0.81, React 19.1, React Navigation 7, TypeScript, AsyncStorage, and Zustand 5 are structurally appropriate for this application.
 - The locked dependencies install cleanly and TypeScript passes after npm ci.
 - Web was advertised but its required Expo dependencies were missing; they were restored during this review.
-- There is no automated test suite, lint script, CI workflow, EAS configuration, or release pipeline.
+- The R0 baseline now has representative core/store tests and a GitHub Actions verification workflow. Linting, EAS configuration, and a release pipeline are not established yet.
 - Several screens and the single Zustand store are large enough that future changes will become harder to review.
 - Existing any and @ts-ignore escapes weaken the strict-TypeScript claim.
 - Export/import and license content are visible stubs.
@@ -33,7 +33,7 @@ Before a broad feature phase, write short answers to these questions:
 
 ## Milestones
 
-### R0 — Reproducible baseline (in progress)
+### R0 — Reproducible baseline (local/web complete; native smoke deferred)
 
 Acceptance:
 
@@ -45,9 +45,12 @@ Acceptance:
 
 Evidence recorded 2026-09-03:
 
-- A clean `npm ci` and `EXPO_NO_TELEMETRY=1 npm run verify` pass locally on Node 24.13.0: strict typecheck, 11 Vitest core/store tests, and a 695-module web export.
-- The repository now defines the same `npm run verify` gate for GitHub Actions on pinned Node 22.13.0; the first remote run is still pending.
-- Personal Codex cloud canary and physical-device Expo Go smoke evidence are still pending and must not be inferred from the web build.
+- A clean `npm ci` and `EXPO_NO_TELEMETRY=1 npm run verify` pass locally on Node 24.13.0: strict typecheck, 11 Vitest core/store tests, and a successful web export.
+- `npx expo install --check` reports compatible SDK 54 dependencies and Expo Doctor passes all 18 checks after aligning Expo 54.0.37, React Native Gesture Handler 2.28.0, and React Native Screens 4.16.0.
+- GitHub Actions runs the same `npm run verify` gate on pinned Node 22.13.0. Runs 33737190359 and 33737967627 passed on the personal `RogueKostas/ZenRoutine` repository.
+- A browser interaction smoke passed onboarding, goal creation, goal-linked routine planning, timer start/stop, and persisted state after reload. This is useful supplementary evidence but is not a substitute for the required physical-device smoke.
+- Codex cloud is deliberately deferred because this ChatGPT account is actively connected to the separate `HyperKostas` work identity and currently offers no second GitHub-user connection. Do not replace or modify that connection while the work account remains active.
+- No Android emulator, iOS simulator, or attached physical device is available on this Windows host. The Expo Go server started successfully on the LAN, but physical-device behavior remains explicitly unverified and is still required before a distributable build or release claim.
 
 ### R1 — Data correctness and safety
 
@@ -102,8 +105,8 @@ The repository needs no secrets for its current offline-first feature set.
 - Agent internet access: off unless a task explicitly requires dependency or documentation access
 - Verification: npm run verify
 
-Create the environment in Codex cloud after the GitHub repository is connected. Cloud tasks should work on branches and return reviewable diffs; deployment and merging remain explicit user actions.
+Cloud setup is optional and deferred while this ChatGPT account remains connected to the active `HyperKostas` work identity. Do not reconnect or replace that identity for ZenRoutine. If a separate personal ChatGPT identity or independently scoped workspace becomes available, create the environment there. Cloud tasks should work on branches and return reviewable diffs; deployment and merging remain explicit user actions.
 
 ## Next ready slice
 
-Finish R0: make the web build green, add the first automated tests and CI gate, then perform a mobile smoke test before starting the Expo SDK upgrade.
+Upgrade Expo from SDK 54 to 55 as an isolated dependency/configuration slice. Run a clean install, Expo compatibility checks, the full verification gate, and browser smoke; keep native-device behavior explicitly deferred until a device or emulator is available.
