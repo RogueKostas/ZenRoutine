@@ -118,6 +118,14 @@ Acceptance:
 - Privacy and local-data behavior are documented.
 - The next roadmap is driven by observed retention and usability evidence.
 
+Evidence recorded 2026-09-03:
+
+- A new Render Blueprint named `zenroutine-beta` manages exactly one new static resource, `zenroutine-web`, sourced from `RogueKostas/ZenRoutine` on the isolated `codex/r1-data-safety` branch. Existing Render projects and services were not modified.
+- The Expo single-page web export is live over HTTPS at https://zenroutine-web.onrender.com. The first deployment built commit `235649f` successfully in 47 seconds.
+- The deployed-browser smoke passed onboarding, goal creation, goal-linked timer start/stop, recent-session review, and persisted state in a second browser tab. A direct request returned HTTP 200 with the configured content-type, referrer-policy, and frame-protection headers.
+- EAS development, internal-preview, and production profiles are checked in; `expo-dev-client`, iOS bundle identifier `com.roguekostas.zenroutine`, and matching Android application ID are configured. The repository still needs to be linked to the correct personal Expo account before the first cloud build.
+- The connected-beta contract defines guest ownership, explicit first-sign-in transfer, optimistic revision conflicts, active-timer conflict behavior, deletion, privacy, and two-device acceptance evidence. Authentication and remote persistence are not implemented yet.
+
 ### R5 — Optional connected product
 
 Only start this milestone after the product decision. If accounts, sync, collaboration, or server-owned notifications are required, define data ownership and conflict behavior before selecting backend services.
@@ -162,16 +170,18 @@ Evidence recorded 2026-09-03:
 
 ## Cloud environment recipe
 
-The repository needs no secrets for its current offline-first feature set.
+The repository needs no secrets for its current offline-first feature set. Render hosts the web beta; it does not replace Expo/EAS for native builds.
 
 - Repository: RogueKostas/ZenRoutine
 - Runtime: Node.js 22.13 or a compatible Node 22 release
 - Setup: npm ci
 - Agent internet access: off unless a task explicitly requires dependency or documentation access
 - Verification: npm run verify
+- Web beta: https://zenroutine-web.onrender.com
+- Render Blueprint: `zenroutine-beta`, scoped to the `zenroutine-web` static site only
 
-Cloud setup is optional and deferred while this ChatGPT account remains connected to the active `HyperKostas` work identity. Do not reconnect or replace that identity for ZenRoutine. If a separate personal ChatGPT identity or independently scoped workspace becomes available, create the environment there. Cloud tasks should work on branches and return reviewable diffs; deployment and merging remain explicit user actions.
+Codex cloud remains deferred while this ChatGPT account is connected to the active `HyperKostas` work identity. Do not reconnect or replace that identity for ZenRoutine. This is separate from Render, whose GitHub integration exposes the `RogueKostas/ZenRoutine` repository and is now used for the web beta. Cloud tasks should work on branches and return reviewable diffs; deployment and merging remain explicit user actions.
 
 ## Next ready slice
 
-Review the local R1–R3 prototype and its documented native-device deferrals. If the direction is approved, authorize a local commit (and separately any push), then begin R4 with Android/iOS device smoke, EAS preview-build configuration, privacy documentation, and a small structured beta-learning loop. Use beta evidence to calibrate the forecast assumptions before expanding the product surface.
+Review the R1–R3 prototype at https://zenroutine-web.onrender.com and complete a phone/tablet web smoke. Next, link the repository to the correct personal Expo account, create an EAS preview build, and close the documented native-device deferrals. In parallel, add privacy and structured beta-feedback surfaces. Start authenticated cloud persistence only as the separate feature-flagged slice defined in `docs/CLOUD_BETA_TASK.md`; use beta evidence to calibrate the forecast assumptions before expanding the product surface.

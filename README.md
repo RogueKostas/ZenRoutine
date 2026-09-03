@@ -2,6 +2,8 @@
 
 A cross-platform time management app that helps you design weekly routines, track time, and predict goal completion.
 
+**Web beta:** https://zenroutine-web.onrender.com
+
 ## Development Setup
 
 ### Prerequisites
