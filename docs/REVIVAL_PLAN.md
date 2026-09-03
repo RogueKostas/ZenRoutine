@@ -33,7 +33,7 @@ Before a broad feature phase, write short answers to these questions:
 
 ## Milestones
 
-### R0 — Reproducible baseline (local/web complete; native smoke deferred)
+### R0 — Reproducible baseline (local/web and CI complete; native smoke deferred)
 
 Acceptance:
 
@@ -47,7 +47,7 @@ Evidence recorded 2026-09-03:
 
 - A clean `npm ci` and `EXPO_NO_TELEMETRY=1 npm run verify` pass locally on Node 24.13.0: strict typecheck, 11 Vitest core/store tests, and a successful web export.
 - `npx expo install --check` reports compatible SDK 54 dependencies and Expo Doctor passes all 18 checks after aligning Expo 54.0.37, React Native Gesture Handler 2.28.0, and React Native Screens 4.16.0.
-- GitHub Actions runs the same `npm run verify` gate on pinned Node 22.13.0. Runs 33737190359 and 33737967627 passed on the personal `RogueKostas/ZenRoutine` repository.
+- GitHub Actions runs the same `npm run verify` gate on pinned Node 22.13.0. The final branch run 33742467275 and post-merge `main` run 33742594656 passed on the personal `RogueKostas/ZenRoutine` repository.
 - A browser interaction smoke passed onboarding, goal creation, goal-linked routine planning, timer start/stop, and persisted state after reload. This is useful supplementary evidence but is not a substitute for the required physical-device smoke.
 - Codex cloud is deliberately deferred because this ChatGPT account is actively connected to the separate `HyperKostas` work identity and currently offers no second GitHub-user connection. Do not replace or modify that connection while the work account remains active.
 - No Android emulator, iOS simulator, or attached physical device is available on this Windows host. The Expo Go server started successfully on the LAN, but physical-device behavior remains explicitly unverified and is still required before a distributable build or release claim.
@@ -95,6 +95,17 @@ Only start this milestone after the product decision. If accounts, sync, collabo
 
 Keep the current architecture. Upgrade Expo incrementally from SDK 54 to 55, then 56, then 57, following Expo's compatibility checks and verifying typecheck, web export, and a mobile smoke test at each step. Avoid mixing the framework upgrade with product feature work.
 
+### SDK 55 — local/web complete; native smoke deferred
+
+Evidence recorded 2026-09-03:
+
+- Upgraded through Expo's supported installer to Expo 55.0.31, React Native 0.83.10, and React 19.2.0. Removed the obsolete `newArchEnabled` and `android.edgeToEdgeEnabled` configuration flags; SDK 55 is New Architecture-only and Android edge-to-edge is mandatory.
+- A clean `npm ci`, `npx expo install --check`, `npx expo-doctor@latest`, `npx expo config --type public`, and `EXPO_NO_TELEMETRY=1 npm run verify` all pass. Expo Doctor reports 20/20 checks, and the verification gate passes strict typecheck, all 11 core/store tests, and the production web export.
+- The browser smoke preserved the SDK 54 goal and linked weekly routine block, created a new SDK 55 goal, started/stopped a timer, rendered analytics, and preserved the new goal after reload. Metro produced no runtime error output during the interaction.
+- The dependency audit now reports 25 advisories (1 low, 17 moderate, 6 high, 1 critical), down from 32 on SDK 54. Continue resolving these through staged SDK upgrades; do not force-fix the dependency graph.
+- Native behavior remains unverified because this Windows host has no attached phone or available emulator. Before a distributable build, verify Android edge-to-edge tab-bar insets, native stack/modal transitions, drag interactions, and dark-theme system-bar contrast. SDK 55 retains Android 7+ and iOS 15.1+ minimum OS support and requires Xcode 26.2+ for iOS builds.
+- Independent review found no source-level SDK 55 blocker. It identified the existing asynchronous Zustand hydration/startup ordering risk as the first R1 fix and a static responsive-width issue in onboarding as an R2 candidate.
+
 ## Cloud environment recipe
 
 The repository needs no secrets for its current offline-first feature set.
@@ -109,4 +120,4 @@ Cloud setup is optional and deferred while this ChatGPT account remains connecte
 
 ## Next ready slice
 
-Upgrade Expo from SDK 54 to 55 as an isolated dependency/configuration slice. Run a clean install, Expo compatibility checks, the full verification gate, and browser smoke; keep native-device behavior explicitly deferred until a device or emulator is available.
+Create a local checkpoint for the verified SDK 55 slice, then upgrade Expo from SDK 55 to 56 as an isolated dependency/configuration slice. Run the same clean install, Expo compatibility checks, full verification gate, and browser persistence smoke; keep native-device behavior explicitly deferred until a device or emulator is available.

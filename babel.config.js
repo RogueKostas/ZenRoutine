@@ -6,7 +6,7 @@ module.exports = function (api) {
       [
         'babel-preset-expo',
         {
-          // SDK 54 otherwise leaves import.meta in Zustand's ESM middleware bundle.
+          // SDK 54/55 otherwise leave import.meta in Zustand's ESM middleware bundle.
           unstable_transformImportMeta: true,
         },
       ],
