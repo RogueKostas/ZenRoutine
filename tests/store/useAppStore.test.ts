@@ -11,7 +11,7 @@ beforeEach(async () => {
   vi.useFakeTimers();
   vi.setSystemTime(new Date(frozenTime));
   await useAppStore.persist.rehydrate();
-  useAppStore.getState().resetState();
+  await useAppStore.getState().resetState();
   await useAppStore.persist.clearStorage();
 });
 
@@ -28,6 +28,7 @@ describe('goal and tracking actions', () => {
       estimatedMinutes: 120,
       activityTypeId,
     });
+    expect(goalId).not.toBeNull();
 
     expect(useAppStore.getState().goals).toContainEqual(expect.objectContaining({
       id: goalId,
@@ -38,13 +39,13 @@ describe('goal and tracking actions', () => {
       updatedAt: frozenTime,
     }));
 
-    useAppStore.getState().logMinutesToGoal(goalId, 30);
+    useAppStore.getState().logMinutesToGoal(goalId!, 30);
     expect(useAppStore.getState().goals[0]).toMatchObject({
       loggedMinutes: 30,
       status: 'active',
     });
 
-    useAppStore.getState().logMinutesToGoal(goalId, 90);
+    useAppStore.getState().logMinutesToGoal(goalId!, 90);
     expect(useAppStore.getState().goals[0]).toMatchObject({
       loggedMinutes: 120,
       status: 'completed',
@@ -60,10 +61,11 @@ describe('goal and tracking actions', () => {
       estimatedMinutes: 180,
       activityTypeId,
     });
+    expect(goalId).not.toBeNull();
 
     const entryId = useAppStore.getState().startTracking({
       activityTypeId,
-      goalId,
+      goalId: goalId!,
       source: 'manual',
     });
     expect(entryId).not.toBeNull();
@@ -73,7 +75,7 @@ describe('goal and tracking actions', () => {
       date: '2026-03-02',
       startTime: frozenTime,
       endTime: undefined,
-      goalId,
+      goalId: goalId!,
     });
 
     vi.advanceTimersByTime(90 * 60 * 1000);
@@ -126,7 +128,7 @@ describe('persisted state', () => {
     expect(useAppStore.getState()).toMatchObject({
       goals: [persistedGoal],
       hasCompletedOnboarding: true,
-      schemaVersion: 3,
+      schemaVersion: 4,
     });
     expect(await AsyncStorage.getItem(storageKey)).not.toBeNull();
   });

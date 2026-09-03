@@ -8,6 +8,7 @@ import {
   Modal,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes, useGoals, useCurrentTracking, useAppStore } from '../../store';
 import type { ActivityType, Goal } from '../../core/types';
@@ -23,6 +24,7 @@ export function QuickStart({
   maxActivities = 6,
   showGoalSelection = true,
 }: QuickStartProps) {
+  const { colors: themeColors } = useTheme();
   const activityTypes = useActivityTypes();
   const goals = useGoals();
   const activeTracking = useCurrentTracking();
@@ -30,6 +32,7 @@ export function QuickStart({
 
   const [selectedActivity, setSelectedActivity] = useState<ActivityType | null>(null);
   const [showGoalModal, setShowGoalModal] = useState(false);
+  const [startError, setStartError] = useState<string | null>(null);
 
   // Get most used or default activities
   const quickActivities = useMemo(() => {
@@ -63,7 +66,12 @@ export function QuickStart({
         activityTypeId: activity.id,
         source: 'manual',
       });
-      if (id) onTrackingStarted?.(id);
+      if (id) {
+        setStartError(null);
+        onTrackingStarted?.(id);
+      } else {
+        setStartError('Unable to start tracking. Check that no other timer is running.');
+      }
     }
   }, [activeTracking, goals, showGoalSelection, startTracking, onTrackingStarted]);
 
@@ -76,9 +84,14 @@ export function QuickStart({
       source: 'manual',
     });
 
-    setShowGoalModal(false);
-    setSelectedActivity(null);
-    if (id) onTrackingStarted?.(id);
+    if (id) {
+      setStartError(null);
+      setShowGoalModal(false);
+      setSelectedActivity(null);
+      onTrackingStarted?.(id);
+    } else {
+      setStartError('Unable to start tracking. Check that no other timer is running.');
+    }
   }, [selectedActivity, startTracking, onTrackingStarted]);
 
   if (activeTracking) {
@@ -86,27 +99,39 @@ export function QuickStart({
   }
 
   return (
-    <View style={styles.container}>
-      <Text style={styles.title}>Quick Start</Text>
-      <Text style={styles.subtitle}>Tap an activity to start tracking</Text>
+    <View style={styles.container} accessibilityLabel="Quick start tracking">
+      <Text accessibilityRole="header" style={[styles.title, { color: themeColors.text }]}>Quick Start</Text>
+      <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>Tap an activity to start tracking</Text>
 
       <View style={styles.grid}>
         {quickActivities.map((activity) => (
           <TouchableOpacity
             key={activity.id}
-            style={[styles.activityCard, { borderColor: activity.color + '40' }]}
+            style={[styles.activityCard, { borderColor: activity.color + '40', backgroundColor: themeColors.surface }]}
             onPress={() => handleActivityPress(activity)}
             activeOpacity={0.7}
+            accessibilityRole="button"
+            accessibilityLabel={`Start tracking ${activity.name}`}
           >
             <View style={[styles.iconContainer, { backgroundColor: activity.color + '20' }]}>
               <Text style={styles.activityIcon}>{activity.icon}</Text>
             </View>
-            <Text style={styles.activityName} numberOfLines={1}>
+            <Text style={[styles.activityName, { color: themeColors.text }]} numberOfLines={1}>
               {activity.name}
             </Text>
           </TouchableOpacity>
         ))}
       </View>
+      {quickActivities.length === 0 && (
+        <Text style={[styles.subtitle, { color: themeColors.textSecondary }]}>
+          Add an activity type in Settings before starting a timer.
+        </Text>
+      )}
+      {startError && (
+        <Text accessibilityLiveRegion="assertive" style={[styles.startError, { color: themeColors.error }]}>
+          {startError}
+        </Text>
+      )}
 
       {/* Goal Selection Modal */}
       <Modal
@@ -116,45 +141,59 @@ export function QuickStart({
         onRequestClose={() => setShowGoalModal(false)}
       >
         <View style={styles.modalOverlay}>
-          <View style={styles.modalContent}>
+          <View style={[styles.modalContent, { backgroundColor: themeColors.background }]} accessibilityViewIsModal>
             <View style={styles.modalHeader}>
-              <Text style={styles.modalTitle}>Link to Goal?</Text>
-              <TouchableOpacity onPress={() => setShowGoalModal(false)}>
-                <Text style={styles.modalClose}>×</Text>
+              <Text accessibilityRole="header" style={[styles.modalTitle, { color: themeColors.text }]}>Link to Goal?</Text>
+              <TouchableOpacity
+                onPress={() => setShowGoalModal(false)}
+                accessibilityRole="button"
+                accessibilityLabel="Close goal selection"
+                hitSlop={8}
+              >
+                <Text style={[styles.modalClose, { color: themeColors.textSecondary }]}>×</Text>
               </TouchableOpacity>
             </View>
 
             {selectedActivity && (
-              <View style={styles.selectedActivity}>
+              <View style={[styles.selectedActivity, { backgroundColor: themeColors.backgroundSecondary }]}>
                 <Text style={styles.selectedIcon}>{selectedActivity.icon}</Text>
-                <Text style={styles.selectedName}>{selectedActivity.name}</Text>
+                <Text style={[styles.selectedName, { color: themeColors.text }]}>{selectedActivity.name}</Text>
               </View>
+            )}
+            {startError && (
+              <Text accessibilityLiveRegion="assertive" style={[styles.modalError, { color: themeColors.error }]}>
+                {startError}
+              </Text>
             )}
 
             <ScrollView style={styles.goalList}>
               <TouchableOpacity
-                style={styles.goalOption}
+                style={[styles.goalOption, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
                 onPress={() => handleGoalSelect(null)}
+                accessibilityRole="button"
+                accessibilityLabel="Start without linking a goal"
               >
                 <View style={styles.goalInfo}>
-                  <Text style={styles.goalName}>No Goal</Text>
-                  <Text style={styles.goalDesc}>Track without linking to a goal</Text>
+                  <Text style={[styles.goalName, { color: themeColors.text }]}>No Goal</Text>
+                  <Text style={[styles.goalDesc, { color: themeColors.textSecondary }]}>Track without linking to a goal</Text>
                 </View>
               </TouchableOpacity>
 
               {matchingGoals.map((goal) => (
                 <TouchableOpacity
                   key={goal.id}
-                  style={styles.goalOption}
+                  style={[styles.goalOption, { backgroundColor: themeColors.surface, borderColor: themeColors.border }]}
                   onPress={() => handleGoalSelect(goal)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Start ${selectedActivity?.name ?? 'activity'} for goal ${goal.name}`}
                 >
                   <View style={styles.goalInfo}>
-                    <Text style={styles.goalName}>{goal.name}</Text>
-                    <Text style={styles.goalDesc}>
+                    <Text style={[styles.goalName, { color: themeColors.text }]}>{goal.name}</Text>
+                    <Text style={[styles.goalDesc, { color: themeColors.textSecondary }]}>
                       {goal.loggedMinutes} / {goal.estimatedMinutes} min this week
                     </Text>
                   </View>
-                  <View style={styles.goalProgress}>
+                  <View style={[styles.goalProgress, { backgroundColor: themeColors.border }]}>
                     <View
                       style={[
                         styles.goalProgressFill,
@@ -210,6 +249,8 @@ export function QuickStartHorizontal({
             key={activity.id}
             style={styles.horizontalCard}
             onPress={() => handlePress(activity)}
+            accessibilityRole="button"
+            accessibilityLabel={`Start tracking ${activity.name}`}
           >
             <View
               style={[
@@ -463,6 +504,17 @@ const styles = StyleSheet.create({
   fabOverlay: {
     ...StyleSheet.absoluteFill,
     backgroundColor: 'rgba(0, 0, 0, 0.3)',
+  },
+  startError: {
+    marginTop: spacing.sm,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  modalError: {
+    paddingHorizontal: spacing.md,
+    paddingTop: spacing.md,
+    fontSize: 14,
+    lineHeight: 20,
   },
   fabMenu: {
     position: 'absolute',

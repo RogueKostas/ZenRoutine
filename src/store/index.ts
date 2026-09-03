@@ -8,6 +8,10 @@ export {
   useTrackingEntries,
   useCurrentTracking,
   useHasCompletedOnboarding,
+  getHydrationSnapshot,
+  initializeAppStore,
+  resetAppStoreAfterHydrationError,
+  subscribeHydration,
 } from './useAppStore';
 
-export type { AppStore } from './useAppStore';
+export type { AppStore, HydrationSnapshot, ImportResult } from './useAppStore';

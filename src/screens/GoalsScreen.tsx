@@ -29,6 +29,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const [newGoalDescription, setNewGoalDescription] = useState('');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [selectedPriority, setSelectedPriority] = useState<GoalPriority>(3); // Default to Medium
+  const [goalError, setGoalError] = useState<string | null>(null);
 
   const goals = useGoals();
   const activityTypes = useActivityTypes();
@@ -53,21 +54,38 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
     : [];
 
   const handleAddGoal = () => {
-    if (!newGoalName.trim() || !selectedActivityId || !newGoalMinutes) return;
+    const estimatedMinutes = Number(newGoalMinutes);
+    if (!newGoalName.trim()) {
+      setGoalError('Enter a name for the goal.');
+      return;
+    }
+    if (!selectedActivityId) {
+      setGoalError('Choose an activity type.');
+      return;
+    }
+    if (!Number.isInteger(estimatedMinutes) || estimatedMinutes <= 0) {
+      setGoalError('Estimated time must be a whole number greater than zero.');
+      return;
+    }
 
-    addGoal({
+    const goalId = addGoal({
       name: newGoalName.trim(),
       description: newGoalDescription.trim(),
-      estimatedMinutes: parseInt(newGoalMinutes, 10),
+      estimatedMinutes,
       activityTypeId: selectedActivityId,
       priority: selectedPriority,
     });
+    if (!goalId) {
+      setGoalError('The goal could not be saved. Check the details and try again.');
+      return;
+    }
 
     setNewGoalName('');
     setNewGoalMinutes('');
     setNewGoalDescription('');
     setSelectedActivityId(null);
     setSelectedPriority(3);
+    setGoalError(null);
     setShowAddModal(false);
   };
 
@@ -97,7 +115,12 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         <Text style={[styles.title, { color: colors.text }]}>Goals</Text>
         <TouchableOpacity
           style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => setShowAddModal(true)}
+          onPress={() => {
+            setGoalError(null);
+            setShowAddModal(true);
+          }}
+          accessibilityRole="button"
+          accessibilityLabel="Add goal"
         >
           <Text style={styles.addButtonText}>+ Add</Text>
         </TouchableOpacity>
@@ -119,6 +142,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               statusFilter === status && { backgroundColor: colors.primary },
             ]}
             onPress={() => setStatusFilter(status)}
+            accessibilityRole="tab"
+            accessibilityLabel={`${status} goals, ${counts[status]}`}
+            accessibilityState={{ selected: statusFilter === status }}
           >
             <Text style={[
               styles.filterText,
@@ -152,6 +178,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
             !activityFilter && { backgroundColor: colors.primary },
           ]}
           onPress={() => setActivityFilter(null)}
+          accessibilityRole="button"
+          accessibilityLabel="Show all activity types"
+          accessibilityState={{ selected: !activityFilter }}
         >
           <Text style={[
             styles.filterText,
@@ -170,6 +199,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               activityFilter === at.id && { backgroundColor: at.color + '30', borderColor: at.color, borderWidth: 1 },
             ]}
             onPress={() => setActivityFilter(activityFilter === at.id ? null : at.id)}
+            accessibilityRole="button"
+            accessibilityLabel={`Filter by ${at.name}`}
+            accessibilityState={{ selected: activityFilter === at.id }}
           >
             <Text style={styles.activityFilterIcon}>{at.icon}</Text>
             <Text style={[
@@ -183,6 +215,16 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         ))}
       </ScrollView>
 
+      {activeRoutine && predictions.length > 0 && (
+        <View style={[styles.forecastNotice, { backgroundColor: colors.backgroundSecondary }]}>
+          <Text style={[styles.forecastNoticeTitle, { color: colors.text }]}>How forecasts work</Text>
+          <Text style={[styles.forecastNoticeText, { color: colors.textSecondary }]}>
+            Goal-linked blocks stay dedicated. Unlinked time is shared by priority, then
+            reallocated as goals finish. Dates assume this routine and these priorities continue.
+          </Text>
+        </View>
+      )}
+
       {/* Goals List */}
       <ScrollView style={styles.goalsList} showsVerticalScrollIndicator={false}>
         {filteredGoals.length > 0 ? (
@@ -192,7 +234,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
             const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
 
             return (
-              <TouchableOpacity
+              <View
                 key={goal.id}
                 style={[styles.goalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
               >
@@ -237,9 +279,33 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
 
                 {prediction && goal.status === 'active' && (
                   <View style={[styles.predictionSection, { borderTopColor: colors.borderLight }]}>
-                    <Text style={[styles.predictionLabel, { color: colors.textSecondary }]}>Estimated completion:</Text>
-                    <Text style={[styles.predictionValue, { color: colors.primary }]}>
-                      {prediction.predictedCompletionDate || 'Add routine blocks'}
+                    <View style={styles.predictionHeader}>
+                      <View>
+                        <Text style={[styles.predictionLabel, { color: colors.textSecondary }]}>Estimated completion</Text>
+                        <Text style={[styles.predictionDate, { color: colors.primary }]}>
+                          {prediction.predictedCompletionDate || 'No available routine time'}
+                        </Text>
+                      </View>
+                      <View style={[styles.confidenceBadge, { backgroundColor: colors.backgroundSecondary }]}>
+                        <Text style={[styles.confidenceText, { color: colors.textSecondary }]}>
+                          {prediction.confidenceLevel} confidence
+                        </Text>
+                      </View>
+                    </View>
+                    <Text style={[styles.predictionCapacity, { color: colors.text }]}>
+                      {formatDuration(prediction.weeklyMinutesAllocated)}/week allocated from{' '}
+                      {formatDuration(prediction.activityWeeklyCapacity)} scheduled
+                    </Text>
+                    <Text style={[styles.predictionReason, { color: colors.textSecondary }]}>
+                      {prediction.dedicatedWeeklyMinutes > 0
+                        ? `${formatDuration(prediction.dedicatedWeeklyMinutes)} is linked directly to this goal. `
+                        : ''}
+                      {prediction.competingGoalCount > 0 && prediction.sharedWeeklyCapacity > 0
+                        ? `Unlinked time is shared with ${prediction.competingGoalCount} other active goal${prediction.competingGoalCount === 1 ? '' : 's'} by priority. `
+                        : prediction.otherLinkedWeeklyMinutes > 0
+                          ? `${formatDuration(prediction.otherLinkedWeeklyMinutes)} is linked to other goals and stays reserved. `
+                          : 'No other active goal competes for this activity. '}
+                      {prediction.confidenceReason}
                     </Text>
                   </View>
                 )}
@@ -282,7 +348,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                     </TouchableOpacity>
                   )}
                 </View>
-              </TouchableOpacity>
+              </View>
             );
           })
         ) : (
@@ -316,13 +382,20 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
       >
         <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
           <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity onPress={() => setShowAddModal(false)}>
+            <TouchableOpacity
+              onPress={() => setShowAddModal(false)}
+              accessibilityRole="button"
+              accessibilityLabel="Cancel new goal"
+            >
               <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
             </TouchableOpacity>
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
             <TouchableOpacity
               onPress={handleAddGoal}
               disabled={!newGoalName.trim() || !selectedActivityId || !newGoalMinutes}
+              accessibilityRole="button"
+              accessibilityLabel="Save goal"
+              accessibilityState={{ disabled: !newGoalName.trim() || !selectedActivityId || !newGoalMinutes }}
             >
               <Text
                 style={[
@@ -343,8 +416,13 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="e.g., Complete TypeScript Course"
               value={newGoalName}
-              onChangeText={setNewGoalName}
+              onChangeText={(value) => {
+                setNewGoalName(value);
+                setGoalError(null);
+              }}
               placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Goal name"
+              autoFocus
             />
 
             <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
@@ -356,6 +434,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               multiline
               numberOfLines={3}
               placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Goal description"
             />
 
             <Text style={[styles.inputLabel, { color: colors.text }]}>Estimated Time (minutes)</Text>
@@ -363,9 +442,13 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
               placeholder="e.g., 1200"
               value={newGoalMinutes}
-              onChangeText={setNewGoalMinutes}
+              onChangeText={(value) => {
+                setNewGoalMinutes(value);
+                setGoalError(null);
+              }}
               keyboardType="numeric"
               placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Estimated time in minutes"
             />
             {Boolean(newGoalMinutes) && (
               <Text style={[styles.inputHint, { color: colors.primary }]}>
@@ -383,7 +466,13 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                     { backgroundColor: colors.backgroundSecondary },
                     selectedActivityId === at.id && { borderColor: colors.primary, backgroundColor: colors.primary + '10' },
                   ]}
-                  onPress={() => setSelectedActivityId(at.id)}
+                  onPress={() => {
+                    setSelectedActivityId(at.id);
+                    setGoalError(null);
+                  }}
+                  accessibilityRole="radio"
+                  accessibilityLabel={at.name}
+                  accessibilityState={{ checked: selectedActivityId === at.id }}
                 >
                   <View style={[styles.activityDot, { backgroundColor: at.color }]} />
                   <Text
@@ -415,6 +504,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                     },
                   ]}
                   onPress={() => setSelectedPriority(priority)}
+                  accessibilityRole="radio"
+                  accessibilityLabel={`${PRIORITY_LABELS[priority]} priority`}
+                  accessibilityState={{ checked: selectedPriority === priority }}
                 >
                   <View style={[styles.priorityOptionDot, { backgroundColor: PRIORITY_COLORS[priority] }]} />
                   <Text
@@ -429,6 +521,11 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                 </TouchableOpacity>
               ))}
             </View>
+            {goalError && (
+              <Text accessibilityLiveRegion="assertive" style={[styles.formError, { color: colors.error }]}>
+                {goalError}
+              </Text>
+            )}
           </ScrollView>
         </SafeAreaView>
       </Modal>
@@ -480,6 +577,7 @@ const styles = StyleSheet.create({
     paddingVertical: 4,
     marginRight: 6,
     borderRadius: 12,
+    minHeight: 44,
   },
   filterText: {
     fontSize: 12,
@@ -502,6 +600,7 @@ const styles = StyleSheet.create({
     paddingVertical: 5,
     marginRight: 6,
     borderRadius: 12,
+    minHeight: 44,
   },
   activityFilterIcon: {
     fontSize: 14,
@@ -605,11 +704,15 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   predictionSection: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
     paddingTop: 12,
     borderTopWidth: 1,
     marginBottom: 12,
+  },
+  predictionHeader: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'flex-start',
+    gap: 8,
   },
   predictionLabel: {
     fontSize: 12,
@@ -628,10 +731,57 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 6,
     marginLeft: 8,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   actionButtonText: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  predictionDate: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginTop: 2,
+  },
+  predictionCapacity: {
+    fontSize: 13,
+    fontWeight: '600',
+    marginTop: 10,
+  },
+  predictionReason: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  confidenceBadge: {
+    paddingHorizontal: 8,
+    paddingVertical: 4,
+    borderRadius: 999,
+  },
+  confidenceText: {
+    fontSize: 11,
+    fontWeight: '600',
+    textTransform: 'capitalize',
+  },
+  forecastNotice: {
+    marginHorizontal: 16,
+    marginBottom: 12,
+    padding: 12,
+    borderRadius: 10,
+  },
+  forecastNoticeTitle: {
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  forecastNoticeText: {
+    fontSize: 12,
+    lineHeight: 17,
+    marginTop: 4,
+  },
+  formError: {
+    marginTop: 16,
+    fontSize: 14,
+    lineHeight: 20,
   },
   emptyState: {
     alignItems: 'center',

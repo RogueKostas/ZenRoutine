@@ -8,9 +8,10 @@ import { formatDuration } from '../../core/utils/time';
 interface ActiveTimerProps {
   onPress?: () => void;
   compact?: boolean;
+  onStopped?: (entryId: string) => void;
 }
 
-export function ActiveTimer({ onPress, compact = false }: ActiveTimerProps) {
+export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimerProps) {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const { stopTracking } = useAppStore();
@@ -63,8 +64,9 @@ export function ActiveTimer({ onPress, compact = false }: ActiveTimerProps) {
   const handleStop = useCallback(() => {
     if (activeTracking) {
       stopTracking(activeTracking.id);
+      onStopped?.(activeTracking.id);
     }
-  }, [activeTracking, stopTracking]);
+  }, [activeTracking, onStopped, stopTracking]);
 
   if (!activeTracking) {
     return null;
@@ -92,10 +94,9 @@ export function ActiveTimer({ onPress, compact = false }: ActiveTimerProps) {
   }
 
   return (
-    <TouchableOpacity
+    <View
       style={[styles.container, { borderLeftColor: activity?.color || colors.primary }]}
-      onPress={onPress}
-      activeOpacity={0.8}
+      accessibilityLabel={`Tracking ${activity?.name || 'activity'}, ${timeDisplay} elapsed`}
     >
       <View style={styles.header}>
         <View style={styles.recordingIndicator}>
@@ -125,12 +126,17 @@ export function ActiveTimer({ onPress, compact = false }: ActiveTimerProps) {
       </View>
 
       <View style={styles.actions}>
-        <TouchableOpacity style={styles.stopButton} onPress={handleStop}>
+        <TouchableOpacity
+          style={styles.stopButton}
+          onPress={handleStop}
+          accessibilityRole="button"
+          accessibilityLabel={`Stop tracking ${activity?.name || 'activity'}`}
+        >
           <View style={styles.stopIcon} />
           <Text style={styles.stopText}>Stop</Text>
         </TouchableOpacity>
       </View>
-    </TouchableOpacity>
+    </View>
   );
 }
 
@@ -335,6 +341,7 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     backgroundColor: colors.error + '15',
     borderRadius: borderRadius.md,
+    minHeight: 44,
   },
   stopIcon: {
     width: 12,

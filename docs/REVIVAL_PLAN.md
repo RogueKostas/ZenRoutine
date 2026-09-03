@@ -17,8 +17,8 @@ The engineering direction is clear enough to stabilize the application. Product 
 - The R0 baseline now has representative core/store tests and a GitHub Actions verification workflow. Linting, EAS configuration, and a release pipeline are not established yet.
 - Several screens and the single Zustand store are large enough that future changes will become harder to review.
 - Existing any and @ts-ignore escapes weaken the strict-TypeScript claim.
-- Export/import and license content are visible stubs.
-- The prediction model is intentionally simple and needs product validation before it should be presented as a trustworthy forecast.
+- Export/import are now functional through validated portable JSON; fake notification and license placeholders were removed during R2.
+- The prediction model now preserves shared-capacity constraints and explains its assumptions, but its priority weights and confidence thresholds still need product validation before release.
 - The dependency audit currently reports advisories, mostly through the older Expo/tooling tree. Do not force-fix them; address them through the staged Expo upgrade and reassess after each SDK step.
 
 ## Product decisions needed
@@ -52,7 +52,7 @@ Evidence recorded 2026-09-03:
 - Codex cloud is deliberately deferred because this ChatGPT account is actively connected to the separate `HyperKostas` work identity and currently offers no second GitHub-user connection. Do not replace or modify that connection while the work account remains active.
 - No Android emulator, iOS simulator, or attached physical device is available on this Windows host. The Expo Go server started successfully on the LAN, but physical-device behavior remains explicitly unverified and is still required before a distributable build or release claim.
 
-### R1 — Data correctness and safety
+### R1 — Data correctness and safety (local/web complete; native error-path smoke deferred)
 
 Acceptance:
 
@@ -61,7 +61,17 @@ Acceptance:
 - Date and time behavior is verified across local time zones, midnight, and overnight routine blocks.
 - Goal progress and tracking-entry updates have regression coverage.
 
-### R2 — Core loop quality
+Evidence recorded 2026-09-03:
+
+- Startup now uses explicit, externally observable Zustand hydration with rendering gated until storage is ready. A read or migration failure preserves the existing device data, presents retry/reset recovery, and cannot silently write defaults over it; first-launch defaults are durably persisted before the app is declared ready.
+- Persisted state is schema 4. Strict current-schema validation rejects malformed or relationally inconsistent data, while backward-compatible migrations repair legacy icons, priority/onboarding fields, invalid numeric values, dangling goal/routine-block references, timer pointers, and multiple open timers. Duplicate identifiers and invalid activity links are rejected.
+- Reset and backup import use durable-write-first semantics so a storage failure leaves the live state unchanged. The versioned Unicode-safe backup codec, migration path, failure recovery, and reset behavior have regression coverage; a visible user-facing import/export flow remains an R2 task.
+- Local calendar keys, week boundaries, half-open analytics clipping, overnight routine blocks, and DST weeks are covered deterministically. The suite also passes with the process timezone forced to `America/Los_Angeles` (54/54 tests).
+- Tracking creation, edits, reassignment, deletion, routine-block unlinking, and goal progress are reconciled atomically. Completion is idempotent, corrected progress can reopen an automatically completed goal, and linked activity relationships cannot be invalidated through public actions.
+- `npm run verify` passes on the SDK 57 stack: strict typecheck, 54 Vitest tests across six files, and production web export. A browser migration smoke loaded data created under SDK 54–57, wrote a schema-4 marker, reloaded it successfully, and produced no runtime errors.
+- Native AsyncStorage read/write failure behavior, storage pressure, suspend/resume, runtime timezone changes, and screen-reader behavior remain manually unverified because no native target is available. These are release gates, not blockers for the local R1 checkpoint.
+
+### R2 — Core loop quality (local/web complete; native accessibility smoke deferred)
 
 Acceptance:
 
@@ -70,13 +80,34 @@ Acceptance:
 - Oversized screens and store responsibilities are split only where doing so improves active work.
 - Visible placeholder actions are implemented or removed.
 
-### R3 — Forecast credibility
+Evidence recorded 2026-09-03:
+
+- Home now connects the plan directly to execution: current and upcoming scheduled blocks start tracking with their activity, goal, routine-block ID, and scheduled source intact. Previous-day overnight carryover is included after midnight and overnight occurrences are classified independently from same-day blocks.
+- Stopping a timer immediately surfaces the most recent saved session with activity, duration, linked goal, and a `Review week` handoff. Analytics opens on the planned-versus-tracked comparison so the loop has a visible payoff.
+- Quick Start remains available for unplanned work and now offers goal selection on Home. Timer/goal creation failures stay visible, invalid goal estimates are rejected without closing the form, and start/stop state changes have polite/assertive announcements where appropriate.
+- The active Home, Routine, Goals, Analytics, Settings, and shared-button paths now expose explicit roles, labels, selected/disabled/busy states, and 44-point minimum targets for the reviewed controls. Modal headings, initial text-input focus, Escape/back dismissal, and import error announcements are present; the per-second timer is intentionally not a live region.
+- Settings backup export/import now uses the R1 codec and durable import action. Users can share or copy JSON, paste a backup for validation, and see read/write/format errors before any live data is replaced. Fake notification switches and the license placeholder were removed; the inert routine dropdown and goal-card touch wrapper were also removed.
+- Browser interaction verified goal-linked start, stop, the recent-session review handoff, comparison analytics, populated export JSON, invalid-import rejection, and Escape dismissal. The accessibility tree exposed meaningful labels for the tested controls and no runtime errors occurred.
+- Independent post-change review returned GO after verifying the planned/overnight linkage, in-modal errors, touch targets, and semantics. Native VoiceOver/TalkBack ordering, Dynamic Type, physical targets, share sheet/paste keyboard, timer background/resume, and modal focus restoration remain release-time manual checks.
+
+### R3 — Forecast credibility (local/web complete; product calibration remains)
 
 Acceptance:
 
 - The allocation model handles multiple goals sharing an activity type without double-counting all available time.
 - Forecast assumptions and confidence are understandable to users.
 - Deterministic tests cover zero allocation, completed goals, sparse history, schedule changes, and competing goals.
+
+Evidence recorded 2026-09-03:
+
+- Forecasts now group active goals by activity so scheduled capacity is never counted in full for every goal. Goal-linked blocks remain dedicated; only unlinked activity time enters the shared pool, and capacity linked to inactive or other goals stays reserved.
+- The shared pool is allocated by the existing five priority levels (weights 5 through 1). An event-based deterministic forecast redistributes only shared capacity as goals finish, while dedicated blocks remain reserved for their linked goal.
+- Each result exposes total activity capacity, the goal's initial weekly allocation, dedicated and shared portions, capacity linked elsewhere, competition count, remaining work, completion horizon/date, distinct evidence days, confidence level, and a plain-language confidence reason.
+- Confidence describes evidence quality rather than probability. Only positive completed tracking on distinct days since the active routine's latest update counts; zero-allocation goals are always low confidence with no date, even when another goal has rich history.
+- Goals explains the model globally and per goal: current routine/priorities are assumed to continue, goal-linked time stays dedicated, and unlinked time is shared/reallocated. The UI distinguishes no schedule, reserved capacity, and genuine competition instead of presenting an unexplained date.
+- Eight focused forecast tests cover priority competition without double-counting, reallocation, equal priorities, completed/paused exclusion, dedicated and inactive-linked reservations, zero capacity, schedule changes, sparse/stale evidence, offset timestamps, and input-order stability. Together with existing engine coverage, the focused R3 gate passes 16/16 tests.
+- Browser smoke rendered the assumption panel, allocated/total weekly capacity, dedicated-versus-reserved explanations, no-capacity states, dates, and confidence reasons against migrated schema-4 data without runtime errors. Independent review returned GO after two correction rounds.
+- The weighting and confidence thresholds are explicit prototype assumptions, not validated behavioral science. R4 beta evidence should determine whether users expect priority weights, whether inactive-linked time should be lendable, and how much recent adherence is enough to raise confidence.
 
 ### R4 — Beta and learning loop
 
@@ -143,4 +174,4 @@ Cloud setup is optional and deferred while this ChatGPT account remains connecte
 
 ## Next ready slice
 
-Create a local checkpoint for the verified SDK 57 upgrade, then begin R1 with explicit persistence hydration and cold-start regression coverage. Keep the persisted storage key and schema backward-compatible, and add migration, reset/import/export, date/time, overnight-block, goal-progress, and tracking-entry tests before calling R1 complete.
+Review the local R1–R3 prototype and its documented native-device deferrals. If the direction is approved, authorize a local commit (and separately any push), then begin R4 with Android/iOS device smoke, EAS preview-build configuration, privacy documentation, and a small structured beta-learning loop. Use beta evidence to calibrate the forecast assumptions before expanding the product surface.

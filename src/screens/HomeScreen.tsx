@@ -1,11 +1,24 @@
-import React from 'react';
+import React, { useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-import { useActiveRoutine, useCurrentTracking, useActiveGoals, useActivityTypes } from '../store';
-import { formatDuration, getDayName, minutesToTimeString } from '../core/utils/time';
-import { ActiveTimer, QuickStartHorizontal } from '../components/tracking';
+import {
+  useActiveRoutine,
+  useCurrentTracking,
+  useActiveGoals,
+  useActivityTypes,
+  useGoals,
+  useTrackingEntries,
+  useAppStore,
+} from '../store';
+import {
+  formatDuration,
+  getDayName,
+  getTrackingEntryDurationMinutes,
+  minutesToTimeString,
+} from '../core/utils/time';
+import { ActiveTimer, QuickStart } from '../components/tracking';
 import type { TabScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
@@ -13,17 +26,55 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const activeRoutine = useActiveRoutine();
   const activeTracking = useCurrentTracking();
   const activeGoals = useActiveGoals();
+  const goals = useGoals();
   const activityTypes = useActivityTypes();
+  const trackingEntries = useTrackingEntries();
+  const startTracking = useAppStore((state) => state.startTracking);
+  const [trackingStatus, setTrackingStatus] = useState('');
 
   const today = new Date();
   const dayOfWeek = today.getDay();
-  const todayBlocks = activeRoutine?.blocks.filter((b) => b.dayOfWeek === dayOfWeek) || [];
+  const currentMinutes = today.getHours() * 60 + today.getMinutes();
+  const previousDay = (dayOfWeek + 6) % 7;
+  const todayBlocks = activeRoutine?.blocks.filter((block) =>
+    block.dayOfWeek === dayOfWeek ||
+    (
+      block.dayOfWeek === previousDay &&
+      block.endMinutes <= block.startMinutes &&
+      currentMinutes < block.endMinutes
+    )
+  ) || [];
 
   // Sort blocks by start time
-  const sortedBlocks = [...todayBlocks].sort((a, b) => a.startMinutes - b.startMinutes);
+  const sortedBlocks = [...todayBlocks].sort((left, right) => {
+    const leftStart = left.dayOfWeek === previousDay ? left.startMinutes - 1440 : left.startMinutes;
+    const rightStart = right.dayOfWeek === previousDay ? right.startMinutes - 1440 : right.startMinutes;
+    return leftStart - rightStart;
+  });
+  const recentEntry = trackingEntries
+    .filter((entry) => entry.endTime)
+    .sort((left, right) => right.endTime!.localeCompare(left.endTime!))[0];
+  const recentActivity = recentEntry
+    ? activityTypes.find((activity) => activity.id === recentEntry.activityTypeId)
+    : undefined;
+  const recentGoal = recentEntry?.goalId
+    ? goals.find((goal) => goal.id === recentEntry.goalId)
+    : undefined;
 
-  // Get current time in minutes for highlighting current/upcoming blocks
-  const currentMinutes = today.getHours() * 60 + today.getMinutes();
+  const startScheduledBlock = (block: NonNullable<typeof activeRoutine>['blocks'][number]) => {
+    const activity = activityTypes.find((candidate) => candidate.id === block.activityTypeId);
+    const entryId = startTracking({
+      activityTypeId: block.activityTypeId,
+      goalId: block.goalId,
+      routineBlockId: block.id,
+      source: 'scheduled',
+    });
+    setTrackingStatus(
+      entryId
+        ? `Started tracking ${activity?.name ?? 'scheduled activity'}.`
+        : 'Unable to start tracking. Check that no other timer is running.'
+    );
+  };
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
@@ -38,11 +89,17 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
         {/* Active Tracking Display */}
         {activeTracking ? (
           <View style={styles.trackingSection}>
-            <ActiveTimer />
+            <ActiveTimer
+              onStopped={() => setTrackingStatus('Tracking stopped and saved. You can review it below.')}
+            />
           </View>
         ) : (
-          <QuickStartHorizontal />
+          <QuickStart maxActivities={6} />
         )}
+
+        <Text accessibilityLiveRegion="polite" style={styles.srStatus}>
+          {trackingStatus}
+        </Text>
 
         {/* Today's Schedule */}
         <View style={styles.section}>
@@ -54,11 +111,18 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                 const duration = block.endMinutes - block.startMinutes;
                 const adjustedDuration = duration > 0 ? duration : duration + 1440;
 
-                // Determine if block is past, current, or upcoming
-                const isPast = block.endMinutes < currentMinutes;
-                const isCurrent = block.startMinutes <= currentMinutes && block.endMinutes > currentMinutes;
+                // Determine if this occurrence is past, current, or upcoming.
+                const isCarryover = block.dayOfWeek === previousDay;
+                const isOvernight = block.endMinutes <= block.startMinutes;
+                const isPast = !isCarryover && !isOvernight && block.endMinutes <= currentMinutes;
+                const isCurrent = isCarryover || (
+                  block.startMinutes <= currentMinutes &&
+                  (isOvernight || currentMinutes < block.endMinutes)
+                );
                 const isNext = !isPast && !isCurrent &&
-                  sortedBlocks.find((b) => b.startMinutes > currentMinutes)?.id === block.id;
+                  sortedBlocks.find((candidate) =>
+                    candidate.dayOfWeek === dayOfWeek && candidate.startMinutes > currentMinutes
+                  )?.id === block.id;
 
                 return (
                   <View
@@ -92,9 +156,21 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                         {activity?.icon} {activity?.name || 'Unknown'}
                       </Text>
                     </View>
-                    <Text style={[styles.scheduleDuration, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
-                      {formatDuration(adjustedDuration)}
-                    </Text>
+                    <View style={styles.scheduleActions}>
+                      <Text style={[styles.scheduleDuration, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
+                        {formatDuration(adjustedDuration)}
+                      </Text>
+                      {!activeTracking && !isPast && (
+                        <TouchableOpacity
+                          style={[styles.startBlockButton, { backgroundColor: colors.primary }]}
+                          onPress={() => startScheduledBlock(block)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Start ${activity?.name ?? 'scheduled activity'} from ${minutesToTimeString(block.startMinutes)} to ${minutesToTimeString(block.endMinutes)}`}
+                        >
+                          <Text style={styles.startBlockButtonText}>Start</Text>
+                        </TouchableOpacity>
+                      )}
+                    </View>
                   </View>
                 );
               })}
@@ -106,6 +182,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
               <TouchableOpacity
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => navigation.navigate('Routine')}
+                accessibilityRole="button"
+                accessibilityLabel="Set up routine"
               >
                 <Text style={styles.emptyButtonText}>Set up routine</Text>
               </TouchableOpacity>
@@ -113,11 +191,44 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
           )}
         </View>
 
+        {!activeTracking && recentEntry && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.text }]}>Recently Tracked</Text>
+            <View style={[styles.recentCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.recentSummary}>
+                <Text style={styles.recentIcon}>{recentActivity?.icon ?? '✓'}</Text>
+                <View style={styles.recentDetails}>
+                  <Text style={[styles.recentName, { color: colors.text }]}>
+                    {recentActivity?.name ?? 'Activity'}
+                  </Text>
+                  <Text style={[styles.recentMeta, { color: colors.textSecondary }]}>
+                    {formatDuration(getTrackingEntryDurationMinutes(recentEntry))}
+                    {recentGoal ? ` · ${recentGoal.name}` : ''}
+                  </Text>
+                </View>
+              </View>
+              <TouchableOpacity
+                style={[styles.reviewButton, { borderColor: colors.primary }]}
+                onPress={() => navigation.navigate('Analytics')}
+                accessibilityRole="button"
+                accessibilityLabel="Review tracked time this week"
+              >
+                <Text style={[styles.reviewButtonText, { color: colors.primary }]}>Review week</Text>
+              </TouchableOpacity>
+            </View>
+          </View>
+        )}
+
         {/* Active Goals */}
         <View style={styles.section}>
           <View style={styles.sectionHeader}>
             <Text style={[styles.sectionTitleInline, { color: colors.text }]}>Active Goals</Text>
-            <TouchableOpacity onPress={() => navigation.navigate('Goals')}>
+            <TouchableOpacity
+              style={styles.seeAllButton}
+              onPress={() => navigation.navigate('Goals')}
+              accessibilityRole="button"
+              accessibilityLabel="See all goals"
+            >
               <Text style={[styles.seeAll, { color: colors.primary }]}>See all</Text>
             </TouchableOpacity>
           </View>
@@ -159,6 +270,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
               <TouchableOpacity
                 style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                 onPress={() => navigation.navigate('Goals')}
+                accessibilityRole="button"
+                accessibilityLabel="Create a goal"
               >
                 <Text style={styles.emptyButtonText}>Create a goal</Text>
               </TouchableOpacity>
@@ -173,6 +286,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Routine')}
+              accessibilityRole="button"
+              accessibilityLabel="Edit routine"
             >
               <Text style={styles.quickActionIcon}>📅</Text>
               <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>Edit Routine</Text>
@@ -180,6 +295,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Goals')}
+              accessibilityRole="button"
+              accessibilityLabel="Add goal"
             >
               <Text style={styles.quickActionIcon}>🎯</Text>
               <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>Add Goal</Text>
@@ -187,6 +304,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             <TouchableOpacity
               style={[styles.quickAction, { backgroundColor: colors.surface, borderColor: colors.border }]}
               onPress={() => navigation.navigate('Analytics')}
+              accessibilityRole="button"
+              accessibilityLabel="View analytics"
             >
               <Text style={styles.quickActionIcon}>📊</Text>
               <Text style={[styles.quickActionText, { color: colors.textSecondary }]}>View Stats</Text>
@@ -229,6 +348,12 @@ const styles = StyleSheet.create({
   trackingSection: {
     paddingHorizontal: spacing.lg,
     marginBottom: spacing.md,
+  },
+  srStatus: {
+    position: 'absolute',
+    width: 1,
+    height: 1,
+    opacity: 0,
   },
   section: {
     marginBottom: spacing.lg,
@@ -312,6 +437,68 @@ const styles = StyleSheet.create({
   },
   scheduleDuration: {
     fontSize: 14,
+  },
+  seeAllButton: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  scheduleActions: {
+    alignItems: 'flex-end',
+    gap: spacing.xs,
+  },
+  startBlockButton: {
+    minHeight: 44,
+    minWidth: 64,
+    paddingHorizontal: spacing.md,
+    borderRadius: borderRadius.md,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  startBlockButtonText: {
+    color: '#fff',
+    fontSize: 14,
+    fontWeight: '700',
+  },
+  recentCard: {
+    marginHorizontal: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: spacing.md,
+  },
+  recentSummary: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+  },
+  recentIcon: {
+    fontSize: 28,
+    marginRight: spacing.sm,
+  },
+  recentDetails: {
+    flex: 1,
+  },
+  recentName: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  recentMeta: {
+    marginTop: 2,
+    fontSize: 13,
+  },
+  reviewButton: {
+    minHeight: 44,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.md,
+  },
+  reviewButtonText: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   goalsList: {
     paddingHorizontal: spacing.lg,

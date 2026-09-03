@@ -4,27 +4,19 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useActiveRoutine, useActivityTypes, useTrackingEntries } from '../store';
 import { getRoutineBreakdown, getTrackedBreakdown, MINUTES_IN_WEEK } from '../core/engine/analytics';
-import { formatDuration } from '../core/utils/time';
+import { formatDuration, getLocalWeekStartDateKey } from '../core/utils/time';
 import type { TabScreenProps } from '../navigation/types';
 
 type ViewMode = 'planned' | 'tracked' | 'comparison';
 
 export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
   const { colors } = useTheme();
-  const [viewMode, setViewMode] = useState<ViewMode>('planned');
+  const [viewMode, setViewMode] = useState<ViewMode>('comparison');
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
   const trackingEntries = useTrackingEntries();
 
-  // Get start of current week (Sunday)
-  const weekStart = useMemo(() => {
-    const now = new Date();
-    const day = now.getDay();
-    const diff = now.getDate() - day;
-    const start = new Date(now.setDate(diff));
-    start.setHours(0, 0, 0, 0);
-    return start.toISOString().split('T')[0];
-  }, []);
+  const weekStart = getLocalWeekStartDateKey();
 
   const plannedBreakdown = useMemo(() => {
     if (!activeRoutine) return [];
@@ -172,6 +164,8 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
             // @ts-ignore - Calendar screen exists in RootStack
             navigation.navigate('Calendar');
           }}
+          accessibilityRole="button"
+          accessibilityLabel="Open tracking calendar"
         >
           <Text style={styles.calendarButtonText}>📅 Calendar</Text>
         </TouchableOpacity>
@@ -187,6 +181,9 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
               viewMode === mode && [styles.modeButtonActive, { backgroundColor: colors.surface }],
             ]}
             onPress={() => setViewMode(mode)}
+            accessibilityRole="tab"
+            accessibilityLabel={`${mode} analytics`}
+            accessibilityState={{ selected: viewMode === mode }}
           >
             <Text style={[
               styles.modeText,
@@ -315,6 +312,8 @@ const styles = StyleSheet.create({
     paddingHorizontal: 12,
     paddingVertical: 8,
     borderRadius: 8,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   calendarButtonText: {
     color: '#fff',
@@ -331,6 +330,7 @@ const styles = StyleSheet.create({
   modeButton: {
     flex: 1,
     paddingVertical: 8,
+    minHeight: 44,
     alignItems: 'center',
     borderRadius: 6,
   },
