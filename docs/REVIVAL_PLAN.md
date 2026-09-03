@@ -43,6 +43,12 @@ Acceptance:
 - A minimal automated test setup covers representative core and store behavior.
 - The app receives a manual smoke pass on at least one mobile platform.
 
+Evidence recorded 2026-09-03:
+
+- A clean `npm ci` and `EXPO_NO_TELEMETRY=1 npm run verify` pass locally on Node 24.13.0: strict typecheck, 11 Vitest core/store tests, and a 695-module web export.
+- The repository now defines the same `npm run verify` gate for GitHub Actions on pinned Node 22.13.0; the first remote run is still pending.
+- Personal Codex cloud canary and physical-device Expo Go smoke evidence are still pending and must not be inferred from the web build.
+
 ### R1 — Data correctness and safety
 
 Acceptance:

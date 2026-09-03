@@ -17,6 +17,10 @@ ZenRoutine is an offline-first Expo application for planning a weekly routine, t
 - Read docs/REVIVAL_PLAN.md before beginning roadmap or multi-step revival work.
 - Use the repository $revival-loop skill for upgrades, feature slices, and other multi-step work.
 - For nontrivial tasks with independent investigation or review lanes, use bounded Codex subagents as described by $revival-loop; keep overlapping edits serialized through the main agent.
+- Make resumable work cold-startable with a short task contract: Why, Deliver, Gates, Do not, and Done means.
+- Use the smallest useful coordination tier. Prove the environment and instructions with one bounded canary before adding more agents.
+- Require agent reports to name examined files or behaviors, give command or observation evidence, list actionable findings, and include a Not done/unverified section.
+- Keep scheduled or heartbeat passes idempotent: inspect current state first, avoid duplicating finished work, and remain quiet when nothing actionable changed. A schedule never grants permission for external mutations.
 - Inspect the current git status before editing and preserve unrelated user changes.
 - Do not commit, push, open a pull request, deploy, or create external services unless the user asks.
 
@@ -27,7 +31,7 @@ ZenRoutine is an offline-first Expo application for planning a weekly routine, t
 - Run npm run typecheck for every TypeScript change.
 - Run npm run build:web when changing navigation, screens, shared UI, Expo configuration, or dependencies.
 - Run npm run verify before calling a code-changing milestone complete.
-- Automated tests are not established yet. Until the baseline milestone adds them, explicitly report device behaviors that remain manually unverified.
+- Run `npm test` for the automated core/store suite. Explicitly report device behaviors that remain manually unverified.
 
 ## Quality boundaries
 

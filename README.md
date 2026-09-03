@@ -6,7 +6,7 @@ A cross-platform time management app that helps you design weekly routines, trac
 
 ### Prerequisites
 - Node.js 22.13+
-- npm or yarn
+- npm
 - Expo Go app on your mobile device (for testing)
 
 ### Installation
@@ -16,16 +16,16 @@ git clone https://github.com/RogueKostas/ZenRoutine.git
 cd ZenRoutine
 
 # Install dependencies
-npm install
+npm ci
 
 # Start development server
-npx expo start
+npm start
 ```
 
 ### Testing on Device
 
 1. Install Expo Go on your iOS or Android device
-2. Run `npx expo start`
+2. Run `npm start`
 3. Scan the QR code with your device
 
 ## Project Structure
@@ -77,8 +77,8 @@ eas build --platform ios
 # Build for Android
 eas build --platform android
 
-# Build for web
-npx expo export:web
+# Export the web build
+npm run build:web
 ```
 
 ## License
