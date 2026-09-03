@@ -367,7 +367,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               keyboardType="numeric"
               placeholderTextColor={colors.textMuted}
             />
-            {newGoalMinutes && (
+            {Boolean(newGoalMinutes) && (
               <Text style={[styles.inputHint, { color: colors.primary }]}>
                 = {formatDuration(parseInt(newGoalMinutes, 10) || 0)}
               </Text>
