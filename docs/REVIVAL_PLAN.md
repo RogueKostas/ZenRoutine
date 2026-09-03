@@ -118,6 +118,17 @@ Evidence recorded 2026-09-03:
 - Development logs retain non-blocking web deprecation warnings for legacy shadow props and `pointerEvents`; address those during R2 UI/accessibility work. The dependency audit reports 24 advisories (1 low, 19 moderate, 3 high, 1 critical); continue through SDK 57 without a forced audit rewrite.
 - SDK 56 raises the iOS minimum to 16.4 and requires Xcode 26.4+. Native compilation, splash appearance, safe-area/tab-bar behavior, navigation transitions, gestures, animations, and suspend/resume remain deferred until an appropriate device or build host is available.
 
+### SDK 57 — local/web complete; native smoke deferred
+
+Evidence recorded 2026-09-03:
+
+- Upgraded through Expo's supported installer to Expo 57.0.19 and React Native 0.86.3, exceeding the Expo 57.0.17 floor that includes both SDK 56 Hermes regression fixes. React and React DOM remain 19.2.3, TypeScript remains 6.0.3, and Node 22.13 remains the supported repository runtime.
+- A clean `npm ci`, `npx expo install --check`, `npx expo-doctor@latest`, `npx expo config --type public`, `npm ls --depth=0`, and `EXPO_NO_TELEMETRY=1 npm run verify` all pass. Expo Doctor reports 21/21 checks, and the verification gate passes strict typecheck, all 11 core/store tests, and the production web export.
+- Browser smoke preserved data created under SDK 54, 55, and 56; created an SDK 57 goal; started/stopped a timer; rendered analytics; and preserved the new goal after reload. Development logs showed the already-recorded web deprecation warnings but no runtime errors.
+- The dependency audit reports 23 advisories (1 low, 19 moderate, 2 high, 1 critical), down from 32 at the start of the upgrade path. Do not force-fix the remaining transitive tooling advisories; review them individually before release and continue removing them through supported dependency updates.
+- Independent compatibility scanning found no React Native 0.86 source blocker. Native-device checks are still required for tab-bar and bottom-sheet safe-area insets, status-bar/theme consistency, splash appearance, navigation/modal transitions, gestures, animations, keyboard behavior, persistence, and timer suspend/resume.
+- SDK 57 retains Android 7+/API 36 and iOS 16.4+/Xcode 26.4 native requirements. The SDK 54→57 stack upgrade is complete locally; SDK 57 is the maintained target for R1–R3 work.
+
 ## Cloud environment recipe
 
 The repository needs no secrets for its current offline-first feature set.
@@ -132,4 +143,4 @@ Cloud setup is optional and deferred while this ChatGPT account remains connecte
 
 ## Next ready slice
 
-Create a local checkpoint for the verified SDK 56 bridge, then upgrade Expo from SDK 56 to 57. Use at least Expo 57.0.17 and React Native 0.86.3 to clear the known Hermes regression, then repeat the clean install, compatibility checks, full verification gate, and browser persistence smoke. Keep native-device behavior explicitly deferred until a device or emulator is available.
+Create a local checkpoint for the verified SDK 57 upgrade, then begin R1 with explicit persistence hydration and cold-start regression coverage. Keep the persisted storage key and schema backward-compatible, and add migration, reset/import/export, date/time, overnight-block, goal-progress, and tracking-entry tests before calling R1 complete.
