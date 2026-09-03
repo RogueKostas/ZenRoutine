@@ -4,6 +4,8 @@ A cross-platform time management app that helps you design weekly routines, trac
 
 **Web beta:** https://zenroutine-web.onrender.com
 
+Reviewers should use the [prototype review guide](docs/reviews/PROTOTYPE_REVIEW_GUIDE.md) to separate product-direction feedback, interaction friction, and known beta limitations.
+
 ## Development Setup
 
 ### Prerequisites
