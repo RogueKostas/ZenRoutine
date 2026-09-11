@@ -157,3 +157,73 @@ immediately after the merge.
   branch; the host had no JS toolchain at all; the cloud sandbox cannot run the gate
 - corrected: the typescript ~6.0.3 claim (above)
 - last successful machine contact: 2026-09-11 18:22Z, bridge job zr-gate-2, exit 0
+
+---
+
+## Pass 2 - 2026-09-11 23:00-23:15Z
+
+### Landed
+Nothing. PRs #2 and #16 were merged in pass 1 at the director's explicit authorisation
+("you are authorised to do those merges and continue the work"), giving origin/main = 261c592.
+The gate had already been run by the orchestrator on the merged tree at 1fa3f45 - typecheck 0,
+62 tests, web export 0.
+
+### Launched
+Three lanes from 261c592, backend claude, worktrees under C:/CoworkBridge/lanes:
+- f1-hydration        -> issue #3 (F1)
+- f5-confidence-scope -> issue #7 (F5)
+- f6-hermes-probe     -> issue #8 (F6), measure-and-report, forbidden from fixing
+
+Collision plan: #4 and #5 wait for f1 (same files); #6 waits for f5 (same file); #9, #10, #13,
+#14, #12 follow.
+
+### Learned - three dispatch failures, all the orchestrator's
+
+1. `lane-run.ps1` resolved `claude` via Get-Command, which returns `claude.ps1`. The generated
+   `run.cmd` cannot execute a .ps1, so the lane died with zero bytes of output and an EMPTY
+   claude.err - no error anywhere. Fixed by pinning config `claude.bin` to the full path of
+   `claude.cmd`.
+2. An earlier one-line canary set `$env:CLAUDE_CODE_MAX_OUTPUT_TOKENS='256'`. The windows-bridge
+   worker runspaces PERSIST environment variables between jobs, so all three lanes inherited it
+   and died mid-work with "response exceeded the 256 output token maximum" after 14 and 9 turns.
+   Fixed by adding `Remove-Item Env:CLAUDE_CODE_MAX_OUTPUT_TOKENS` to C:/CoworkBridge/tools/env.ps1,
+   which every bridge command dot-sources.
+3. THE EXPENSIVE ONE. `lane-run.ps1` writes only a DENY list into the worktree's
+   `.claude/settings.local.json`. In a non-interactive `claude -p` session there is nobody to
+   prompt, so anything not explicitly allowed is refused - including `npm --version`. All three
+   lanes produced complete, well-reasoned implementations and ZERO evidence: every acceptance gate
+   came back MISSING, and `git add`/`git commit` were refused too, so the work sat uncommitted in
+   the worktrees. Cost: USD 12.12 across the three lanes (5.67 + 5.54 + 0.91), 192 turns.
+   Fixed by patching lane-run.ps1 to write an ALLOW list alongside the deny list: npm, npx, node,
+   WebFetch, WebSearch and the read-only plus add/commit git verbs. git is enumerated rather than
+   wildcarded so `git push` can never be allowed, and deny still takes precedence.
+   All three lanes re-dispatched into their PRESERVED worktrees with the resume preamble.
+
+Every one of the three lanes reported the block accurately, refused to self-grant a permission,
+and corrected the brief. That is the behaviour the briefs asked for and they delivered it.
+
+### Corrections the LANES made to MY briefs - all accepted
+
+- f5: the brief forbade touching `src/store/persistence.ts`. That was wrong and the lane said so:
+  `parseRoutine` builds an explicit object literal and `merge` runs `migratePersistedState` on
+  every hydration, so any new field on `Routine` is dropped on every reload. A per-activity
+  timestamp cannot be persisted without a parser change. The lane kept the touch to one call plus
+  a local helper, away from the hydration path f1 owns. MY BRIEF WAS WRONG.
+- f6: `babel-preset-expo` was NOT dropped from the dependency tree. `expo@57.0.19` declares it as
+  a direct dependency (`package-lock.json:2923-2926,3731`), so only the project config file and the
+  explicit `unstable_transformImportMeta: true` are gone. The real question is narrower than I
+  wrote it. MY ISSUE TEXT WAS WRONG - to be corrected on #8.
+- f6: the file was deleted at the SDK 56 step (`4a10b53`), not SDK 57, and its comment named
+  SDK 54/55, not SDK 54. MY ISSUE TEXT WAS WRONG on both counts.
+- f6 also rejected my third verdict option as worded: a device was never required for this
+  measurement. `npx expo export --platform android` needs no hardware. What it lacked was
+  permission to install dependencies. Correct, and accepted.
+
+### Not yet verified
+No lane has yet produced a single gate result. The suite count of 62 at 261c592 remains the last
+measured number. f1 projects 62 -> 67 and f5 projects 62 -> 69 if their tests pass; both are
+PROJECTIONS by the lanes, not measurements, and are labelled as such until a gate runs.
+
+### Last successful machine contact
+2026-09-11 23:16Z, bridge job zr-lanes-4, exit 0.
+
