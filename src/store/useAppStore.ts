@@ -241,6 +241,34 @@ function withCapacityChangedAt(
   return capacityChangedAt;
 }
 
+/**
+ * The block fields that can move an activity type's scheduled capacity.
+ *
+ * Editing any of these has to restamp `capacityChangedAt`; editing anything
+ * else -- or nothing at all -- must not, because a stamp resets every goal on
+ * that activity type to zero tracking evidence. Listed explicitly rather than
+ * derived from `RoutineBlock` so that a field added later is opted in
+ * deliberately instead of silently collapsing confidence.
+ *
+ * - `activityTypeId`: moves the whole block between capacity pools.
+ * - `dayOfWeek`, `startMinutes`, `endMinutes`: change when, and for how long,
+ *   the block is scheduled. (Weekly capacity today sums across the week, so
+ *   `dayOfWeek` alone does not change the minute total -- but it does change
+ *   the schedule the tracking evidence was gathered against, which is what
+ *   confidence measures.)
+ * - `goalId`: moves that time between the activity type's dedicated and shared
+ *   pools, which changes every competing goal's allocation.
+ *
+ * `id` is deliberately absent: it identifies the block, it is not capacity.
+ */
+const CAPACITY_RELEVANT_BLOCK_FIELDS: readonly (keyof RoutineBlock)[] = [
+  'activityTypeId',
+  'dayOfWeek',
+  'startMinutes',
+  'endMinutes',
+  'goalId',
+];
+
 function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   try {
     parseLocalDateKey(entry.date);
@@ -700,12 +728,24 @@ export const useAppStore = create<AppStore>()(
           return;
         }
 
+        const changedFields = (Object.keys(data) as (keyof RoutineBlock)[]).filter(
+          (field) => updatedBlock[field] !== block[field]
+        );
+        // Reopening a block and tapping Save without touching anything is the
+        // commonest edit there is, and BlockEditor sends the whole block every
+        // time. Writing nothing is the only way that save can leave forecasts
+        // alone -- not a new updatedAt, and above all not a capacity stamp.
+        if (changedFields.length === 0) return;
+
         const now = new Date().toISOString();
+        const capacityMoved = changedFields.some((field) =>
+          CAPACITY_RELEVANT_BLOCK_FIELDS.includes(field)
+        );
         // Both sides matter: the new activity type gains capacity and, when the
         // type or the goal link moved, the old one loses it.
         const capacityChangedAt = withCapacityChangedAt(
           routine,
-          [block.activityTypeId, updatedBlock.activityTypeId],
+          capacityMoved ? [block.activityTypeId, updatedBlock.activityTypeId] : [],
           now
         );
         set((state) => ({
