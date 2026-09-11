@@ -3,6 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppState, Goal } from '../../src/core/types';
 import { useAppStore } from '../../src/store/useAppStore';
+import {
+  CURRENT_SCHEMA_VERSION,
+  migratePersistedState,
+  selectPersistedAppState,
+} from '../../src/store/persistence';
 
 const storageKey = 'zenroutine-storage';
 const frozenTime = '2026-03-02T09:00:00.000Z';
@@ -89,6 +94,41 @@ describe('goal and tracking actions', () => {
       loggedMinutes: 90,
       status: 'active',
     });
+  });
+
+  it('clamps a backwards-clock stop instead of persisting an entry hydration cannot read', () => {
+    const activityTypeId = useAppStore.getState().activityTypes[0].id;
+    const goalId = useAppStore.getState().addGoal({
+      name: 'Session across an NTP resync',
+      description: 'The device clock moves backwards mid-session',
+      estimatedMinutes: 180,
+      activityTypeId,
+    });
+    const entryId = useAppStore.getState().startTracking({
+      activityTypeId,
+      goalId: goalId!,
+      source: 'manual',
+    });
+    expect(entryId).not.toBeNull();
+
+    // The clock jumps back an hour between start and stop.
+    vi.setSystemTime(new Date('2026-03-02T08:00:00.000Z'));
+    useAppStore.getState().stopTracking();
+
+    const entry = useAppStore.getState().trackingEntries[0];
+    expect(entry.id).toBe(entryId);
+    expect(entry.endTime).toBe(frozenTime);
+    expect(Date.parse(entry.endTime!)).toBeGreaterThanOrEqual(Date.parse(entry.startTime));
+    expect(useAppStore.getState().currentTrackingEntryId).toBeNull();
+    // A bad clock must neither invent nor erase goal progress.
+    expect(useAppStore.getState().goals[0].loggedMinutes).toBe(0);
+
+    // The property that matters: what stopTracking just wrote has to survive the strict path
+    // that every launch takes, or the next launch cannot open the app at all.
+    expect(() => migratePersistedState(
+      selectPersistedAppState(useAppStore.getState()),
+      CURRENT_SCHEMA_VERSION
+    )).not.toThrow();
   });
 });
 
