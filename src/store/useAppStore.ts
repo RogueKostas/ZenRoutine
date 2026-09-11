@@ -165,6 +165,36 @@ function blockReferencesAreValid(
   return goal?.activityTypeId === block.activityTypeId;
 }
 
+/**
+ * Record which activity types just had their scheduled capacity changed.
+ *
+ * Forecast confidence counts tracking evidence since the schedule that
+ * produced it changed. Stamping the whole routine made every goal's evidence
+ * collapse whenever any unrelated block moved, so capacity changes are
+ * recorded per activity type instead.
+ *
+ * `routine` must be the pre-mutation routine: activity types that predate this
+ * field are seeded with the routine's previous `updatedAt` — the cutoff they
+ * were already being read under — so that stamping one activity type does not
+ * push the others onto a fresh `updatedAt` through the fallback.
+ */
+function withCapacityChangedAt(
+  routine: Routine,
+  changedActivityTypeIds: Iterable<string>,
+  now: string
+): Record<string, string> {
+  const capacityChangedAt: Record<string, string> = { ...routine.capacityChangedAt };
+  for (const block of routine.blocks) {
+    if (capacityChangedAt[block.activityTypeId] === undefined) {
+      capacityChangedAt[block.activityTypeId] = routine.updatedAt;
+    }
+  }
+  for (const activityTypeId of changedActivityTypeIds) {
+    capacityChangedAt[activityTypeId] = now;
+  }
+  return capacityChangedAt;
+}
+
 function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   try {
     parseLocalDateKey(entry.date);
@@ -589,13 +619,20 @@ export const useAppStore = create<AppStore>()(
           return null;
         }
 
+        const now = new Date().toISOString();
+        const capacityChangedAt = withCapacityChangedAt(
+          routine,
+          [newBlock.activityTypeId],
+          now
+        );
         set((state) => ({
           routines: state.routines.map((r) =>
             r.id === routineId
               ? {
                   ...r,
                   blocks: [...r.blocks, newBlock],
-                  updatedAt: new Date().toISOString(),
+                  capacityChangedAt,
+                  updatedAt: now,
                 }
               : r
           ),
@@ -617,6 +654,14 @@ export const useAppStore = create<AppStore>()(
           return;
         }
 
+        const now = new Date().toISOString();
+        // Both sides matter: the new activity type gains capacity and, when the
+        // type or the goal link moved, the old one loses it.
+        const capacityChangedAt = withCapacityChangedAt(
+          routine,
+          [block.activityTypeId, updatedBlock.activityTypeId],
+          now
+        );
         set((state) => ({
           routines: state.routines.map((r) =>
             r.id === routineId
@@ -625,7 +670,8 @@ export const useAppStore = create<AppStore>()(
                   blocks: r.blocks.map((b) =>
                     b.id === blockId ? updatedBlock : b
                   ),
-                  updatedAt: new Date().toISOString(),
+                  capacityChangedAt,
+                  updatedAt: now,
                 }
               : r
           ),
@@ -634,17 +680,22 @@ export const useAppStore = create<AppStore>()(
 
       deleteRoutineBlock: (routineId, blockId) => {
         set((state) => {
-          const blockExists = state.routines.some(
-            (routine) => routine.id === routineId && routine.blocks.some((block) => block.id === blockId)
-          );
-          if (!blockExists) return state;
+          const targetRoutine = state.routines.find((routine) => routine.id === routineId);
+          const deletedBlock = targetRoutine?.blocks.find((block) => block.id === blockId);
+          if (!targetRoutine || !deletedBlock) return state;
           const now = new Date().toISOString();
+          const capacityChangedAt = withCapacityChangedAt(
+            targetRoutine,
+            [deletedBlock.activityTypeId],
+            now
+          );
           return {
             routines: state.routines.map((routine) =>
               routine.id === routineId
                 ? {
                     ...routine,
                     blocks: routine.blocks.filter((block) => block.id !== blockId),
+                    capacityChangedAt,
                     updatedAt: now,
                   }
                 : routine
@@ -693,6 +744,16 @@ export const useAppStore = create<AppStore>()(
           );
           if (!isValid) return state;
           const now = new Date().toISOString();
+          const capacityChangedAt = withCapacityChangedAt(
+            routine,
+            [
+              ...routine.blocks
+                .filter((block) => removedBlockIds.has(block.id))
+                .map((block) => block.activityTypeId),
+              ...newBlocks.map((block) => block.activityTypeId),
+            ],
+            now
+          );
 
           return {
             routines: state.routines.map((r) =>
@@ -700,6 +761,7 @@ export const useAppStore = create<AppStore>()(
                 ? {
                     ...r,
                     blocks: candidateBlocks,
+                    capacityChangedAt,
                     updatedAt: now,
                   }
                 : r

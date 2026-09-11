@@ -109,6 +109,13 @@ Evidence recorded 2026-09-03:
 - Browser smoke rendered the assumption panel, allocated/total weekly capacity, dedicated-versus-reserved explanations, no-capacity states, dates, and confidence reasons against migrated schema-4 data without runtime errors. Independent review returned GO after two correction rounds.
 - The weighting and confidence thresholds are explicit prototype assumptions, not validated behavioral science. R4 beta evidence should determine whether users expect priority weights, whether inactive-linked time should be lendable, and how much recent adherence is enough to raise confidence.
 
+Correction recorded 2026-09-11 (issue #7):
+
+- Confidence counted evidence since the *whole routine's* `updatedAt`, so editing any block collapsed every goal's confidence — the common case for any routine with more than one activity type. Evidence is now counted since `Routine.capacityChangedAt[activityTypeId]`, an optional map the routine-block actions stamp for the activity types they actually change.
+- The activity type is the correct granularity, not the block: goals sharing an activity type draw on the same unlinked pool and inherit each other's reallocations, so a change to any of that type's capacity really can move all of their dates. Across activity types the forecasts are independent, which is exactly where the old blast radius was wrong.
+- Evidence window for routines saved before the field existed: `Routine.updatedAt`, unchanged from the behaviour they were written under. The block actions lazily seed the map for every activity type already present in the routine with that previous `updatedAt` before stamping the changed ones, so the first edit after migration does not collapse the untouched activity types through the fallback. A malformed persisted entry is dropped on hydration and falls back the same way rather than failing hydration.
+- Known remainder, not fixed here: `updateRoutine` (rename, activate) also bumps `updatedAt`, so a pre-migration routine that is renamed before any block is edited still collapses through the fallback. Once the map exists, routine-level edits no longer touch confidence.
+
 ### R4 — Beta and learning loop
 
 Acceptance:

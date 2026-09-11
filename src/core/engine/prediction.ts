@@ -49,11 +49,24 @@ function priorityWeight(goal: Goal): number {
   return 6 - goal.priority;
 }
 
+/**
+ * The point from which tracking evidence counts for one activity type.
+ *
+ * Goals sharing an activity type are coupled — they draw on the same unlinked
+ * pool and inherit each other's reallocations — so an activity type is the
+ * boundary at which a schedule change can genuinely move a forecast. Routines
+ * with no recorded per-activity change fall back to the whole-routine
+ * timestamp.
+ */
+export function getCapacityChangedAt(routine: Routine, activityTypeId: string): string {
+  return routine.capacityChangedAt?.[activityTypeId] ?? routine.updatedAt;
+}
+
 function getForecastEvidence(
   trackingHistory: TrackingEntry[] | undefined,
   activityTypeId: string,
   weeklyCapacity: number,
-  routineUpdatedAt: string
+  capacityChangedAt: string
 ): ForecastEvidence {
   if (weeklyCapacity <= 0) {
     return {
@@ -68,7 +81,7 @@ function getForecastEvidence(
       .filter((entry) =>
         entry.activityTypeId === activityTypeId &&
         Boolean(entry.endTime) &&
-        Date.parse(entry.endTime!) >= Date.parse(routineUpdatedAt) &&
+        Date.parse(entry.endTime!) >= Date.parse(capacityChangedAt) &&
         getTrackingEntryDurationMinutes(entry) > 0
       )
       .map((entry) => entry.date)
@@ -143,7 +156,7 @@ export function predictGoalCompletion(
     trackingHistory,
     goal.activityTypeId,
     availableWeeklyMinutes,
-    routine.updatedAt
+    getCapacityChangedAt(routine, goal.activityTypeId)
   );
   const weeksRemaining = availableWeeklyMinutes > 0
     ? remainingMinutes / availableWeeklyMinutes
@@ -208,7 +221,12 @@ function predictActivityGoals(
       competingGoalCount: goals.length - 1,
       remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
       weeksRemaining: null,
-      ...getForecastEvidence(trackingHistory, activityTypeId, 0, routine.updatedAt),
+      ...getForecastEvidence(
+        trackingHistory,
+        activityTypeId,
+        0,
+        getCapacityChangedAt(routine, activityTypeId)
+      ),
     }));
   }
 
@@ -270,7 +288,7 @@ function predictActivityGoals(
         trackingHistory,
         activityTypeId,
         weeklyMinutesAllocated,
-        routine.updatedAt
+        getCapacityChangedAt(routine, activityTypeId)
       ),
     };
   });
