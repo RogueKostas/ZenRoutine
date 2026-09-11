@@ -1,0 +1,47 @@
+{
+  "repoRoot": "C:/RogueKostas/ZenRoutine",
+  "lanesRoot": "C:/CoworkBridge/lanes",
+  "baseBranch": "main",
+  "transport": "local",
+  "backend": "claude",
+
+  "expectedGhLogin": "RogueKostas",
+  "expectedGitEmail": "kostas@roguesun.com",
+
+  "cadenceMinutes": 15,
+  "idleCadenceMinutes": 30,
+  "laneTimeoutMin": 45,
+  "maxConcurrentLanes": 3,
+
+  "briefsDir": ".orchestrator/briefs",
+  "stateFile": ".orchestrator/ORCHESTRATOR-STATE.md",
+
+  "claude": {
+    "bin": "claude",
+    "extraArgs": ["--output-format", "stream-json", "--verbose", "--permission-mode", "acceptEdits"]
+  },
+
+  "codex": {
+    "bin": "codex",
+    "extraArgs": ["exec", "--json", "--sandbox", "workspace-write"],
+    "events": {
+      "turnCompleted": "turn.completed",
+      "turnFailed": "turn.failed",
+      "itemCompleted": "item.completed",
+      "agentMessageItemType": "agent_message",
+      "probedVersion": null,
+      "probedAt": null
+    }
+  },
+
+  "nodePath": "C:/CoworkBridge/tools/node-v22.23.2-win-x64",
+
+  "forbidden": [
+    "git push", "gh auth", "git stash", "--force ", "--skip-",
+    "npm publish", "git reset --hard",
+    "npm audit fix", "expo prebuild", "eas build", "eas submit",
+    "npx expo login", "render"
+  ],
+
+  "trackedGeneratedFiles": ["package-lock.json"]
+}
