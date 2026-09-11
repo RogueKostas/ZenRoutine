@@ -27,12 +27,16 @@ import {
 import {
   APP_STORAGE_KEY,
   CURRENT_SCHEMA_VERSION,
+  QUARANTINE_STORAGE_KEY,
+  appendQuarantineGeneration,
   createInitialState,
   decodeBackup,
   encodeBackup,
   migratePersistedState,
+  parseQuarantineArchive,
   selectPersistedAppState,
 } from './persistence';
+import type { QuarantineArchive, QuarantinedTrackingEntry } from './persistence';
 
 export type ImportResult =
   | { ok: true }
@@ -46,6 +50,48 @@ const hydrationListeners = new Set<() => void>();
 let hydrationSnapshot: HydrationSnapshot = { status: 'idle', error: null };
 let hydrationRun: Promise<void> | null = null;
 let hydrationFailure: unknown = null;
+
+// Reference-stable empty result. getQuarantinedTrackingEntries feeds useSyncExternalStore, which
+// treats a fresh [] on every read as a changed snapshot and re-renders forever.
+const NO_QUARANTINE: readonly QuarantinedTrackingEntry[] = [];
+let quarantinedTrackingEntries: readonly QuarantinedTrackingEntry[] = NO_QUARANTINE;
+// Shared sink for one hydration attempt. Both persist stages can drop records — `migrate` for a
+// blob stamped with an older schema version, `merge` for the strict re-read that always runs —
+// and the user should be told about all of them, not just the last stage to find one.
+let pendingQuarantine: QuarantinedTrackingEntry[] = [];
+
+/**
+ * Tracking entries the last hydration could not read and therefore left out of live state.
+ * Deliberately kept off HydrationSnapshot so the existing hydration contract is unchanged.
+ */
+export function getQuarantinedTrackingEntries(): readonly QuarantinedTrackingEntry[] {
+  return quarantinedTrackingEntries;
+}
+
+/**
+ * Drop the report after the state it described has been replaced wholesale (reset or import).
+ * The durable QUARANTINE_STORAGE_KEY copy is left alone — this clears the notice, not the data.
+ */
+function clearQuarantineReport(): void {
+  if (quarantinedTrackingEntries === NO_QUARANTINE) return;
+  quarantinedTrackingEntries = NO_QUARANTINE;
+  hydrationListeners.forEach((listener) => listener());
+}
+
+/**
+ * Read the quarantine side-car. A storage failure here yields an empty archive rather than
+ * throwing, so a launch that cannot read the side-car still opens; the cost is that the append
+ * below starts a fresh archive, which is the best available outcome when the old one is
+ * unreachable anyway.
+ */
+async function readQuarantineArchive(): Promise<QuarantineArchive> {
+  try {
+    return parseQuarantineArchive(await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY));
+  } catch (error) {
+    console.warn('ZenRoutine could not read the quarantine archive', error);
+    return parseQuarantineArchive(null);
+  }
+}
 
 function publishHydrationSnapshot(next: HydrationSnapshot): void {
   hydrationSnapshot = next;
@@ -834,9 +880,42 @@ export const useAppStore = create<AppStore>()(
         if (!entry || entry.endTime) return;
 
         const now = new Date().toISOString();
+
+        // Device clocks move backwards: an NTP resync, a manual correction, or a timezone/clock
+        // fix after reconnecting can all make `now` earlier than this entry's startTime. Writing
+        // endTime < startTime persists a record that the strict hydration path refuses to parse,
+        // which bricks the store on every subsequent launch (issue #3).
+        //
+        // Of the defensible answers — clamp, discard, or store flagged — this clamps to a
+        // zero-length entry, because:
+        //   * Discarding is the one outcome that cannot be undone. Offline-first, this device
+        //     holds the only copy of the user's history (docs/PRODUCT.md D6), and the session
+        //     really did happen.
+        //   * A zero-length entry contributes no minutes (getTrackingEntryDurationMinutes
+        //     returns 0), so a bad clock can never invent or erase goal progress.
+        //   * It survives the strict parse path unchanged, which is the whole point: that path
+        //     rejects endTime < startTime but accepts endTime === startTime, so the clamped
+        //     record loads on every future launch instead of blocking them.
+        //   * It is exactly what parseTrackingEntry's lenient repair already does with a
+        //     backwards-clock entry, so the two layers produce the same shape.
+        //   * The user can still correct the end time by hand afterwards.
+        // The timer stops either way: leaving the entry open because the clock misbehaved would
+        // strand the user in a session they cannot end.
+        //
+        // Note the one asymmetry with the siblings this mirrors. trackingEntryIsValid demands
+        // endTime > startTime, so addCompletedEntry and updateTrackingEntry would refuse a
+        // zero-length entry outright. stopTracking cannot refuse: its two choices are to write
+        // something or to leave the timer running forever. A clamped zero-length entry is
+        // therefore the one record shape stopTracking may produce that its siblings would reject,
+        // and it is deliberate. It is still readable by the parser, and it contributes nothing:
+        // getTrackingEntryDurationMinutes returns 0 for end <= start.
+        const startedAt = Date.parse(entry.startTime);
+        const endTime = Number.isFinite(startedAt) && Date.parse(now) < startedAt
+          ? entry.startTime
+          : now;
         const completedEntry: TrackingEntry = {
           ...entry,
-          endTime: now,
+          endTime,
           updatedAt: now,
         };
 
@@ -931,6 +1010,7 @@ export const useAppStore = create<AppStore>()(
         const nextState = createInitializedState();
         await persistSnapshot(nextState);
         set(nextState);
+        clearQuarantineReport();
       },
 
       initializeDefaults: () => {
@@ -967,6 +1047,7 @@ export const useAppStore = create<AppStore>()(
           };
         }
         set(imported);
+        clearQuarantineReport();
         return { ok: true };
       },
 
@@ -1073,16 +1154,26 @@ export const useAppStore = create<AppStore>()(
       version: CURRENT_SCHEMA_VERSION,
       skipHydration: true,
       partialize: selectPersistedAppState,
-      migrate: migratePersistedState,
+      migrate: (persistedState, version) =>
+        migratePersistedState(persistedState, version, { quarantine: pendingQuarantine }),
       merge: (persistedState, currentState) => {
         if (persistedState === undefined) return currentState;
-        return {
-          ...currentState,
-          ...migratePersistedState(persistedState, CURRENT_SCHEMA_VERSION),
-        };
+        // Every save stamps CURRENT_SCHEMA_VERSION, so this is always the strict path and the
+        // lenient repairs inside migratePersistedState never run here. Passing a quarantine sink
+        // is what keeps one bad tracking entry from making the app permanently unopenable.
+        const migrated = migratePersistedState(
+          persistedState,
+          CURRENT_SCHEMA_VERSION,
+          { quarantine: pendingQuarantine }
+        );
+        quarantinedTrackingEntries =
+          pendingQuarantine.length > 0 ? pendingQuarantine : NO_QUARANTINE;
+        return { ...currentState, ...migrated };
       },
       onRehydrateStorage: () => {
         hydrationFailure = null;
+        pendingQuarantine = [];
+        quarantinedTrackingEntries = NO_QUARANTINE;
         return (_state, error) => {
           hydrationFailure = error ?? null;
         };
@@ -1106,6 +1197,31 @@ export function initializeAppStore(options?: { force?: boolean }): Promise<void>
           ? hydrationFailure
           : new Error('ZenRoutine could not read its local data.');
       }
+      // Quarantined records are out of live state, so the very next store write would overwrite
+      // the only blob that still holds them. Copy them somewhere the store does not own, before
+      // anything below can trigger that write. A failure here must not re-brick hydration — the
+      // whole point of quarantining is that the app still opens — so it is reported in the
+      // session's in-memory report and nowhere else.
+      //
+      // This appends a generation rather than replacing the side-car. Overwriting would mean a
+      // second quarantine event destroys what the first one saved, and by then those records are
+      // already gone from the store's own blob — which is precisely the silent data loss this
+      // whole lane exists to stop.
+      const quarantined = getQuarantinedTrackingEntries();
+      if (quarantined.length > 0) {
+        try {
+          await AsyncStorage.setItem(
+            QUARANTINE_STORAGE_KEY,
+            JSON.stringify(appendQuarantineGeneration(
+              await readQuarantineArchive(),
+              quarantined
+            ))
+          );
+        } catch (error) {
+          console.warn('ZenRoutine could not save quarantined tracking entries', error);
+        }
+      }
+
       const current = selectPersistedAppState(useAppStore.getState());
       const initialized = ensureRequiredDefaults(current);
       if (initialized !== current) {

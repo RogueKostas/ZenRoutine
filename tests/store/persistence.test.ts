@@ -9,6 +9,7 @@ import {
   migratePersistedState,
   selectPersistedAppState,
 } from '../../src/store/persistence';
+import type { QuarantinedTrackingEntry } from '../../src/store/persistence';
 import {
   TEST_TIMESTAMP,
   makeActivityType,
@@ -147,6 +148,79 @@ describe('persisted-state migrations', () => {
       ...makeAppState(),
       trackingEntries: [makeTrackingEntry({ routineBlockId: 'missing-block' })],
     }, 4)).toThrow('routineBlockId');
+  });
+
+  it('quarantines an unreadable tracking entry only when a sink is supplied', () => {
+    const corrupt = makeTrackingEntry({
+      id: 'entry-corrupt',
+      endTime: '2026-03-02T08:00:00.000Z',
+    });
+    const state = makeAppState({
+      goals: [makeGoal()],
+      trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), corrupt],
+    });
+
+    // Without a sink the behaviour is unchanged: strict, all-or-nothing.
+    expect(() => migratePersistedState(state, CURRENT_SCHEMA_VERSION)).toThrow(
+      'endTime is before startTime'
+    );
+
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const migrated = migratePersistedState(state, CURRENT_SCHEMA_VERSION, { quarantine });
+
+    expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+    expect(migrated.goals.map((goal) => goal.id)).toEqual(['goal-focus']);
+    expect(quarantine).toEqual([{
+      index: 1,
+      id: 'entry-corrupt',
+      reason: 'Invalid tracking entry: endTime is before startTime',
+      record: corrupt,
+    }]);
+  });
+
+  it('still rejects blob-level corruption even with a quarantine sink', () => {
+    expect(() => migratePersistedState(
+      { ...makeAppState(), trackingEntries: 'nope' },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid trackingEntries');
+    expect(() => migratePersistedState(
+      { ...makeAppState(), goals: [makeGoal({ activityTypeId: 'missing-activity' })] },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid goals');
+  });
+
+  it('clears a dangling timer pointer when the open entry it names had an unreadable id', () => {
+    // The quarantined record cannot be matched against the pointer by id, because its own id is
+    // the field that failed to parse and it is quarantined as `id: null`. The pointer therefore
+    // has to be cleared by asking whether it still resolves, not by searching the dropped list.
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const migrated = migratePersistedState(
+      {
+        ...makeAppState(),
+        trackingEntries: [{ ...makeTrackingEntry({ endTime: undefined }), id: 99 }],
+        currentTrackingEntryId: 'entry-focus',
+      },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    );
+
+    expect(migrated.trackingEntries).toEqual([]);
+    expect(migrated.currentTrackingEntryId).toBeNull();
+    expect(quarantine).toEqual([
+      expect.objectContaining({ index: 0, id: null, reason: 'Invalid id: expected a string' }),
+    ]);
+  });
+
+  it('keeps the dangling-pointer check strict when nothing was quarantined', () => {
+    // A pointer that resolves to nothing with no bad record to blame is real corruption, and the
+    // quarantine sink being present must not soften that.
+    expect(() => migratePersistedState(
+      { ...makeAppState(), currentTrackingEntryId: 'entry-that-never-existed' },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid currentTrackingEntryId');
   });
 });
 

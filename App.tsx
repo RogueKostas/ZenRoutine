@@ -1,4 +1,4 @@
-import React, { useEffect, useSyncExternalStore } from 'react';
+import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
@@ -7,6 +7,7 @@ import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/
 import { RootNavigator } from './src/navigation';
 import {
   getHydrationSnapshot,
+  getQuarantinedTrackingEntries,
   initializeAppStore,
   resetAppStoreAfterHydrationError,
   subscribeHydration,
@@ -52,6 +53,12 @@ function AppContent() {
     getHydrationSnapshot,
     getHydrationSnapshot
   );
+  const quarantined = useSyncExternalStore(
+    subscribeHydration,
+    getQuarantinedTrackingEntries,
+    getQuarantinedTrackingEntries
+  );
+  const [quarantineDismissed, setQuarantineDismissed] = useState(false);
 
   useEffect(() => {
     void initializeAppStore();
@@ -133,8 +140,31 @@ function AppContent() {
     );
   }
 
+  // Hydration succeeded but left records behind. Say so rather than letting history go missing
+  // quietly — the raw records are kept on device under QUARANTINE_STORAGE_KEY.
+  const showQuarantineNotice = quarantined.length > 0 && !quarantineDismissed;
+
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
+      {showQuarantineNotice ? (
+        <View
+          accessibilityLiveRegion="polite"
+          style={[styles.noticeBanner, { backgroundColor: themeColors.surface }]}
+        >
+          <Text style={[styles.noticeText, { color: themeColors.text }]}>
+            {quarantined.length === 1
+              ? 'We couldn’t read 1 tracking entry, so it was set aside. Everything else loaded.'
+              : `We couldn’t read ${quarantined.length} tracking entries, so they were set aside. Everything else loaded.`}
+          </Text>
+          <Pressable
+            accessibilityRole="button"
+            onPress={() => setQuarantineDismissed(true)}
+            style={styles.noticeButton}
+          >
+            <Text style={[styles.noticeButtonText, { color: themeColors.primary }]}>Dismiss</Text>
+          </Pressable>
+        </View>
+      ) : null}
       <NavigationContainer theme={isDark ? DarkNavigationTheme : LightNavigationTheme}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <RootNavigator />
@@ -197,6 +227,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 20,
   },
   secondaryButtonText: {
+    fontSize: 15,
+    fontWeight: '600',
+  },
+  noticeBanner: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+    paddingHorizontal: 16,
+    paddingVertical: 12,
+  },
+  noticeText: {
+    flex: 1,
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  noticeButton: {
+    alignItems: 'center',
+    justifyContent: 'center',
+    minHeight: 44,
+    paddingHorizontal: 8,
+  },
+  noticeButtonText: {
     fontSize: 15,
     fontWeight: '600',
   },
