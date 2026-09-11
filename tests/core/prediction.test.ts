@@ -202,3 +202,108 @@ describe('shared-capacity forecasting', () => {
       .toEqual(Object.fromEntries(reversed.map((prediction) => [prediction.goalId, prediction])));
   });
 });
+
+describe('confidence evidence is scoped to the activity type whose capacity changed', () => {
+  const ACTIVITY = 'activity-focus';
+  const OTHER_ACTIVITY = 'activity-fitness';
+  const OLD_CHANGE = '2026-02-01T00:00:00.000Z';
+  const NEW_CHANGE = '2026-03-01T00:00:00.000Z';
+
+  /** Fourteen distinct completed days on ACTIVITY, all after OLD_CHANGE. */
+  function fourteenEvidenceDays() {
+    return Array.from({ length: 14 }, (_, index) => {
+      const day = String(index + 2).padStart(2, '0');
+      return makeTrackingEntry({
+        id: `evidence-${day}`,
+        date: `2026-02-${day}`,
+        startTime: `2026-02-${day}T09:00:00.000Z`,
+        endTime: `2026-02-${day}T10:00:00.000Z`,
+      });
+    });
+  }
+
+  function twoActivityRoutine(
+    capacityChangedAt: Record<string, string> | undefined,
+    updatedAt = OLD_CHANGE
+  ) {
+    return makeRoutine({
+      updatedAt,
+      capacityChangedAt,
+      blocks: [
+        makeRoutineBlock({ id: 'focus-block', endMinutes: 11 * 60 }),
+        makeRoutineBlock({
+          id: 'fitness-block',
+          startMinutes: 12 * 60,
+          endMinutes: 13 * 60,
+          activityTypeId: OTHER_ACTIVITY,
+        }),
+      ],
+    });
+  }
+
+  it('keeps evidence when a block of another activity type is edited', () => {
+    const goal = makeGoal();
+    const history = fourteenEvidenceDays();
+    const before = twoActivityRoutine({
+      [ACTIVITY]: OLD_CHANGE,
+      [OTHER_ACTIVITY]: OLD_CHANGE,
+    });
+    // What the store writes when only a fitness block moves: the routine's own
+    // updatedAt advances, but the focus activity's capacity did not change.
+    const afterUnrelatedEdit = {
+      ...before,
+      updatedAt: NEW_CHANGE,
+      capacityChangedAt: { ...before.capacityChangedAt, [OTHER_ACTIVITY]: NEW_CHANGE },
+    };
+
+    expect(predictGoalCompletion(goal, before, history)).toMatchObject({
+      confidenceLevel: 'high',
+      evidenceDays: 14,
+    });
+    expect(predictGoalCompletion(goal, afterUnrelatedEdit, history)).toMatchObject({
+      confidenceLevel: 'high',
+      evidenceDays: 14,
+    });
+    expect(predictAllGoals([goal], afterUnrelatedEdit, history)[0]).toMatchObject({
+      confidenceLevel: 'high',
+      evidenceDays: 14,
+    });
+  });
+
+  it('resets evidence when the capacity that feeds the goal changes', () => {
+    const goal = makeGoal();
+    const history = fourteenEvidenceDays();
+    const afterOwnEdit = twoActivityRoutine(
+      { [ACTIVITY]: NEW_CHANGE, [OTHER_ACTIVITY]: OLD_CHANGE },
+      NEW_CHANGE
+    );
+
+    expect(predictGoalCompletion(goal, afterOwnEdit, history)).toMatchObject({
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+      confidenceReason: 'No completed tracking days since this routine changed.',
+    });
+    expect(predictAllGoals([goal], afterOwnEdit, history)[0]).toMatchObject({
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+    });
+  });
+
+  it('falls back to the whole-routine timestamp when no capacity timestamps exist', () => {
+    const goal = makeGoal();
+    const history = fourteenEvidenceDays();
+    const preMigration = twoActivityRoutine(undefined);
+    expect(preMigration.capacityChangedAt).toBeUndefined();
+
+    expect(predictGoalCompletion(goal, preMigration, history)).toMatchObject({
+      confidenceLevel: 'high',
+      evidenceDays: 14,
+    });
+    expect(
+      predictGoalCompletion(goal, { ...preMigration, updatedAt: NEW_CHANGE }, history)
+    ).toMatchObject({
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+    });
+  });
+});

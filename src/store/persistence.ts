@@ -360,6 +360,32 @@ function parseRoutineBlock(value: unknown): RoutineBlock {
   };
 }
 
+/**
+ * Per-activity capacity timestamps are derived forecast metadata that the app
+ * writes for itself; they are never authored by the user and always have a
+ * defined fallback (`Routine.updatedAt`). A malformed entry therefore drops
+ * back to that fallback rather than failing hydration and locking the user out
+ * of their own data. Routines saved before this field existed simply have none.
+ */
+function readCapacityChangedAt(
+  record: UnknownRecord,
+  key: string
+): Record<string, string> | undefined {
+  const value = record[key];
+  if (!isRecord(value)) return undefined;
+  const capacityChangedAt: Record<string, string> = {};
+  for (const [activityTypeId, changedAt] of Object.entries(value)) {
+    if (
+      typeof changedAt === 'string' &&
+      changedAt.includes('T') &&
+      Number.isFinite(Date.parse(changedAt))
+    ) {
+      capacityChangedAt[activityTypeId] = changedAt;
+    }
+  }
+  return Object.keys(capacityChangedAt).length > 0 ? capacityChangedAt : undefined;
+}
+
 function parseRoutine(value: unknown): Routine {
   const record = readRecord(value, 'routine');
   return {
@@ -367,6 +393,7 @@ function parseRoutine(value: unknown): Routine {
     name: readString(record, 'name'),
     isActive: readBoolean(record, 'isActive'),
     blocks: readArray(record, 'blocks').map(parseRoutineBlock),
+    capacityChangedAt: readCapacityChangedAt(record, 'capacityChangedAt'),
     createdAt: readIsoDateTime(record, 'createdAt'),
     updatedAt: readIsoDateTime(record, 'updatedAt'),
   };

@@ -132,6 +132,98 @@ describe('goal and tracking actions', () => {
   });
 });
 
+describe('routine block capacity timestamps', () => {
+  function routineById(id: string) {
+    return useAppStore.getState().routines.find((routine) => routine.id === id)!;
+  }
+
+  it('stamps only the activity types whose scheduled capacity changed', () => {
+    const [untouched, edited] = useAppStore.getState().activityTypes;
+    const routineId = useAppStore.getState().addRoutine('Week');
+
+    useAppStore.getState().addRoutineBlock(routineId, {
+      dayOfWeek: 1,
+      startMinutes: 9 * 60,
+      endMinutes: 10 * 60,
+      activityTypeId: untouched.id,
+    });
+    vi.advanceTimersByTime(60_000);
+    const editedBlockId = useAppStore.getState().addRoutineBlock(routineId, {
+      dayOfWeek: 1,
+      startMinutes: 18 * 60,
+      endMinutes: 19 * 60,
+      activityTypeId: edited.id,
+    });
+    expect(editedBlockId).not.toBeNull();
+    expect(routineById(routineId).capacityChangedAt).toEqual({
+      [untouched.id]: frozenTime,
+      [edited.id]: '2026-03-02T09:01:00.000Z',
+    });
+
+    vi.advanceTimersByTime(60_000);
+    useAppStore.getState().updateRoutineBlock(routineId, editedBlockId!, {
+      endMinutes: 19 * 60 + 5,
+    });
+
+    // The whole routine's updatedAt still advances; the other activity type's
+    // capacity timestamp must not, or its goals would lose their evidence.
+    expect(routineById(routineId).updatedAt).toBe('2026-03-02T09:02:00.000Z');
+    expect(routineById(routineId).capacityChangedAt).toEqual({
+      [untouched.id]: frozenTime,
+      [edited.id]: '2026-03-02T09:02:00.000Z',
+    });
+
+    vi.advanceTimersByTime(60_000);
+    useAppStore.getState().deleteRoutineBlock(routineId, editedBlockId!);
+    expect(routineById(routineId).capacityChangedAt).toEqual({
+      [untouched.id]: frozenTime,
+      [edited.id]: '2026-03-02T09:03:00.000Z',
+    });
+  });
+
+  it('seeds activity types that predate the field with the routine\'s previous timestamp', () => {
+    const [untouched, edited] = useAppStore.getState().activityTypes;
+    const legacyUpdatedAt = '2026-02-01T00:00:00.000Z';
+    useAppStore.setState({
+      routines: [{
+        id: 'legacy-routine',
+        name: 'Legacy week',
+        isActive: true,
+        blocks: [
+          {
+            id: 'legacy-untouched',
+            dayOfWeek: 1,
+            startMinutes: 9 * 60,
+            endMinutes: 10 * 60,
+            activityTypeId: untouched.id,
+          },
+          {
+            id: 'legacy-edited',
+            dayOfWeek: 1,
+            startMinutes: 18 * 60,
+            endMinutes: 19 * 60,
+            activityTypeId: edited.id,
+          },
+        ],
+        createdAt: '2026-01-01T00:00:00.000Z',
+        updatedAt: legacyUpdatedAt,
+      }],
+      activeRoutineId: 'legacy-routine',
+    });
+
+    useAppStore.getState().updateRoutineBlock('legacy-routine', 'legacy-edited', {
+      endMinutes: 19 * 60 + 5,
+    });
+
+    // Without seeding, the untouched activity type would fall through to the
+    // bumped updatedAt and collapse anyway on the first edit after migration.
+    expect(routineById('legacy-routine').capacityChangedAt).toEqual({
+      [untouched.id]: legacyUpdatedAt,
+      [edited.id]: frozenTime,
+    });
+  });
+});
+
 describe('persisted state', () => {
   it('rehydrates application data from the configured AsyncStorage key', async () => {
     const activityType = useAppStore.getState().activityTypes[0];
@@ -171,5 +263,73 @@ describe('persisted state', () => {
       schemaVersion: 4,
     });
     expect(await AsyncStorage.getItem(storageKey)).not.toBeNull();
+  });
+
+  it('preserves per-activity capacity timestamps through a rehydrate', async () => {
+    const activityType = useAppStore.getState().activityTypes[0];
+    const capacityChangedAt = { [activityType.id]: '2026-02-01T00:00:00.000Z' };
+    const persistedState: AppState = {
+      activityTypes: [activityType],
+      goals: [],
+      routines: [{
+        id: 'persisted-routine',
+        name: 'Persisted week',
+        isActive: true,
+        blocks: [{
+          id: 'persisted-block',
+          dayOfWeek: 1,
+          startMinutes: 9 * 60,
+          endMinutes: 10 * 60,
+          activityTypeId: activityType.id,
+        }],
+        capacityChangedAt,
+        createdAt: frozenTime,
+        updatedAt: frozenTime,
+      }],
+      trackingEntries: [],
+      activeRoutineId: 'persisted-routine',
+      currentTrackingEntryId: null,
+      hasCompletedOnboarding: true,
+      schemaVersion: 4,
+    };
+
+    await AsyncStorage.setItem(storageKey, JSON.stringify({
+      state: persistedState,
+      version: 4,
+    }));
+    await useAppStore.persist.rehydrate();
+
+    expect(useAppStore.getState().routines[0].capacityChangedAt).toEqual(capacityChangedAt);
+  });
+
+  it('drops malformed capacity timestamps instead of failing hydration', async () => {
+    const activityType = useAppStore.getState().activityTypes[0];
+    const persistedState = {
+      activityTypes: [activityType],
+      goals: [],
+      routines: [{
+        id: 'corrupt-routine',
+        name: 'Corrupt week',
+        isActive: true,
+        blocks: [],
+        capacityChangedAt: { [activityType.id]: 'not-a-timestamp' },
+        createdAt: frozenTime,
+        updatedAt: frozenTime,
+      }],
+      trackingEntries: [],
+      activeRoutineId: 'corrupt-routine',
+      currentTrackingEntryId: null,
+      hasCompletedOnboarding: true,
+      schemaVersion: 4,
+    };
+
+    await AsyncStorage.setItem(storageKey, JSON.stringify({
+      state: persistedState,
+      version: 4,
+    }));
+    await useAppStore.persist.rehydrate();
+
+    expect(useAppStore.getState().routines[0].id).toBe('corrupt-routine');
+    expect(useAppStore.getState().routines[0].capacityChangedAt).toBeUndefined();
   });
 });
