@@ -13,6 +13,12 @@ import type {
 import { createDefaultActivityTypes } from '../core/engine/defaults';
 
 export const APP_STORAGE_KEY = 'zenroutine-storage';
+/**
+ * Side-car key holding tracking entries that hydration could not read. It is deliberately a
+ * separate key from APP_STORAGE_KEY: the store overwrites its own blob on the next write, so
+ * anything quarantined has to be copied somewhere the store does not own before that happens.
+ */
+export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
 export const CURRENT_SCHEMA_VERSION = 4;
 export const BACKUP_FORMAT = 'zenroutine-backup';
 export const BACKUP_FORMAT_VERSION = 1;
@@ -39,6 +45,97 @@ export interface ZenRoutineBackup {
   schemaVersion: number;
   exportedAt: string;
   state: AppState;
+}
+
+/** A persisted tracking entry that could not be read, set aside instead of being lost. */
+export interface QuarantinedTrackingEntry {
+  /** Position in the persisted trackingEntries array, so two bad records stay distinguishable. */
+  index: number;
+  /** The record's own id when that much was readable, else null. */
+  id: string | null;
+  /** Why it could not be read, taken from the parse error. */
+  reason: string;
+  /** The record exactly as it was stored. Quarantining must never destroy user data. */
+  record: unknown;
+}
+
+export const QUARANTINE_ARCHIVE_FORMAT = 'zenroutine-quarantine-archive';
+/**
+ * Cap on retained generations, so a device that somehow quarantines on every launch cannot grow
+ * the side-car without bound. Past the cap the OLDEST generation is dropped. Realistically
+ * unreachable: with stopTracking fixed there is no known repeating source of bad records.
+ */
+export const MAX_QUARANTINE_GENERATIONS = 20;
+
+/** One hydration's worth of quarantined records. */
+export interface QuarantineGeneration {
+  quarantinedAt: string;
+  schemaVersion: number;
+  entries: QuarantinedTrackingEntry[];
+}
+
+export interface QuarantineArchive {
+  format: typeof QUARANTINE_ARCHIVE_FORMAT;
+  generations: QuarantineGeneration[];
+  /**
+   * Verbatim prior contents of the side-car, kept when they could not be understood. The side-car
+   * is the last copy of records already gone from the store's own blob, so an archive we cannot
+   * parse still must not be thrown away.
+   */
+  unreadable?: string;
+}
+
+/**
+ * Read a side-car archive. Total function by design: this runs on the hydration path, and a
+ * malformed archive must never be able to throw there — that would re-create the exact failure
+ * mode quarantining exists to prevent.
+ */
+export function parseQuarantineArchive(serialized: string | null): QuarantineArchive {
+  const empty: QuarantineArchive = { format: QUARANTINE_ARCHIVE_FORMAT, generations: [] };
+  if (serialized === null || serialized === '') return empty;
+
+  let value: unknown;
+  try {
+    value = JSON.parse(serialized) as unknown;
+  } catch {
+    return { ...empty, unreadable: serialized };
+  }
+  if (!isRecord(value) || value.format !== QUARANTINE_ARCHIVE_FORMAT) {
+    return { ...empty, unreadable: serialized };
+  }
+  if (!Array.isArray(value.generations)) return { ...empty, unreadable: serialized };
+
+  const generations = value.generations.filter(
+    (generation): generation is QuarantineGeneration =>
+      isRecord(generation) && Array.isArray(generation.entries)
+  );
+  const unreadable = typeof value.unreadable === 'string' ? value.unreadable : undefined;
+  return { format: QUARANTINE_ARCHIVE_FORMAT, generations, ...(unreadable ? { unreadable } : {}) };
+}
+
+export function appendQuarantineGeneration(
+  archive: QuarantineArchive,
+  entries: readonly QuarantinedTrackingEntry[],
+  quarantinedAt = new Date().toISOString()
+): QuarantineArchive {
+  const generations = [
+    ...archive.generations,
+    { quarantinedAt, schemaVersion: CURRENT_SCHEMA_VERSION, entries: [...entries] },
+  ];
+  return {
+    ...archive,
+    generations: generations.slice(-MAX_QUARANTINE_GENERATIONS),
+  };
+}
+
+export interface MigrationOptions {
+  /**
+   * When supplied, tracking entries that fail to parse are pushed here and skipped rather than
+   * aborting the whole migration. Omit it to keep the strict all-or-nothing behaviour that
+   * backup import depends on: an import is a deliberate act on a file the user can re-choose,
+   * so it should fail loudly rather than quietly drop records.
+   */
+  quarantine?: QuarantinedTrackingEntry[];
 }
 
 export function createInitialState(): AppState {
@@ -304,11 +401,16 @@ function parseTrackingEntry(value: unknown, repairLegacyValues: boolean): Tracki
   };
 }
 
-export function migratePersistedState(persistedState: unknown, version: number): AppState {
+export function migratePersistedState(
+  persistedState: unknown,
+  version: number,
+  options?: MigrationOptions
+): AppState {
   if (!Number.isInteger(version) || version < 0 || version > CURRENT_SCHEMA_VERSION) {
     throw new Error(`Unsupported ZenRoutine schema version: ${version}`);
   }
 
+  const quarantine = options?.quarantine;
   const record = readRecord(persistedState, 'persisted state');
   const activityTypes = readArray(record, 'activityTypes').map(
     (value) => parseActivityType(value, version < 2)
@@ -317,9 +419,27 @@ export function migratePersistedState(persistedState: unknown, version: number):
     (value) => parseGoal(value, version < 3, version < CURRENT_SCHEMA_VERSION)
   );
   let routines = readArray(record, 'routines').map(parseRoutine);
-  let trackingEntries = readArray(record, 'trackingEntries').map(
-    (value) => parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION)
-  );
+  // A single unreadable tracking entry must not be able to take the whole store down with it.
+  // Everything above stays strict: activity types, goals and routines are the skeleton the rest
+  // of the state hangs off, and a store missing one of those is not a store worth opening.
+  // Tracking entries are a flat list where each record stands alone, so one bad row can be set
+  // aside while the remaining history loads normally. `trackingEntries` not being an array at
+  // all still throws — that is blob-level corruption, not one bad row.
+  let trackingEntries: TrackingEntry[] = readArray(record, 'trackingEntries')
+    .flatMap<TrackingEntry>((value, index) => {
+      try {
+        return [parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION)];
+      } catch (error) {
+        if (!quarantine) throw error;
+        quarantine.push({
+          index,
+          id: isRecord(value) && typeof value.id === 'string' ? value.id : null,
+          reason: error instanceof Error ? error.message : 'Unreadable tracking entry',
+          record: value,
+        });
+        return [];
+      }
+    });
   const activityIds = new Set(activityTypes.map((activity) => activity.id));
   const routineIds = new Set(routines.map((routine) => routine.id));
   const entryIds = new Set(trackingEntries.map((entry) => entry.id));
@@ -414,6 +534,24 @@ export function migratePersistedState(persistedState: unknown, version: number):
 
   let activeRoutineId = readNullableId(record, 'activeRoutineId');
   let currentTrackingEntryId = readNullableId(record, 'currentTrackingEntryId');
+  if (
+    currentTrackingEntryId !== null &&
+    quarantine !== undefined &&
+    quarantine.length > 0 &&
+    !entryIds.has(currentTrackingEntryId)
+  ) {
+    // The running timer pointed at a record that is no longer here, and this pass quarantined
+    // something. Clearing the pointer is what makes quarantining actually work: leaving it would
+    // trip the strict currentTrackingEntryId check below and brick hydration for exactly the
+    // reason we are trying to fix.
+    //
+    // This deliberately asks "does the pointer still resolve?" rather than "is the pointer in the
+    // quarantine list?". A record whose own `id` was unreadable is quarantined with `id: null`, so
+    // matching on the list would miss precisely the entry that needs the pointer cleared. Gated on
+    // quarantine.length > 0 so that a launch which repaired nothing keeps the strict check intact:
+    // a dangling pointer with no bad record to blame is real corruption and should still be loud.
+    currentTrackingEntryId = null;
+  }
   const hasInvalidActiveRoutine = activeRoutineId !== null && !routineIds.has(activeRoutineId);
   const openEntries = trackingEntries.filter((entry) => entry.endTime === undefined);
   if (version < CURRENT_SCHEMA_VERSION) {
