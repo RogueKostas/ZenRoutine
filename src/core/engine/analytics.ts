@@ -1,4 +1,9 @@
 import { Routine, TrackingEntry, ActivityType } from '../types';
+import {
+  addDaysToDateKey,
+  getRoutineBlockDurationMinutes,
+  parseLocalDateKey,
+} from '../utils/time';
 
 export interface WeeklyBreakdown {
   activityTypeId: string;
@@ -29,10 +34,8 @@ export function getRoutineBreakdown(
   const minutesByType = new Map<string, number>();
   
   for (const block of routine.blocks) {
-    const duration = block.endMinutes - block.startMinutes;
-    const adjustedDuration = duration < 0 ? duration + 1440 : duration;
     const current = minutesByType.get(block.activityTypeId) || 0;
-    minutesByType.set(block.activityTypeId, current + adjustedDuration);
+    minutesByType.set(block.activityTypeId, current + getRoutineBlockDurationMinutes(block));
   }
   
   return activityTypes
@@ -56,26 +59,26 @@ export function getRoutineBreakdown(
  */
 export function getTrackedBreakdown(
   trackingEntries: TrackingEntry[],
-  weekStartDate: string,
+  weekStartDateKey: string,
   activityTypes: ActivityType[]
 ): WeeklyBreakdown[] {
-  const weekStart = new Date(weekStartDate);
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekEnd.getDate() + 7);
-  
-  const entriesInWeek = trackingEntries.filter(entry => {
-    const entryDate = new Date(entry.date);
-    return entryDate >= weekStart && entryDate < weekEnd;
-  });
+  const weekEndKey = addDaysToDateKey(weekStartDateKey, 7);
+  const weekStart = parseLocalDateKey(weekStartDateKey);
+  weekStart.setHours(0, 0, 0, 0);
+  const weekEnd = parseLocalDateKey(weekEndKey);
+  weekEnd.setHours(0, 0, 0, 0);
   
   const minutesByType = new Map<string, number>();
   
-  for (const entry of entriesInWeek) {
+  for (const entry of trackingEntries) {
     if (!entry.endTime) continue;
-    
-    const start = new Date(entry.startTime);
-    const end = new Date(entry.endTime);
-    const durationMinutes = (end.getTime() - start.getTime()) / (1000 * 60);
+    const entryStart = new Date(entry.startTime).getTime();
+    const entryEnd = new Date(entry.endTime).getTime();
+    if (!Number.isFinite(entryStart) || !Number.isFinite(entryEnd) || entryEnd <= entryStart) continue;
+    const clippedStart = Math.max(entryStart, weekStart.getTime());
+    const clippedEnd = Math.min(entryEnd, weekEnd.getTime());
+    const durationMinutes = (clippedEnd - clippedStart) / 60000;
+    if (durationMinutes <= 0) continue;
     
     const current = minutesByType.get(entry.activityTypeId) || 0;
     minutesByType.set(entry.activityTypeId, current + durationMinutes);

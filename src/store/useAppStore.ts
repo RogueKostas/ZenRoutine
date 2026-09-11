@@ -15,37 +15,184 @@ import {
 } from '../core/types';
 import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
+import {
+  getTrackingEntryDurationMinutes,
+  parseLocalDateKey,
+  toLocalDateKey,
+} from '../core/utils/time';
+import {
+  findOverlappingBlocks,
+  validateRoutineBlock,
+} from '../core/engine/validation';
+import {
+  APP_STORAGE_KEY,
+  CURRENT_SCHEMA_VERSION,
+  createInitialState,
+  decodeBackup,
+  encodeBackup,
+  migratePersistedState,
+  selectPersistedAppState,
+} from './persistence';
 
-// Schema version for migrations
-const CURRENT_SCHEMA_VERSION = 3;
+export type ImportResult =
+  | { ok: true }
+  | { ok: false; error: string };
 
-// Icon name to emoji mapping for migration
-const ICON_NAME_TO_EMOJI: Record<string, string> = {
-  'briefcase': '💼',
-  'rocket': '🚀',
-  'heart': '❤️',
-  'dumbbell': '💪',
-  'book': '📚',
-  'tv': '📺',
-  'users': '👥',
-  'car': '🚗',
-  'utensils': '🍴',
-  'droplet': '💧',
-  'moon': '🌙',
-};
+export type HydrationSnapshot =
+  | { status: 'idle' | 'loading' | 'ready'; error: null }
+  | { status: 'error'; error: string };
 
-// Initial state factory
-const createInitialState = (): AppState => ({
-  activityTypes: createDefaultActivityTypes(),
-  goals: [],
-  routines: [],
-  trackingEntries: [],
-  activeRoutineId: null,
-  currentTrackingEntryId: null,
-  hasCompletedOnboarding: false,
-  lastSyncedAt: undefined,
-  schemaVersion: CURRENT_SCHEMA_VERSION,
-});
+const hydrationListeners = new Set<() => void>();
+let hydrationSnapshot: HydrationSnapshot = { status: 'idle', error: null };
+let hydrationRun: Promise<void> | null = null;
+let hydrationFailure: unknown = null;
+
+function publishHydrationSnapshot(next: HydrationSnapshot): void {
+  hydrationSnapshot = next;
+  hydrationListeners.forEach((listener) => listener());
+}
+
+export function getHydrationSnapshot(): HydrationSnapshot {
+  return hydrationSnapshot;
+}
+
+export function subscribeHydration(listener: () => void): () => void {
+  hydrationListeners.add(listener);
+  return () => hydrationListeners.delete(listener);
+}
+
+function createDefaultRoutine(now = new Date().toISOString()): Routine {
+  return {
+    id: generateId(),
+    name: 'My Week',
+    isActive: true,
+    blocks: [],
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function createInitializedState(): AppState {
+  return ensureRequiredDefaults(createInitialState());
+}
+
+function ensureRequiredDefaults(state: AppState): AppState {
+  const needsActivities = state.activityTypes.length === 0;
+  const needsRoutine = state.routines.length === 0;
+  if (!needsActivities && !needsRoutine) return state;
+  const routine = needsRoutine ? createDefaultRoutine() : undefined;
+  return {
+    ...state,
+    activityTypes: needsActivities ? createDefaultActivityTypes() : state.activityTypes,
+    routines: routine ? [routine] : state.routines,
+    activeRoutineId: routine?.id ?? state.activeRoutineId,
+  };
+}
+
+function applyGoalProgressChange(
+  goal: Goal,
+  nextLoggedMinutes: number,
+  nextEstimatedMinutes: number,
+  now: string
+): Goal {
+  const loggedMinutes = Math.max(0, nextLoggedMinutes);
+  const previouslyMetEstimate = goal.loggedMinutes >= goal.estimatedMinutes;
+  const meetsEstimate = loggedMinutes >= nextEstimatedMinutes;
+  let status = goal.status;
+  let completedAt = goal.status === 'completed' ? goal.completedAt : undefined;
+
+  if (meetsEstimate && status !== 'completed') {
+    status = 'completed';
+    completedAt = now;
+  } else if (!meetsEstimate && previouslyMetEstimate && status === 'completed') {
+    status = 'active';
+    completedAt = undefined;
+  }
+
+  return {
+    ...goal,
+    estimatedMinutes: nextEstimatedMinutes,
+    loggedMinutes,
+    status,
+    completedAt: status === 'completed' ? completedAt ?? now : undefined,
+    updatedAt: now,
+  };
+}
+
+function applyGoalDeltas(
+  goals: Goal[],
+  deltas: ReadonlyMap<string, number>,
+  now: string
+): Goal[] {
+  if (deltas.size === 0) return goals;
+  return goals.map((goal) => {
+    const delta = deltas.get(goal.id);
+    if (delta === undefined || delta === 0) return goal;
+    return applyGoalProgressChange(
+      goal,
+      goal.loggedMinutes + delta,
+      goal.estimatedMinutes,
+      now
+    );
+  });
+}
+
+function contributionDelta(
+  before: TrackingEntry | undefined,
+  after: TrackingEntry | undefined
+): Map<string, number> {
+  const deltas = new Map<string, number>();
+  const add = (entry: TrackingEntry | undefined, multiplier: 1 | -1) => {
+    if (!entry?.goalId) return;
+    const minutes = getTrackingEntryDurationMinutes(entry);
+    if (minutes === 0) return;
+    deltas.set(entry.goalId, (deltas.get(entry.goalId) ?? 0) + multiplier * minutes);
+  };
+  add(before, -1);
+  add(after, 1);
+  return deltas;
+}
+
+function blockReferencesAreValid(
+  state: AppState,
+  block: Pick<RoutineBlock, 'activityTypeId' | 'goalId'>
+): boolean {
+  if (!state.activityTypes.some((activity) => activity.id === block.activityTypeId)) {
+    return false;
+  }
+  if (!block.goalId) return true;
+  const goal = state.goals.find((candidate) => candidate.id === block.goalId);
+  return goal?.activityTypeId === block.activityTypeId;
+}
+
+function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
+  try {
+    parseLocalDateKey(entry.date);
+  } catch {
+    return false;
+  }
+  const start = Date.parse(entry.startTime);
+  const end = entry.endTime ? Date.parse(entry.endTime) : undefined;
+  if (!Number.isFinite(start) || (end !== undefined && (!Number.isFinite(end) || end <= start))) {
+    return false;
+  }
+  const activityExists = state.activityTypes.some(
+    (activity) => activity.id === entry.activityTypeId
+  );
+  if (!activityExists) return false;
+  if (entry.goalId) {
+    const goal = state.goals.find((candidate) => candidate.id === entry.goalId);
+    if (goal?.activityTypeId !== entry.activityTypeId) return false;
+  }
+  if (entry.routineBlockId) {
+    const routineBlock = state.routines
+      .flatMap((routine) => routine.blocks)
+      .find((block) => block.id === entry.routineBlockId);
+    if (!routineBlock || routineBlock.activityTypeId !== entry.activityTypeId) return false;
+    if (routineBlock.goalId && routineBlock.goalId !== entry.goalId) return false;
+  }
+  return true;
+}
 
 // Action types
 interface AppActions {
@@ -56,7 +203,7 @@ interface AppActions {
   reorderActivityTypes: (ids: string[]) => void;
 
   // Goal Actions
-  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'priority'> & { priority?: GoalPriority }) => string;
+  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'priority'> & { priority?: GoalPriority }) => string | null;
   updateGoal: (id: string, data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>>) => void;
   deleteGoal: (id: string) => void;
   logMinutesToGoal: (id: string, minutes: number) => void;
@@ -84,15 +231,20 @@ interface AppActions {
     notes?: string;
   }) => string | null;
   stopTracking: (id?: string) => void;
-  addCompletedEntry: (data: Omit<TrackingEntry, 'id' | 'createdAt' | 'updatedAt'>) => string;
+  addCompletedEntry: (
+    data: Omit<TrackingEntry, 'id' | 'createdAt' | 'updatedAt' | 'endTime'> & {
+      endTime: string;
+    }
+  ) => string | null;
   updateTrackingEntry: (id: string, data: Partial<Omit<TrackingEntry, 'id' | 'createdAt' | 'updatedAt'>>) => void;
   deleteTrackingEntry: (id: string) => void;
 
   // State Management
-  resetState: () => void;
-  hydrate: (state: Partial<AppState>) => void;
+  resetState: () => Promise<void>;
   initializeDefaults: () => void;
   completeOnboarding: () => void;
+  exportData: () => string;
+  importData: (serialized: string) => Promise<ImportResult>;
 
   // Debug helpers
   _addSampleData: () => void;
@@ -100,8 +252,20 @@ interface AppActions {
 
 export type AppStore = AppState & AppActions;
 
+const appStorage = createJSONStorage<AppState>(() => AsyncStorage);
+
+async function persistSnapshot(state: AppState): Promise<void> {
+  if (!appStorage) {
+    throw new Error('Local storage is unavailable.');
+  }
+  await appStorage.setItem(APP_STORAGE_KEY, {
+    state: selectPersistedAppState(state),
+    version: CURRENT_SCHEMA_VERSION,
+  });
+}
+
 export const useAppStore = create<AppStore>()(
-  persist(
+  persist<AppStore, [], [], AppState>(
     (set, get) => ({
       // Initial State
       ...createInitialState(),
@@ -171,6 +335,16 @@ export const useAppStore = create<AppStore>()(
       // Goal Actions
       // ============================================
       addGoal: (data) => {
+        const state = get();
+        if (
+          !data.name.trim() ||
+          !Number.isInteger(data.estimatedMinutes) ||
+          data.estimatedMinutes <= 0 ||
+          !state.activityTypes.some((activity) => activity.id === data.activityTypeId) ||
+          (data.priority !== undefined && ![1, 2, 3, 4, 5].includes(data.priority))
+        ) {
+          return null;
+        }
         const id = generateId();
         const now = new Date().toISOString();
         const newGoal: Goal = {
@@ -190,15 +364,72 @@ export const useAppStore = create<AppStore>()(
 
       updateGoal: (id, data) => {
         set((state) => ({
-          goals: state.goals.map((g) =>
-            g.id === id
-              ? { ...g, ...data, updatedAt: new Date().toISOString() }
-              : g
-          ),
+          goals: state.goals.map((goal) => {
+            if (goal.id !== id) return goal;
+            const now = new Date().toISOString();
+            const estimatedMinutes = data.estimatedMinutes ?? goal.estimatedMinutes;
+            const loggedMinutes = data.loggedMinutes ?? goal.loggedMinutes;
+            const activityTypeId = data.activityTypeId ?? goal.activityTypeId;
+            const priority = data.priority ?? goal.priority;
+            const changesLinkedActivity = activityTypeId !== goal.activityTypeId && (
+              state.routines.some((routine) => routine.blocks.some(
+                (block) => block.goalId === goal.id
+              )) ||
+              state.trackingEntries.some((entry) => entry.goalId === goal.id)
+            );
+            if (
+              !(data.name ?? goal.name).trim() ||
+              !Number.isInteger(estimatedMinutes) ||
+              estimatedMinutes <= 0 ||
+              !Number.isInteger(loggedMinutes) ||
+              !Number.isFinite(loggedMinutes) ||
+              ![1, 2, 3, 4, 5].includes(priority) ||
+              !state.activityTypes.some((activity) => activity.id === activityTypeId) ||
+              changesLinkedActivity
+            ) {
+              return goal;
+            }
+            const explicitlyRequestedStatus = data.status;
+            const merged = {
+              ...goal,
+              ...data,
+              completedAt: goal.completedAt,
+              updatedAt: now,
+            };
+
+            if (explicitlyRequestedStatus) {
+              return {
+                ...merged,
+                loggedMinutes: Math.max(0, loggedMinutes),
+                status: explicitlyRequestedStatus,
+                completedAt: explicitlyRequestedStatus === 'completed'
+                  ? goal.status === 'completed'
+                    ? goal.completedAt ?? now
+                    : now
+                  : undefined,
+              };
+            }
+
+            return {
+              ...merged,
+              ...applyGoalProgressChange(
+                goal,
+                loggedMinutes,
+                estimatedMinutes,
+                now
+              ),
+              name: data.name ?? goal.name,
+              description: data.description ?? goal.description,
+              activityTypeId,
+              priority,
+              createdAt: goal.createdAt,
+            };
+          }),
         }));
       },
 
       deleteGoal: (id) => {
+        const now = new Date().toISOString();
         set((state) => ({
           goals: state.goals.filter((g) => g.id !== id),
           // Also update any routine blocks that reference this goal
@@ -208,40 +439,45 @@ export const useAppStore = create<AppStore>()(
               b.goalId === id ? { ...b, goalId: undefined } : b
             ),
           })),
+          trackingEntries: state.trackingEntries.map((entry) =>
+            entry.goalId === id
+              ? { ...entry, goalId: undefined, updatedAt: now }
+              : entry
+          ),
         }));
       },
 
       logMinutesToGoal: (id, minutes) => {
+        if (!Number.isInteger(minutes) || minutes === 0) return;
         set((state) => ({
-          goals: state.goals.map((g) => {
-            if (g.id !== id) return g;
-            const newLoggedMinutes = g.loggedMinutes + minutes;
-            const isCompleted = newLoggedMinutes >= g.estimatedMinutes;
-            return {
-              ...g,
-              loggedMinutes: newLoggedMinutes,
-              status: isCompleted ? 'completed' : g.status,
-              completedAt: isCompleted ? new Date().toISOString() : g.completedAt,
-              updatedAt: new Date().toISOString(),
-            };
+          goals: state.goals.map((goal) => {
+            if (goal.id !== id) return goal;
+            return applyGoalProgressChange(
+              goal,
+              goal.loggedMinutes + minutes,
+              goal.estimatedMinutes,
+              new Date().toISOString()
+            );
           }),
         }));
       },
 
       setGoalStatus: (id, status) => {
         set((state) => ({
-          goals: state.goals.map((g) =>
-            g.id === id
+          goals: state.goals.map((goal) =>
+            goal.id === id
               ? {
-                  ...g,
+                  ...goal,
                   status,
                   completedAt:
                     status === 'completed'
-                      ? new Date().toISOString()
-                      : g.completedAt,
+                      ? goal.status === 'completed'
+                        ? goal.completedAt ?? new Date().toISOString()
+                        : new Date().toISOString()
+                      : undefined,
                   updatedAt: new Date().toISOString(),
                 }
-              : g
+              : goal
           ),
         }));
       },
@@ -277,14 +513,26 @@ export const useAppStore = create<AppStore>()(
       },
 
       deleteRoutine: (id) => {
-        set((state) => ({
-          routines: state.routines.filter((r) => r.id !== id),
-          activeRoutineId:
-            state.activeRoutineId === id ? null : state.activeRoutineId,
-        }));
+        set((state) => {
+          const removedBlockIds = new Set(
+            state.routines.find((routine) => routine.id === id)?.blocks.map((block) => block.id) ?? []
+          );
+          const now = new Date().toISOString();
+          return {
+            routines: state.routines.filter((routine) => routine.id !== id),
+            trackingEntries: state.trackingEntries.map((entry) =>
+              entry.routineBlockId && removedBlockIds.has(entry.routineBlockId)
+                ? { ...entry, routineBlockId: undefined, updatedAt: now }
+                : entry
+            ),
+            activeRoutineId:
+              state.activeRoutineId === id ? null : state.activeRoutineId,
+          };
+        });
       },
 
       setActiveRoutine: (id) => {
+        if (id !== null && !get().routines.some((routine) => routine.id === id)) return;
         set((state) => ({
           routines: state.routines.map((r) => ({
             ...r,
@@ -333,6 +581,13 @@ export const useAppStore = create<AppStore>()(
           ...block,
           id: blockId,
         };
+        if (
+          !validateRoutineBlock(newBlock).isValid ||
+          !blockReferencesAreValid(state, newBlock) ||
+          findOverlappingBlocks(routine.blocks, newBlock).length > 0
+        ) {
+          return null;
+        }
 
         set((state) => ({
           routines: state.routines.map((r) =>
@@ -349,13 +604,26 @@ export const useAppStore = create<AppStore>()(
       },
 
       updateRoutineBlock: (routineId, blockId, data) => {
+        const state = get();
+        const routine = state.routines.find((candidate) => candidate.id === routineId);
+        const block = routine?.blocks.find((candidate) => candidate.id === blockId);
+        if (!routine || !block) return;
+        const updatedBlock: RoutineBlock = { ...block, ...data };
+        if (
+          !validateRoutineBlock(updatedBlock).isValid ||
+          !blockReferencesAreValid(state, updatedBlock) ||
+          findOverlappingBlocks(routine.blocks, updatedBlock).length > 0
+        ) {
+          return;
+        }
+
         set((state) => ({
           routines: state.routines.map((r) =>
             r.id === routineId
               ? {
                   ...r,
                   blocks: r.blocks.map((b) =>
-                    b.id === blockId ? { ...b, ...data } : b
+                    b.id === blockId ? updatedBlock : b
                   ),
                   updatedAt: new Date().toISOString(),
                 }
@@ -365,17 +633,29 @@ export const useAppStore = create<AppStore>()(
       },
 
       deleteRoutineBlock: (routineId, blockId) => {
-        set((state) => ({
-          routines: state.routines.map((r) =>
-            r.id === routineId
-              ? {
-                  ...r,
-                  blocks: r.blocks.filter((b) => b.id !== blockId),
-                  updatedAt: new Date().toISOString(),
-                }
-              : r
-          ),
-        }));
+        set((state) => {
+          const blockExists = state.routines.some(
+            (routine) => routine.id === routineId && routine.blocks.some((block) => block.id === blockId)
+          );
+          if (!blockExists) return state;
+          const now = new Date().toISOString();
+          return {
+            routines: state.routines.map((routine) =>
+              routine.id === routineId
+                ? {
+                    ...routine,
+                    blocks: routine.blocks.filter((block) => block.id !== blockId),
+                    updatedAt: now,
+                  }
+                : routine
+            ),
+            trackingEntries: state.trackingEntries.map((entry) =>
+              entry.routineBlockId === blockId
+                ? { ...entry, routineBlockId: undefined, updatedAt: now }
+                : entry
+            ),
+          };
+        });
       },
 
       copyDayBlocks: (routineId, fromDay, toDays) => {
@@ -400,16 +680,34 @@ export const useAppStore = create<AppStore>()(
           const filteredBlocks = routine.blocks.filter(
             (b) => !toDays.includes(b.dayOfWeek)
           );
+          const removedBlockIds = new Set(
+            routine.blocks
+              .filter((block) => toDays.includes(block.dayOfWeek))
+              .map((block) => block.id)
+          );
+          const candidateBlocks = [...filteredBlocks, ...newBlocks];
+          const isValid = candidateBlocks.every((block, index) =>
+            validateRoutineBlock(block).isValid &&
+            blockReferencesAreValid(state, block) &&
+            findOverlappingBlocks(candidateBlocks.slice(0, index), block).length === 0
+          );
+          if (!isValid) return state;
+          const now = new Date().toISOString();
 
           return {
             routines: state.routines.map((r) =>
               r.id === routineId
                 ? {
                     ...r,
-                    blocks: [...filteredBlocks, ...newBlocks],
-                    updatedAt: new Date().toISOString(),
+                    blocks: candidateBlocks,
+                    updatedAt: now,
                   }
                 : r
+            ),
+            trackingEntries: state.trackingEntries.map((entry) =>
+              entry.routineBlockId && removedBlockIds.has(entry.routineBlockId)
+                ? { ...entry, routineBlockId: undefined, updatedAt: now }
+                : entry
             ),
           };
         });
@@ -420,6 +718,23 @@ export const useAppStore = create<AppStore>()(
       // ============================================
       startTracking: (data) => {
         const state = get();
+        const activityExists = state.activityTypes.some(
+          (activity) => activity.id === data.activityTypeId
+        );
+        const goalIsValid = !data.goalId || state.goals.some(
+          (goal) => goal.id === data.goalId && goal.activityTypeId === data.activityTypeId
+        );
+        const routineBlock = data.routineBlockId
+          ? state.routines
+              .flatMap((routine) => routine.blocks)
+              .find((block) => block.id === data.routineBlockId)
+          : undefined;
+        const routineBlockIsValid = !data.routineBlockId || (
+          routineBlock?.activityTypeId === data.activityTypeId &&
+          (!routineBlock.goalId || routineBlock.goalId === data.goalId)
+        );
+        if (!activityExists || !goalIsValid || !routineBlockIsValid) return null;
+
         // Stop any currently running tracking
         if (state.currentTrackingEntryId) {
           get().stopTracking();
@@ -427,10 +742,9 @@ export const useAppStore = create<AppStore>()(
 
         const id = generateId();
         const now = new Date().toISOString();
-        const today = now.split('T')[0];
         const newEntry: TrackingEntry = {
           id,
-          date: today,
+          date: toLocalDateKey(new Date()),
           startTime: now,
           endTime: undefined,
           activityTypeId: data.activityTypeId,
@@ -458,26 +772,26 @@ export const useAppStore = create<AppStore>()(
         if (!entry || entry.endTime) return;
 
         const now = new Date().toISOString();
-        const startTime = new Date(entry.startTime).getTime();
-        const endTime = new Date(now).getTime();
-        const durationMinutes = Math.round((endTime - startTime) / 60000);
+        const completedEntry: TrackingEntry = {
+          ...entry,
+          endTime: now,
+          updatedAt: now,
+        };
 
         set((state) => ({
           trackingEntries: state.trackingEntries.map((e) =>
-            e.id === entryId
-              ? { ...e, endTime: now, updatedAt: now }
-              : e
+            e.id === entryId ? completedEntry : e
+          ),
+          goals: applyGoalDeltas(
+            state.goals,
+            contributionDelta(entry, completedEntry),
+            now
           ),
           currentTrackingEntryId:
             state.currentTrackingEntryId === entryId
               ? null
               : state.currentTrackingEntryId,
         }));
-
-        // Log minutes to goal if applicable
-        if (entry.goalId && durationMinutes > 0) {
-          get().logMinutesToGoal(entry.goalId, durationMinutes);
-        }
       },
 
       addCompletedEntry: (data) => {
@@ -489,85 +803,109 @@ export const useAppStore = create<AppStore>()(
           createdAt: now,
           updatedAt: now,
         };
+        if (!trackingEntryIsValid(get(), newEntry)) return null;
 
         set((state) => ({
           trackingEntries: [...state.trackingEntries, newEntry],
+          goals: applyGoalDeltas(
+            state.goals,
+            contributionDelta(undefined, newEntry),
+            now
+          ),
         }));
-
-        // Log minutes to goal if applicable
-        if (data.goalId && data.endTime) {
-          const startTime = new Date(data.startTime).getTime();
-          const endTime = new Date(data.endTime).getTime();
-          const durationMinutes = Math.round((endTime - startTime) / 60000);
-          if (durationMinutes > 0) {
-            get().logMinutesToGoal(data.goalId, durationMinutes);
-          }
-        }
 
         return id;
       },
 
       updateTrackingEntry: (id, data) => {
-        set((state) => ({
-          trackingEntries: state.trackingEntries.map((e) =>
-            e.id === id
-              ? { ...e, ...data, updatedAt: new Date().toISOString() }
-              : e
-          ),
-        }));
+        set((state) => {
+          const entry = state.trackingEntries.find((candidate) => candidate.id === id);
+          if (!entry) return state;
+          const now = new Date().toISOString();
+          const updatedEntry: TrackingEntry = { ...entry, ...data, updatedAt: now };
+          if (entry.endTime && !updatedEntry.endTime) return state;
+          if (!trackingEntryIsValid(state, updatedEntry)) return state;
+          return {
+            trackingEntries: state.trackingEntries.map((candidate) =>
+              candidate.id === id ? updatedEntry : candidate
+            ),
+            goals: applyGoalDeltas(
+              state.goals,
+              contributionDelta(entry, updatedEntry),
+              now
+            ),
+            currentTrackingEntryId:
+              state.currentTrackingEntryId === id && updatedEntry.endTime
+                ? null
+                : state.currentTrackingEntryId,
+          };
+        });
       },
 
       deleteTrackingEntry: (id) => {
-        set((state) => ({
-          trackingEntries: state.trackingEntries.filter((e) => e.id !== id),
-          currentTrackingEntryId:
-            state.currentTrackingEntryId === id
-              ? null
-              : state.currentTrackingEntryId,
-        }));
+        set((state) => {
+          const entry = state.trackingEntries.find((candidate) => candidate.id === id);
+          if (!entry) return state;
+          const now = new Date().toISOString();
+          return {
+            trackingEntries: state.trackingEntries.filter((candidate) => candidate.id !== id),
+            goals: applyGoalDeltas(
+              state.goals,
+              contributionDelta(entry, undefined),
+              now
+            ),
+            currentTrackingEntryId:
+              state.currentTrackingEntryId === id
+                ? null
+                : state.currentTrackingEntryId,
+          };
+        });
       },
 
       // ============================================
       // State Management
       // ============================================
-      resetState: () => {
-        set(createInitialState());
-      },
-
-      hydrate: (state) => {
-        set((current) => ({
-          ...current,
-          ...state,
-        }));
+      resetState: async () => {
+        const nextState = createInitializedState();
+        await persistSnapshot(nextState);
+        set(nextState);
       },
 
       initializeDefaults: () => {
         const state = get();
-        // Initialize default activity types if none exist
-        if (state.activityTypes.length === 0) {
-          const defaults = createDefaultActivityTypes();
-          set({ activityTypes: defaults });
-        }
-        // Create default routine if none exist
-        if (state.routines.length === 0) {
-          const now = new Date().toISOString();
-          const defaultRoutine: Routine = {
-            id: generateId(),
-            name: 'My Week',
-            isActive: true,
-            blocks: [],
-            createdAt: now,
-            updatedAt: now,
-          };
-          set({
-            routines: [defaultRoutine],
-            activeRoutineId: defaultRoutine.id,
-          });
-        }
+        const needsActivities = state.activityTypes.length === 0;
+        const needsRoutine = state.routines.length === 0;
+        if (!needsActivities && !needsRoutine) return;
+
+        const defaultRoutine = needsRoutine ? createDefaultRoutine() : undefined;
+        set({
+          activityTypes: needsActivities
+            ? createDefaultActivityTypes()
+            : state.activityTypes,
+          routines: defaultRoutine ? [defaultRoutine] : state.routines,
+          activeRoutineId: defaultRoutine?.id ?? state.activeRoutineId,
+        });
       },
 
       completeOnboarding: () => {
         set({ hasCompletedOnboarding: true });
+      },
+
+      exportData: () => encodeBackup(selectPersistedAppState(get())),
+
+      importData: async (serialized) => {
+        let imported: AppState;
+        try {
+          imported = ensureRequiredDefaults(decodeBackup(serialized));
+          await persistSnapshot(imported);
+        } catch (error) {
+          return {
+            ok: false,
+            error: error instanceof Error ? error.message : 'Unable to import this backup.',
+          };
+        }
+        set(imported);
+        return { ok: true };
       },
 
       // ============================================
@@ -597,6 +935,7 @@ export const useAppStore = create<AppStore>()(
           activityTypeId: fitnessActivity.id,
           priority: 1, // Very High priority
         });
+        if (!goal1Id || !goal2Id) return;
 
         // Add sample routine
         const routineId = get().addRoutine('Work Week');
@@ -649,7 +988,7 @@ export const useAppStore = create<AppStore>()(
         yesterday.setDate(yesterday.getDate() - 1);
 
         get().addCompletedEntry({
-          date: yesterday.toISOString().split('T')[0],
+          date: toLocalDateKey(yesterday),
           startTime: new Date(yesterday.setHours(9, 0, 0, 0)).toISOString(),
           endTime: new Date(yesterday.setHours(12, 0, 0, 0)).toISOString(),
           activityTypeId: workActivity.id,
@@ -657,7 +996,7 @@ export const useAppStore = create<AppStore>()(
         });
 
         get().addCompletedEntry({
-          date: yesterday.toISOString().split('T')[0],
+          date: toLocalDateKey(yesterday),
           startTime: new Date(yesterday.setHours(7, 0, 0, 0)).toISOString(),
           endTime: new Date(yesterday.setHours(8, 0, 0, 0)).toISOString(),
           activityTypeId: fitnessActivity.id,
@@ -667,51 +1006,71 @@ export const useAppStore = create<AppStore>()(
       },
     }),
     {
-      name: 'zenroutine-storage',
-      storage: createJSONStorage(() => AsyncStorage),
+      name: APP_STORAGE_KEY,
+      storage: appStorage,
       version: CURRENT_SCHEMA_VERSION,
-      migrate: (persistedState, version) => {
-        let state = persistedState as AppState;
-
-        // Handle migrations here when schema changes
-        if (version === 0) {
-          // Migration from version 0 to 1
-          state = { ...state, schemaVersion: 1 };
-          version = 1;
-        }
-
-        if (version === 1) {
-          // Migration from version 1 to 2: Convert text icons to emojis
-          state = {
-            ...state,
-            schemaVersion: 2,
-            activityTypes: state.activityTypes.map((at) => ({
-              ...at,
-              icon: at.icon && ICON_NAME_TO_EMOJI[at.icon]
-                ? ICON_NAME_TO_EMOJI[at.icon]
-                : at.icon,
-            })),
-          };
-          version = 2;
-        }
-
-        if (version === 2) {
-          // Migration from version 2 to 3: Add priority to goals
-          state = {
-            ...state,
-            schemaVersion: 3,
-            goals: state.goals.map((g) => ({
-              ...g,
-              priority: (g as any).priority ?? 3, // Default to Medium priority
-            })),
-          };
-        }
-
-        return state as AppState & AppActions;
+      skipHydration: true,
+      partialize: selectPersistedAppState,
+      migrate: migratePersistedState,
+      merge: (persistedState, currentState) => {
+        if (persistedState === undefined) return currentState;
+        return {
+          ...currentState,
+          ...migratePersistedState(persistedState, CURRENT_SCHEMA_VERSION),
+        };
+      },
+      onRehydrateStorage: () => {
+        hydrationFailure = null;
+        return (_state, error) => {
+          hydrationFailure = error ?? null;
+        };
       },
     }
   )
 );
+
+export function initializeAppStore(options?: { force?: boolean }): Promise<void> {
+  if (hydrationRun) return hydrationRun;
+  if (hydrationSnapshot.status === 'ready' && !options?.force) {
+    return Promise.resolve();
+  }
+
+  publishHydrationSnapshot({ status: 'loading', error: null });
+  hydrationRun = (async () => {
+    try {
+      await useAppStore.persist.rehydrate();
+      if (hydrationFailure || !useAppStore.persist.hasHydrated()) {
+        throw hydrationFailure instanceof Error
+          ? hydrationFailure
+          : new Error('ZenRoutine could not read its local data.');
+      }
+      const current = selectPersistedAppState(useAppStore.getState());
+      const initialized = ensureRequiredDefaults(current);
+      if (initialized !== current) {
+        await persistSnapshot(initialized);
+        useAppStore.setState(initialized);
+      }
+      publishHydrationSnapshot({ status: 'ready', error: null });
+    } catch (error) {
+      publishHydrationSnapshot({
+        status: 'error',
+        error: error instanceof Error
+          ? error.message
+          : 'ZenRoutine could not read its local data.',
+      });
+    }
+  })().finally(() => {
+    hydrationRun = null;
+  });
+  return hydrationRun;
+}
+
+export async function resetAppStoreAfterHydrationError(): Promise<void> {
+  if (hydrationSnapshot.status !== 'error') return;
+  await useAppStore.getState().resetState();
+  hydrationFailure = null;
+  publishHydrationSnapshot({ status: 'ready', error: null });
+}
 
 // Selector hooks for common queries
 // Note: For derived data (filter/find), we select the base data and derive in the component

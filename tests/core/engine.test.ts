@@ -1,4 +1,4 @@
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 import {
   getTrackedBreakdown,
@@ -25,6 +25,15 @@ import {
 } from '../../src/core/utils/time';
 
 const timestamp = '2026-03-02T08:00:00.000Z';
+const originalTimeZone = process.env.TZ;
+
+beforeAll(() => {
+  process.env.TZ = 'UTC';
+});
+
+afterAll(() => {
+  process.env.TZ = originalTimeZone;
+});
 
 const activityTypes: ActivityType[] = [
   {
@@ -124,13 +133,22 @@ describe('core planning and prediction', () => {
     vi.useFakeTimers();
     vi.setSystemTime(new Date('2026-03-02T12:00:00.000Z'));
 
-    const focusHistory = Array.from({ length: 7 }, (_, index) =>
+    const evidenceDates = [
+      '2026-03-02',
+      '2026-03-03',
+      '2026-03-04',
+      '2026-03-05',
+      '2026-03-06',
+      '2026-03-07',
+      '2026-03-08',
+    ];
+    const focusHistory = evidenceDates.map((date, index) =>
       makeEntry(
         `focus-${index}`,
         'focus',
-        '2026-03-02',
-        `2026-03-02T0${index}:00:00.000Z`,
-        `2026-03-02T0${index}:30:00.000Z`
+        date,
+        `${date}T08:00:00.000Z`,
+        `${date}T08:30:00.000Z`
       )
     );
     const irrelevantHistory = Array.from({ length: 14 }, (_, index) =>
@@ -148,13 +166,19 @@ describe('core planning and prediction', () => {
         ...focusHistory,
         ...irrelevantHistory,
       ])
-    ).toEqual({
+    ).toMatchObject({
       goalId: 'goal-1',
       predictedCompletionDate: '2026-03-16',
       weeklyMinutesAllocated: 210,
+      activityWeeklyCapacity: 210,
+      dedicatedWeeklyMinutes: 0,
+      sharedWeeklyCapacity: 210,
+      allocationShare: 1,
+      competingGoalCount: 0,
       remainingMinutes: 420,
       weeksRemaining: 2,
       confidenceLevel: 'medium',
+      evidenceDays: 7,
     });
   });
 
@@ -221,7 +245,7 @@ describe('tracked analytics', () => {
 
     const breakdown = getTrackedBreakdown(
       entries,
-      '2026-03-02T00:00:00.000Z',
+      '2026-03-02',
       activityTypes
     );
 

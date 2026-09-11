@@ -16,11 +16,21 @@ export interface ValidationResult {
 export function validateRoutineBlock(block: Partial<RoutineBlock>): ValidationResult {
   const errors: ValidationError[] = [];
   
-  if (block.startMinutes === undefined || block.startMinutes < 0 || block.startMinutes >= 1440) {
+  if (
+    block.startMinutes === undefined ||
+    !Number.isInteger(block.startMinutes) ||
+    block.startMinutes < 0 ||
+    block.startMinutes >= 1440
+  ) {
     errors.push({ field: 'startMinutes', message: 'Start time must be between 0 and 1439 minutes' });
   }
   
-  if (block.endMinutes === undefined || block.endMinutes < 0 || block.endMinutes >= 1440) {
+  if (
+    block.endMinutes === undefined ||
+    !Number.isInteger(block.endMinutes) ||
+    block.endMinutes < 0 ||
+    block.endMinutes >= 1440
+  ) {
     errors.push({ field: 'endMinutes', message: 'End time must be between 0 and 1439 minutes' });
   }
   
@@ -30,7 +40,12 @@ export function validateRoutineBlock(block: Partial<RoutineBlock>): ValidationRe
     }
   }
   
-  if (block.dayOfWeek === undefined || block.dayOfWeek < 0 || block.dayOfWeek > 6) {
+  if (
+    block.dayOfWeek === undefined ||
+    !Number.isInteger(block.dayOfWeek) ||
+    block.dayOfWeek < 0 ||
+    block.dayOfWeek > 6
+  ) {
     errors.push({ field: 'dayOfWeek', message: 'Day of week must be between 0 (Sunday) and 6 (Saturday)' });
   }
   
@@ -48,16 +63,24 @@ export function findOverlappingBlocks(
   blocks: RoutineBlock[],
   newBlock: RoutineBlock
 ): RoutineBlock[] {
+  const minutesInDay = 1440;
+  const minutesInWeek = 7 * minutesInDay;
+  const toWeeklyInterval = (block: RoutineBlock): [number, number] => {
+    const start = block.dayOfWeek * minutesInDay + block.startMinutes;
+    let end = block.dayOfWeek * minutesInDay + block.endMinutes;
+    if (block.endMinutes < block.startMinutes) end += minutesInDay;
+    return [start, end];
+  };
+  const [newStart, newEnd] = toWeeklyInterval(newBlock);
+
   return blocks.filter(existing => {
     if (existing.id === newBlock.id) return false;
-    if (existing.dayOfWeek !== newBlock.dayOfWeek) return false;
-    
-    const existingStart = existing.startMinutes;
-    const existingEnd = existing.endMinutes;
-    const newStart = newBlock.startMinutes;
-    const newEnd = newBlock.endMinutes;
-    
-    return !(newEnd <= existingStart || newStart >= existingEnd);
+    const [existingStart, existingEnd] = toWeeklyInterval(existing);
+    return [-minutesInWeek, 0, minutesInWeek].some((shift) => {
+      const shiftedStart = existingStart + shift;
+      const shiftedEnd = existingEnd + shift;
+      return newStart < shiftedEnd && shiftedStart < newEnd;
+    });
   });
 }
 

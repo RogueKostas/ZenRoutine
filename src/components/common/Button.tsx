@@ -56,6 +56,9 @@ export function Button({
       onPress={onPress}
       disabled={isDisabled}
       activeOpacity={0.7}
+      accessibilityRole="button"
+      accessibilityLabel={title}
+      accessibilityState={{ disabled: isDisabled, busy: loading }}
     >
       {loading ? (
         <ActivityIndicator
@@ -64,7 +67,7 @@ export function Button({
         />
       ) : (
         <>
-          {icon && iconPosition === 'left' && icon}
+          {icon && iconPosition === 'left' && <>{icon}</>}
           <Text
             style={[
               styles.text,

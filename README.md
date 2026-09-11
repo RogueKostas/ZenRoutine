@@ -2,6 +2,10 @@
 
 A cross-platform time management app that helps you design weekly routines, track time, and predict goal completion.
 
+**Web beta:** https://zenroutine-web.onrender.com
+
+Reviewers should use the [prototype review guide](docs/reviews/PROTOTYPE_REVIEW_GUIDE.md) to separate product-direction feedback, interaction friction, and known beta limitations.
+
 ## Development Setup
 
 ### Prerequisites
@@ -24,9 +28,11 @@ npm start
 
 ### Testing on Device
 
-1. Install Expo Go on your iOS or Android device
+1. Install Expo Go on your iOS or Android device for a quick local smoke test
 2. Run `npm start`
 3. Scan the QR code with your device
+
+Expo development and preview builds are the intended production-grade beta path once EAS is configured. The public web beta is deployed separately as a Render Static Site; see [the cloud beta task contract](docs/CLOUD_BETA_TASK.md).
 
 ## Project Structure
 

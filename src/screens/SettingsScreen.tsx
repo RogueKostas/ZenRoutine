@@ -5,8 +5,11 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Switch,
   Alert,
+  ActivityIndicator,
+  Modal,
+  Share,
+  TextInput,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
@@ -18,9 +21,7 @@ interface SettingItemProps {
   title: string;
   subtitle?: string;
   onPress?: () => void;
-  value?: boolean;
-  onValueChange?: (value: boolean) => void;
-  type?: 'navigation' | 'toggle' | 'action' | 'select';
+  type?: 'navigation' | 'action' | 'select';
   destructive?: boolean;
   rightText?: string;
 }
@@ -29,8 +30,6 @@ function SettingItem({
   title,
   subtitle,
   onPress,
-  value,
-  onValueChange,
   type = 'navigation',
   destructive = false,
   rightText,
@@ -41,7 +40,9 @@ function SettingItem({
     <TouchableOpacity
       style={[styles.settingItem, { borderBottomColor: colors.border }]}
       onPress={onPress}
-      disabled={type === 'toggle'}
+      disabled={!onPress}
+      accessibilityRole={onPress ? 'button' : undefined}
+      accessibilityLabel={subtitle ? `${title}. ${subtitle}` : title}
     >
       <View style={styles.settingContent}>
         <Text style={[styles.settingTitle, { color: destructive ? colors.error : colors.text }]}>
@@ -53,14 +54,6 @@ function SettingItem({
           </Text>
         )}
       </View>
-      {type === 'toggle' && onValueChange && (
-        <Switch
-          value={value}
-          onValueChange={onValueChange}
-          trackColor={{ false: colors.border, true: colors.primary }}
-          thumbColor="#fff"
-        />
-      )}
       {type === 'navigation' && (
         <Text style={[styles.chevron, { color: colors.textMuted }]}>›</Text>
       )}
@@ -81,12 +74,14 @@ const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
 ];
 
 export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
-  const [notificationsEnabled, setNotificationsEnabled] = useState(true);
-  const [soundEnabled, setSoundEnabled] = useState(true);
+  const [backupMode, setBackupMode] = useState<'export' | 'import' | null>(null);
+  const [backupText, setBackupText] = useState('');
+  const [backupError, setBackupError] = useState<string | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
 
   const { colors, mode, setMode, isDark } = useTheme();
   const activityTypes = useActivityTypes();
-  const { resetState, _addSampleData } = useAppStore();
+  const { resetState, exportData, importData, _addSampleData } = useAppStore();
 
   const handleThemeChange = () => {
     Alert.alert(
@@ -104,11 +99,52 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   };
 
   const handleExportData = () => {
-    Alert.alert('Export Data', 'Data export will be available in a future update.');
+    setBackupText(exportData());
+    setBackupError(null);
+    setBackupMode('export');
   };
 
   const handleImportData = () => {
-    Alert.alert('Import Data', 'Data import will be available in a future update.');
+    setBackupText('');
+    setBackupError(null);
+    setBackupMode('import');
+  };
+
+  const closeBackup = () => {
+    if (isImporting) return;
+    setBackupMode(null);
+    setBackupText('');
+    setBackupError(null);
+  };
+
+  const handleShareBackup = async () => {
+    try {
+      await Share.share({
+        title: 'ZenRoutine backup',
+        message: backupText,
+      });
+    } catch {
+      setBackupError('Sharing is unavailable here. Select and copy the backup text instead.');
+    }
+  };
+
+  const handleConfirmImport = async () => {
+    if (!backupText.trim()) {
+      setBackupError('Paste a ZenRoutine backup before importing.');
+      return;
+    }
+    setIsImporting(true);
+    setBackupError(null);
+    const result = await importData(backupText);
+    setIsImporting(false);
+    if (!result.ok) {
+      setBackupError(result.error);
+      return;
+    }
+    setBackupMode(null);
+    setBackupText('');
+    setBackupError(null);
+    Alert.alert('Import complete', 'Your ZenRoutine backup has been restored.');
   };
 
   const handleResetData = () => {
@@ -120,9 +156,16 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         {
           text: 'Reset',
           style: 'destructive',
-          onPress: () => {
-            resetState();
-            Alert.alert('Success', 'All data has been reset.');
+          onPress: async () => {
+            try {
+              await resetState();
+              Alert.alert('Success', 'All data has been reset.');
+            } catch {
+              Alert.alert(
+                'Reset failed',
+                'Your existing data was left unchanged. Please try again.'
+              );
+            }
           },
         },
       ]
@@ -161,31 +204,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               title="Manage Activity Types"
               subtitle={`${activityTypes.length} types configured`}
               onPress={() => {
-                // @ts-ignore - ActivityTypes screen exists in RootStack
                 navigation.navigate('ActivityTypes');
               }}
-            />
-          </View>
-        </View>
-
-        {/* Notifications Section */}
-        <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Notifications</Text>
-          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-            <SettingItem
-              title="Enable Notifications"
-              subtitle="Get reminders for scheduled blocks"
-              type="toggle"
-              value={notificationsEnabled}
-              onValueChange={setNotificationsEnabled}
-            />
-            <View style={[styles.separator, { backgroundColor: colors.border }]} />
-            <SettingItem
-              title="Sound"
-              subtitle="Play sound with notifications"
-              type="toggle"
-              value={soundEnabled}
-              onValueChange={setSoundEnabled}
             />
           </View>
         </View>
@@ -210,13 +230,13 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
           <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
             <SettingItem
               title="Export Data"
-              subtitle="Download your data as JSON"
+              subtitle="Share or copy a portable JSON backup"
               onPress={handleExportData}
             />
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Import Data"
-              subtitle="Restore from a backup file"
+              subtitle="Paste and validate a ZenRoutine backup"
               onPress={handleImportData}
             />
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
@@ -255,11 +275,6 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               title="Privacy Policy"
               onPress={() => Alert.alert('Privacy', 'Your data stays on your device.')}
             />
-            <View style={[styles.separator, { backgroundColor: colors.border }]} />
-            <SettingItem
-              title="Open Source Licenses"
-              onPress={() => Alert.alert('Licenses', 'License information will be added here.')}
-            />
           </View>
         </View>
 
@@ -272,7 +287,6 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
                 title="Debug Panel"
                 subtitle="Access development tools"
                 onPress={() => {
-                  // @ts-ignore - Debug screen exists in RootStack
                   navigation.navigate('Debug');
                 }}
               />
@@ -289,6 +303,79 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
         <View style={{ height: 40 }} />
       </ScrollView>
+
+      <Modal
+        visible={backupMode !== null}
+        transparent
+        animationType="fade"
+        onRequestClose={closeBackup}
+      >
+        <View style={styles.modalOverlay}>
+          <View
+            style={[styles.modalContent, { backgroundColor: colors.surface }]}
+            accessibilityViewIsModal
+          >
+            <Text accessibilityRole="header" style={[styles.modalTitle, { color: colors.text }]}>
+              {backupMode === 'export' ? 'Export backup' : 'Import backup'}
+            </Text>
+            <Text style={[styles.modalDescription, { color: colors.textSecondary }]}>
+              {backupMode === 'export'
+                ? 'Keep this JSON somewhere private. It contains your routines, goals, and tracking history.'
+                : 'Paste a complete ZenRoutine JSON backup. It will be checked before your current data is replaced.'}
+            </Text>
+            <TextInput
+              autoFocus={backupMode === 'import'}
+              accessibilityLabel={backupMode === 'export' ? 'ZenRoutine backup JSON' : 'Paste backup JSON'}
+              multiline
+              selectTextOnFocus={backupMode === 'export'}
+              editable={backupMode === 'import'}
+              value={backupText}
+              onChangeText={setBackupText}
+              placeholder={backupMode === 'import' ? 'Paste backup JSON here' : undefined}
+              placeholderTextColor={colors.textMuted}
+              style={[
+                styles.backupInput,
+                { color: colors.text, borderColor: colors.border, backgroundColor: colors.background },
+              ]}
+            />
+            {backupError && (
+              <Text
+                accessibilityLiveRegion="assertive"
+                style={[styles.backupError, { color: colors.error }]}
+              >
+                {backupError}
+              </Text>
+            )}
+            <View style={styles.modalActions}>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel="Cancel backup"
+                style={[styles.modalButton, { borderColor: colors.border }]}
+                onPress={closeBackup}
+                disabled={isImporting}
+              >
+                <Text style={[styles.modalButtonText, { color: colors.textSecondary }]}>Cancel</Text>
+              </TouchableOpacity>
+              <TouchableOpacity
+                accessibilityRole="button"
+                accessibilityLabel={backupMode === 'export' ? 'Share backup' : 'Import backup'}
+                accessibilityState={{ busy: isImporting, disabled: isImporting }}
+                style={[styles.modalButton, styles.primaryModalButton, { backgroundColor: colors.primary }]}
+                onPress={backupMode === 'export' ? handleShareBackup : handleConfirmImport}
+                disabled={isImporting}
+              >
+                {isImporting ? (
+                  <ActivityIndicator color="#fff" />
+                ) : (
+                  <Text style={[styles.modalButtonText, styles.primaryModalButtonText]}>
+                    {backupMode === 'export' ? 'Share' : 'Import'}
+                  </Text>
+                )}
+              </TouchableOpacity>
+            </View>
+          </View>
+        </View>
+      </Modal>
     </SafeAreaView>
   );
 }
@@ -367,5 +454,67 @@ const styles = StyleSheet.create({
   footerSubtext: {
     fontSize: 13,
     marginTop: 4,
+  },
+  modalOverlay: {
+    flex: 1,
+    justifyContent: 'center',
+    backgroundColor: 'rgba(0, 0, 0, 0.55)',
+    padding: 20,
+  },
+  modalContent: {
+    width: '100%',
+    maxWidth: 640,
+    maxHeight: '85%',
+    alignSelf: 'center',
+    borderRadius: 16,
+    padding: 20,
+  },
+  modalTitle: {
+    fontSize: 22,
+    fontWeight: '700',
+  },
+  modalDescription: {
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 8,
+    marginBottom: 16,
+  },
+  backupInput: {
+    minHeight: 180,
+    maxHeight: 360,
+    borderWidth: 1,
+    borderRadius: 10,
+    padding: 12,
+    fontSize: 13,
+    textAlignVertical: 'top',
+  },
+  backupError: {
+    marginTop: 10,
+    fontSize: 14,
+  },
+  modalActions: {
+    flexDirection: 'row',
+    justifyContent: 'flex-end',
+    gap: 12,
+    marginTop: 16,
+  },
+  modalButton: {
+    minWidth: 96,
+    minHeight: 48,
+    borderWidth: 1,
+    borderRadius: 10,
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 16,
+  },
+  primaryModalButton: {
+    borderWidth: 0,
+  },
+  modalButtonText: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  primaryModalButtonText: {
+    color: '#fff',
   },
 });

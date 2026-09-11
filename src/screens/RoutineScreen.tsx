@@ -3,8 +3,13 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'rea
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-import { useRoutines, useActiveRoutine, useActivityTypes, useGoals, useAppStore } from '../store';
-import { getDayName, minutesToTimeString, formatDuration } from '../core/utils/time';
+import { useActiveRoutine, useActivityTypes, useGoals, useAppStore } from '../store';
+import {
+  formatDuration,
+  getDayName,
+  getRoutineBlockDurationMinutes,
+  minutesToTimeString,
+} from '../core/utils/time';
 import { BlockEditor, SimpleBlockList } from '../components/routine';
 import type { TabScreenProps } from '../navigation/types';
 import type { DayOfWeek, RoutineBlock } from '../core/types';
@@ -17,7 +22,6 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
   const [showBlockEditor, setShowBlockEditor] = useState(false);
   const [editingBlock, setEditingBlock] = useState<RoutineBlock | undefined>(undefined);
 
-  const routines = useRoutines();
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
   const goals = useGoals();
@@ -27,10 +31,10 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
     .filter((b) => b.dayOfWeek === selectedDay)
     .sort((a, b) => a.startMinutes - b.startMinutes) || [];
 
-  const totalMinutes = dayBlocks.reduce((sum, b) => {
-    const duration = b.endMinutes - b.startMinutes;
-    return sum + (duration > 0 ? duration : duration + 1440);
-  }, 0);
+  const totalMinutes = dayBlocks.reduce(
+    (sum, block) => sum + getRoutineBlockDurationMinutes(block),
+    0
+  );
 
   const handleAddBlock = useCallback(() => {
     setEditingBlock(undefined);
@@ -77,11 +81,10 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Routine</Text>
-        {routines.length > 1 && (
-          <TouchableOpacity style={[styles.routineSelector, { backgroundColor: colors.backgroundSecondary }]}>
-            <Text style={[styles.routineName, { color: colors.text }]}>{activeRoutine?.name || 'Select'}</Text>
-            <Text style={[styles.dropdownIcon, { color: colors.textSecondary }]}>▼</Text>
-          </TouchableOpacity>
+        {activeRoutine && (
+          <Text style={[styles.routineName, { color: colors.textSecondary }]}>
+            {activeRoutine.name}
+          </Text>
         )}
       </View>
 
@@ -100,6 +103,9 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
                 isToday && !isSelected ? { backgroundColor: colors.backgroundSecondary } : undefined,
               ]}
               onPress={() => setSelectedDay(day)}
+              accessibilityRole="tab"
+              accessibilityLabel={`${getDayName(day)}${hasBlocks ? ', has planned blocks' : ''}`}
+              accessibilityState={{ selected: isSelected }}
             >
               <Text
                 style={[
@@ -139,7 +145,12 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
               <Text style={styles.emptyIcon}>📭</Text>
               <Text style={[styles.emptyTitle, { color: colors.text }]}>No blocks on {getDayName(selectedDay)}</Text>
               <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Add a time block to start planning this day</Text>
-              <TouchableOpacity style={[styles.addBlockButton, { backgroundColor: colors.primary }]} onPress={handleAddBlock}>
+              <TouchableOpacity
+                style={[styles.addBlockButton, { backgroundColor: colors.primary }]}
+                onPress={handleAddBlock}
+                accessibilityRole="button"
+                accessibilityLabel={`Add a block to ${getDayName(selectedDay)}`}
+              >
                 <Text style={styles.addBlockButtonText}>+ Add Block</Text>
               </TouchableOpacity>
             </View>
@@ -155,6 +166,8 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
                 const id = addRoutine('My Week');
                 setActiveRoutine(id);
               }}
+              accessibilityRole="button"
+              accessibilityLabel="Create routine"
             >
               <Text style={styles.addBlockButtonText}>Create Routine</Text>
             </TouchableOpacity>
@@ -171,6 +184,8 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
                   key={day}
                   style={[styles.copyButton, { backgroundColor: colors.backgroundSecondary }]}
                   onPress={() => handleCopyDay(day)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Copy ${getDayName(selectedDay)} blocks to ${getDayName(day)}`}
                 >
                   <Text style={[styles.copyButtonText, { color: colors.text }]}>{getDayName(day, true)}</Text>
                 </TouchableOpacity>
@@ -184,7 +199,12 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
 
       {/* Floating Add Button */}
       {activeRoutine && (
-        <TouchableOpacity style={[styles.fab, { backgroundColor: colors.primary }]} onPress={handleAddBlock}>
+        <TouchableOpacity
+          style={[styles.fab, { backgroundColor: colors.primary }]}
+          onPress={handleAddBlock}
+          accessibilityRole="button"
+          accessibilityLabel={`Add a block to ${getDayName(selectedDay)}`}
+        >
           <Text style={styles.fabText}>+</Text>
         </TouchableOpacity>
       )}
@@ -196,7 +216,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
           routineId={activeRoutine.id}
           block={editingBlock}
           dayOfWeek={selectedDay}
-          existingBlocks={dayBlocks}
+          existingBlocks={activeRoutine.blocks}
           onClose={handleCloseEditor}
           onSave={handleCloseEditor}
         />
@@ -246,6 +266,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     marginHorizontal: 2,
     borderRadius: borderRadius.md,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   dayText: {
     fontSize: 13,
@@ -325,6 +347,8 @@ const styles = StyleSheet.create({
     paddingVertical: spacing.sm,
     borderRadius: borderRadius.sm,
     marginRight: spacing.sm,
+    minHeight: 44,
+    justifyContent: 'center',
   },
   copyButtonText: {
     fontSize: 14,

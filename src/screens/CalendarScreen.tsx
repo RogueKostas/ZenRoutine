@@ -17,7 +17,14 @@ import {
   useTrackingEntries,
 } from '../store';
 import { predictAllGoals } from '../core/engine/prediction';
-import { formatDuration, getDayName } from '../core/utils/time';
+import {
+  addDaysToDateKey,
+  differenceInCalendarDays,
+  formatDuration,
+  getDayName,
+  parseLocalDateKey,
+  toLocalDateKey,
+} from '../core/utils/time';
 import { PRIORITY_COLORS, PRIORITY_LABELS } from '../core/types';
 import type { DayOfWeek, RoutineBlock, Goal } from '../core/types';
 
@@ -97,7 +104,7 @@ export function CalendarScreen({ navigation }: any) {
       const blocks = activeRoutine?.blocks.filter(b => b.dayOfWeek === dayOfWeek) || [];
 
       // Find goals predicted to complete on this date
-      const dateString = date.toISOString().split('T')[0];
+      const dateString = toLocalDateKey(date);
       const completingGoals = predictions
         .filter(p => p.predictedCompletionDate === dateString)
         .map(p => goals.find(g => g.id === p.goalId))
@@ -416,19 +423,17 @@ function formatDayTitle(date: Date): string {
 }
 
 function formatPredictionDate(dateString: string): string {
-  const date = new Date(dateString);
-  const today = new Date();
-  const tomorrow = new Date(today);
-  tomorrow.setDate(tomorrow.getDate() + 1);
+  const date = parseLocalDateKey(dateString);
+  const todayKey = toLocalDateKey();
 
-  if (dateString === today.toISOString().split('T')[0]) {
+  if (dateString === todayKey) {
     return 'Today';
   }
-  if (dateString === tomorrow.toISOString().split('T')[0]) {
+  if (dateString === addDaysToDateKey(todayKey, 1)) {
     return 'Tomorrow';
   }
 
-  const daysUntil = Math.ceil((date.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
+  const daysUntil = differenceInCalendarDays(todayKey, dateString);
   if (daysUntil < 7) {
     return `In ${daysUntil} days`;
   }
