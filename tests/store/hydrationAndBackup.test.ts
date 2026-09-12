@@ -260,6 +260,51 @@ describe('hydration of a store that already holds an unreadable entry', () => {
   });
 });
 
+describe('hydration of a store whose references have gone stale', () => {
+  // The other live route to the same permanent brick: the entry itself is perfectly readable,
+  // but the goal it points at is gone from the blob — a torn AsyncStorage write during
+  // deleteGoal, a hand-edited blob, a restore that dropped a record.
+  const strandedEntry = makeTrackingEntry({
+    id: 'entry-stranded',
+    goalId: 'goal-that-was-deleted',
+  });
+
+  it('opens, sets the stranded entry aside, and gets it to the side-car', async () => {
+    const raw = JSON.stringify({
+      state: makeAppState({
+        goals: [makeGoal({ id: 'persisted-goal' })],
+        trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), strandedEntry],
+      }),
+      version: CURRENT_SCHEMA_VERSION,
+    });
+    await AsyncStorage.setItem(APP_STORAGE_KEY, raw);
+    vi.clearAllMocks();
+
+    await initializeAppStore({ force: true });
+
+    // Before the fix this was `status: 'error'` on this and every subsequent launch.
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    expect(useAppStore.getState().trackingEntries.map((entry) => entry.id)).toEqual([
+      'entry-good',
+    ]);
+    expect(useAppStore.getState().goals.map((goal) => goal.id)).toEqual(['persisted-goal']);
+
+    // A linkage failure has to reach the side-car exactly as a parse failure does.
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    expect(archive.generations).toHaveLength(1);
+    expect(archive.generations[0].entries).toEqual([{
+      index: 1,
+      id: 'entry-stranded',
+      reason: 'Invalid tracking entry goal: goal is missing or uses another activity type',
+      record: strandedEntry,
+    }]);
+    expect(getQuarantinedTrackingEntries()).toEqual(archive.generations[0].entries);
+    expect(await AsyncStorage.getItem(APP_STORAGE_KEY)).toBe(raw);
+  });
+});
+
 describe('durability of the quarantine side-car', () => {
   const LEGACY_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION - 1;
 
