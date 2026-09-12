@@ -227,3 +227,92 @@ PROJECTIONS by the lanes, not measurements, and are labelled as such until a gat
 ### Last successful machine contact
 2026-09-11 23:16Z, bridge job zr-lanes-4, exit 0.
 
+
+---
+
+## Pass 3 - 2026-09-11 23:10-23:45Z
+
+### Landed - two PRs, each gated by me on the merged tree
+
+| PR | issue | merged sha | my gate on the merged tree | issue |
+|---|---|---|---|---|
+| #17 | #3 (F1) | 2189e5f (branch tip 370fcac) | npm ci 0 - typecheck 0 - **72 tests** - build:web 0 | closed by the PR |
+| #22 | #7 (F5) | 9cca4f2 (branch tip f9081c3) | npm ci 0 - typecheck 0 - **79 tests** - build:web 0 | closed by the PR |
+
+Both gated pushes reported 0 deletions before AND after syncing origin/main, tracked tree clean, and
+remote ref read back matching. Both merged with --match-head-commit against the sha I gated.
+
+PR #22's gate mattered more than usual: persistence.ts, useAppStore.ts and useAppStore.test.ts all
+AUTO-MERGED against PR #17, which had landed minutes earlier, so that combination had never been
+compiled or run anywhere before I ran it.
+
+Suite progression, each number measured by me on the host, at the named commit:
+261c592 = 62 -> 370fcac = 72 -> f9081c3 = 79.
+
+### Closed without code: #8 (F6)
+The f6-hermes-probe lane, forbidden from fixing, delivered the measurement and the answer is NOT A
+DEFECT. `babel-preset-expo` 56.0.0 (2026-05-05) made the `import.meta` transform default-on and
+renamed the option - the same SDK step that deleted babel.config.js. Verified in the shipped code
+(`build/configs/expo.js:92`, opt-OUT), not only the changelog. Native android AND ios bundles were
+built and grepped: one `import.meta` hit each, and it is a COMMENT in Expo's own ImportMetaRegistry.
+Zustand resolves to CJS on native via a `react-native` export condition, so the ESM file is never
+loaded there. Control: with `transformImportMeta: false` the build HARD-FAILS, so a successful
+`expo export` is itself proof of absence - the feared failure is structurally impossible on SDK 57,
+which is stronger than the issue asked for. Do not restore babel.config.js: the old option name no
+longer exists.
+
+### Reviews I ran myself as a non-author - 5 findings on #17, 5 on #22, all filed
+Both branches merged anyway. The reasoning, recorded because it is a judgement and not a measurement:
+each is a STRICT IMPROVEMENT over main with a green gate, and every remaining path to the old failure
+predates the branch. Merging kept the loop moving; the findings became lanes.
+
+New issues: #18 (p0, side-car can rotate out a genuine generation - the branch's own test asserting
+the blob is unchanged is what makes the "unreachable" cap reachable), #19 (measure: can zustand's
+migrate write-back lose a quarantined record on a pre-v4 blob), #20 (pointer-clear gate does not check
+the blame relationship, so unrelated corruption is silently swallowed - the code contradicts its own
+comment), #21 (notice dismissal not scoped to the event; side-car is write-only), #23 (p0, A NO-OP
+BLOCK SAVE STILL COLLAPSES CONFIDENCE - `updateRoutineBlock` stamps unconditionally and BlockEditor
+has no dirty check, so the #7 headline is only two thirds delivered), #24 (`setActiveRoutine` stamps
+`updatedAt` on EVERY routine; a second writer the plan's remainder note does not mention).
+#5 was WIDENED rather than duplicated: a linkage failure on a well-formed entry still bricks
+hydration, outside the quarantine sink #17 added. Comment posted on #5.
+
+### Launched
+Three lanes from 9cca4f2, three non-colliding file groups:
+- f4-goal-evidence -> #6 (p0), prediction.ts + prediction.test.ts. May also close #9.
+- no-op-save       -> #23 (p0), useAppStore block mutations + BlockEditor.tsx
+- docs-truth       -> #10, docs only
+
+Held back deliberately to avoid collisions, for the next free slots: #18, #20, #5, #4 (all the
+persistence.ts + quarantine group) and #24 (useAppStore routine mutations, collides with #23).
+
+### Corrections the LANES made to MY briefs this pass - all accepted
+- f1-hydration found a REAL BUG IN ITS OWN FIRST ATTEMPT once re-dispatched with the resume preamble:
+  the pointer rule cleared `currentTrackingEntryId` by searching quarantine for a matching id, so a
+  record whose own id is the unreadable field is quarantined as id:null, the search misses it, and
+  hydration still bricks - by the exact mechanism being fixed. Negative control 3 is that bug going
+  red. This is the second time the resume preamble has paid for itself.
+- f1 also corrected a comment of its own that claimed the clamp made the action and persistence
+  layers agree; `trackingEntryIsValid` requires endTime > startTime, so they do not. The asymmetry
+  is deliberate and now documented as such.
+- f5: my brief named three block mutations. There are FOUR - `copyDayBlocks` had the same blast
+  radius and would have been a live hole. MY BRIEF WAS WRONG.
+- f6: `git check-ignore -v dist` (which I put in the brief) is a misleading check - it exits 1 and
+  prints nothing because the pattern is directory-only and the path did not exist. Use `dist/`.
+  MY BRIEF WAS WRONG.
+
+### RULES THIS PASS ADDED
+- An orchestrator review that merges anyway must say WHY in the PR, not just list findings. "Strict
+  improvement over main, no regression, gate green" is a defensible reason; silence is not.
+- Re-dispatching an interrupted lane with the resume preamble is not a formality. Twice now the
+  resumed lane found a defect in its own earlier work that inspection had missed.
+
+### Not yet verified - unchanged and still true
+No physical-device smoke has ever been run on this project (#15). Every native claim stays labelled
+unverified. `expo export` exercises Metro, Babel and hermesc; it is not `eas build` and it is not a
+device. The Render blueprint still builds from `codex/r1-data-safety`, not from main (#11, director's
+call).
+
+### Last successful machine contact
+2026-09-11 23:42Z, bridge job zr-lanes-5, exit 0.
+

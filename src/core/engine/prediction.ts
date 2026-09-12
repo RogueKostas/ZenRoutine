@@ -62,8 +62,36 @@ export function getCapacityChangedAt(routine: Routine, activityTypeId: string): 
   return routine.capacityChangedAt?.[activityTypeId] ?? routine.updatedAt;
 }
 
+/**
+ * Whose tracking counts as evidence for one goal's forecast.
+ *
+ * An entry linked to a *different* goal never counts. The user attributed that
+ * session elsewhere, so it is evidence that the activity's time went to another
+ * goal — the opposite of support for this one. Counting it let a goal the user
+ * had never worked on inherit a sibling's history and display a high-confidence
+ * date.
+ *
+ * An entry with no `goalId` counts for every goal of the activity type. That is
+ * a deliberate choice, not an oversight: unlinked time is precisely the time the
+ * model puts in the shared pool and divides among these goals by priority, so
+ * observing it is observing the pool the forecast spends. Unlinked tracking is
+ * also the ordinary path, not an edge case — an unlinked routine block starts an
+ * unlinked entry, and the quick-start goal picker offers "no goal" outright — so
+ * discarding it would hold a diligent user at low confidence forever.
+ *
+ * Two consequences are accepted. Co-allocated goals with no linked history of
+ * their own share one evidence count, which is honest: the shared pool is the
+ * only thing that has been observed, and nothing distinguishes them. And because
+ * deleting a goal clears `goalId` from its entries, a deleted goal's history
+ * joins the unlinked pool rather than disappearing.
+ */
+function entryIsEvidenceForGoal(entry: TrackingEntry, goalId: string): boolean {
+  return !entry.goalId || entry.goalId === goalId;
+}
+
 function getForecastEvidence(
   trackingHistory: TrackingEntry[] | undefined,
+  goalId: string,
   activityTypeId: string,
   weeklyCapacity: number,
   capacityChangedAt: string
@@ -80,6 +108,7 @@ function getForecastEvidence(
     (trackingHistory ?? [])
       .filter((entry) =>
         entry.activityTypeId === activityTypeId &&
+        entryIsEvidenceForGoal(entry, goalId) &&
         Boolean(entry.endTime) &&
         Date.parse(entry.endTime!) >= Date.parse(capacityChangedAt) &&
         getTrackingEntryDurationMinutes(entry) > 0
@@ -154,6 +183,7 @@ export function predictGoalCompletion(
 
   const evidence = getForecastEvidence(
     trackingHistory,
+    goal.id,
     goal.activityTypeId,
     availableWeeklyMinutes,
     getCapacityChangedAt(routine, goal.activityTypeId)
@@ -223,6 +253,7 @@ function predictActivityGoals(
       weeksRemaining: null,
       ...getForecastEvidence(
         trackingHistory,
+        goal.id,
         activityTypeId,
         0,
         getCapacityChangedAt(routine, activityTypeId)
@@ -286,6 +317,7 @@ function predictActivityGoals(
       weeksRemaining,
       ...getForecastEvidence(
         trackingHistory,
+        goal.id,
         activityTypeId,
         weeklyMinutesAllocated,
         getCapacityChangedAt(routine, activityTypeId)
