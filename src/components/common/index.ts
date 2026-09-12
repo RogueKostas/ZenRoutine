@@ -11,6 +11,13 @@ export { Badge, ColorDot, StatusIndicator } from './Badge';
 export type { BadgeVariant, BadgeSize } from './Badge';
 
 export {
+  QuarantineNotice,
+  isQuarantineNoticeVisible,
+  quarantineNoticeMessage,
+} from './QuarantineNotice';
+export type { QuarantineReport } from './QuarantineNotice';
+
+export {
   FadeInView,
   ScaleInView,
   SlideInView,
