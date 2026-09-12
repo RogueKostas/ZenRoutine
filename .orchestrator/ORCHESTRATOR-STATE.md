@@ -316,3 +316,84 @@ call).
 ### Last successful machine contact
 2026-09-11 23:42Z, bridge job zr-lanes-5, exit 0.
 
+
+---
+
+## Pass 4 - 2026-09-12 00:02-01:20Z
+
+### Landed - three PRs, each gated by me on its own merged tree
+
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #25 | #6 (F4), closes #9 | 1be6543 | ci 0, tsc 0, **82 tests**, web 0 | bf4e3c2 |
+| #26 | #23 | 5dee5f2 | ci 0, tsc 0, **86 tests**, web 0 | e79ed46 |
+| #27 | #10 | 15c0a76 | ci 0, tsc 0, **86 tests**, web 0, 0 source files changed | 1fbc197 |
+
+Each gated push: 0 deletions before AND after sync, remote ref read back matching. Each merged with
+--match-head-commit against the sha I gated. Each landed one at a time, re-synced and re-gated,
+because #25 and #26 both touch code the other reads.
+
+Suite: 79 at 9cca4f2 -> 82 at 1be6543 -> 86 at 5dee5f2. Every number measured by me on the host.
+
+### Reviews I ran myself - I read the diffs this pass, not agent reports
+For #25 and #26 the diffs were small enough to read directly and both are clean. Specifically
+checked on #26: the early return fires BEFORE `updatedAt` is touched, so a no-op save now writes
+literally nothing; and `changedFields` compares the merged block against the stored one rather than
+trusting the payload shape, so a present-but-identical field does not count as a change.
+
+### The correction that matters most this pass
+f4-goal-evidence found that MY BRIEF WAS WRONG about the unlinked-entry question being open. It is
+not: the strict alternative (unlinked counts for nobody) reddens SIX tests - its own plus five
+pre-existing, including BOTH of PR #22's capacityChangedAt tests that my brief said must keep
+passing untouched. Every existing evidence fixture is unlinked because `makeTrackingEntry` sets no
+goalId. So "unlinked counts for nobody" and "#22's tests pass untouched" cannot both hold. The lane
+would have made the same call on the merits and said so, but flagged that the choice was constrained
+rather than free. That is the fourth lane correction accepted this run and the fourth that was right.
+
+### The docs lane found a better defect than the one I briefed
+I filed #10 as "the plan says 11 tests, the suite is 62". The lane established that:
+- the 11 was NEVER WRONG - at f228fd1 and a192181 the suite genuinely is 8 + 3, and
+  `git log eb357c3..a192181 -- tests` is empty. The defect is TENSE, not arithmetic: a true figure
+  re-recorded in a form that reads as a description of the suite. It dated them rather than
+  "correcting" them, which is the right treatment for a record.
+- R1's "54 across six files" WAS wrong at the commit that claims it. d5b1e87 has seven test files,
+  and 54 is exactly the static count of `it(` declarations. The runtime count there is 62, because
+  persistence.test.ts has two `it.each` blocks expanding to eight more cases than are written. The
+  same +8 gap holds today: 71 declarations, 79 cases. Someone counted declarations and wrote it down
+  as a run.
+The plan now separates "accurate when recorded, now stale" from "wrong when recorded".
+
+### My omission, found by a lane and fixed
+`gh` was not in the lane allow list, so docs-truth could not read the tracker and correctly REFUSED
+to invent the #18-#24 mapping, labelling it unverified instead. Read-only `gh issue view`,
+`gh issue list`, `gh pr view` and `gh pr diff` are now in config `allowed`. Write verbs stay out.
+
+### Director decisions taken this pass
+- "in general want to build from main" - recorded on #11, which is now split: the repo half (declare
+  `branch: main` in render.yaml) is a lane, dispatched below; the Render-side blueprint re-sync and
+  the spend review are his, tomorrow. I flagged that autoDeployTrigger: checksPass + main makes the
+  beta URL a live mirror of main rather than a published snapshot.
+- "just me testing/developing now so all good" - he accepts that consequence. No external testers,
+  so a merge that redeploys is fine.
+
+### Launched - concurrency raised from 3 to 4
+Four non-colliding lanes from 1fbc197:
+- zustand-probe   -> #19, MEASURE ONLY, edits nothing. Its answer decides how #18 (p0) is fixed, so
+                     it runs first by the unblocks-the-most rule.
+- routine-writers -> #24, src/store/useAppStore.ts routine-level mutations
+- quarantine-blame-> #20, src/store/persistence.ts
+- render-branch   -> #11 repo half, render.yaml only, explicitly forbidden from touching Render
+maxConcurrentLanes raised to 4 because the fourth lane edits one YAML key and the four file groups
+are disjoint. Revert to 3 if a pass ever has to serialise.
+
+Held for next: #18 (blocked on #19's finding by its own acceptance text), #5 (widened, waits for
+quarantine-blame to clear persistence.ts), #4 (same file group), then product #13, #14, #12.
+
+### Not yet verified - unchanged
+#15 is open. No physical-device smoke has ever been run on this project. Every native claim stays
+labelled unverified. The Render blueprint still builds from codex/r1-data-safety until the director
+re-syncs it.
+
+### Last successful machine contact
+2026-09-12 01:19Z, bridge job zr-lanes-6, exit 0.
+
