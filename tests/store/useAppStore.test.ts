@@ -222,6 +222,122 @@ describe('routine block capacity timestamps', () => {
       [edited.id]: frozenTime,
     });
   });
+
+  describe('a save that changes nothing', () => {
+    const editedBlockStart = 18 * 60;
+    const editedBlockEnd = 19 * 60;
+
+    /**
+     * A routine with one block per activity type, the second one goal-linked --
+     * the shape BlockEditor edits. Returns everything a caller needs to replay
+     * a Save with the same values already on screen.
+     */
+    function seedRoutine() {
+      const [untouched, edited] = useAppStore.getState().activityTypes;
+      const routineId = useAppStore.getState().addRoutine('Week');
+      const goalId = useAppStore.getState().addGoal({
+        name: 'Run a 10k',
+        description: 'A goal linked to the block under edit',
+        estimatedMinutes: 600,
+        activityTypeId: edited.id,
+      });
+      expect(goalId).not.toBeNull();
+
+      useAppStore.getState().addRoutineBlock(routineId, {
+        dayOfWeek: 1,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60,
+        activityTypeId: untouched.id,
+      });
+      vi.advanceTimersByTime(60_000);
+      const blockId = useAppStore.getState().addRoutineBlock(routineId, {
+        dayOfWeek: 1,
+        startMinutes: editedBlockStart,
+        endMinutes: editedBlockEnd,
+        activityTypeId: edited.id,
+        goalId: goalId!,
+      });
+      expect(blockId).not.toBeNull();
+
+      return { untouched, edited, routineId, goalId: goalId!, blockId: blockId! };
+    }
+
+    it('leaves every capacity timestamp, the routine, and the block untouched', () => {
+      const { untouched, edited, routineId, goalId, blockId } = seedRoutine();
+      const before = routineById(routineId);
+      const capacityBefore = { ...before.capacityChangedAt };
+      expect(capacityBefore).toEqual({
+        [untouched.id]: frozenTime,
+        [edited.id]: '2026-03-02T09:01:00.000Z',
+      });
+
+      vi.advanceTimersByTime(60_000);
+      // Exactly what BlockEditor sends when the user opens a block to look at
+      // it and taps Save: every field, all of them the values already stored.
+      useAppStore.getState().updateRoutineBlock(routineId, blockId, {
+        startMinutes: editedBlockStart,
+        endMinutes: editedBlockEnd,
+        activityTypeId: edited.id,
+        goalId,
+      });
+
+      const after = routineById(routineId);
+      // The headline of #7: no capacity moved, so no goal may lose its evidence.
+      expect(after.capacityChangedAt).toEqual(capacityBefore);
+      expect(after.updatedAt).toBe(before.updatedAt);
+      expect(after.blocks).toEqual(before.blocks);
+    });
+
+    it('still stamps when only the goal link is cleared', () => {
+      const { untouched, edited, routineId, blockId } = seedRoutine();
+
+      vi.advanceTimersByTime(60_000);
+      // A goal link moves that time between the dedicated and the shared pool,
+      // so the forecast really does change even though the hours do not.
+      useAppStore.getState().updateRoutineBlock(routineId, blockId, {
+        startMinutes: editedBlockStart,
+        endMinutes: editedBlockEnd,
+        activityTypeId: edited.id,
+        goalId: undefined,
+      });
+
+      expect(routineById(routineId).capacityChangedAt).toEqual({
+        [untouched.id]: frozenTime,
+        [edited.id]: '2026-03-02T09:02:00.000Z',
+      });
+      expect(
+        routineById(routineId).blocks.find((block) => block.id === blockId)!.goalId
+      ).toBeUndefined();
+    });
+
+    it('still stamps when the block moves to another day', () => {
+      const { untouched, edited, routineId, blockId } = seedRoutine();
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().updateRoutineBlock(routineId, blockId, { dayOfWeek: 2 });
+
+      expect(routineById(routineId).capacityChangedAt).toEqual({
+        [untouched.id]: frozenTime,
+        [edited.id]: '2026-03-02T09:02:00.000Z',
+      });
+    });
+
+    it('still stamps both the old and the new activity type when the type changes', () => {
+      const { untouched, edited, routineId, blockId } = seedRoutine();
+
+      vi.advanceTimersByTime(60_000);
+      // The goal belongs to `edited`, so it has to be released with the type.
+      useAppStore.getState().updateRoutineBlock(routineId, blockId, {
+        activityTypeId: untouched.id,
+        goalId: undefined,
+      });
+
+      expect(routineById(routineId).capacityChangedAt).toEqual({
+        [untouched.id]: '2026-03-02T09:02:00.000Z',
+        [edited.id]: '2026-03-02T09:02:00.000Z',
+      });
+    });
+  });
 });
 
 describe('persisted state', () => {
