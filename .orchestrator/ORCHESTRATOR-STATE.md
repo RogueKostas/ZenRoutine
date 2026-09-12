@@ -605,3 +605,59 @@ write the handover, stretch the cadence, and say plainly that the next move is h
 ### Last successful machine contact
 2026-09-12 01:10Z, bridge job zr-merge-ns, exit 0.
 
+
+---
+
+## Pass 8 - 2026-09-12 01:15-01:40Z
+
+### Landed
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #36 | #5 | fb0130a | ci 0, tsc 0, **117 tests**, web 0 | 9fcca7b |
+
+Suite: 109 at 6acc9ae -> 111 at the lane's resolved tree -> 117 on the merged tree after sync.
+
+### The conflict resolution worked, and it proved itself
+Re-dispatched to its own author rather than resolved by me. Findings:
+- `persistence.ts` had NO conflict. PR #32 was confined to useAppStore.ts, so this lane's work
+  carried across byte-identical. The conflict was purely two top-level describe blocks appended at
+  the same offset, with git folding two shared context lines into the hunk.
+- The append-only assumption behind `quarantineStartIndex` SURVIVED #32, which was the question I
+  sent it back with.
+- THE CONTROL THAT MATTERS: disabling the goalId quarantine reds the CONFLICT-RESOLVED test itself.
+  That is the proof a hand-resolved test-file merge did not quietly become vacuous - the specific
+  risk of resolving conflicts in test files - and the lane went looking for it unprompted.
+
+### Corrections to my brief, accepted
+- Repairing by clearing the reference is STRUCTURALLY IMPOSSIBLE for `activityTypeId`: it is required
+  on TrackingEntry, Goal and RoutineBlock, unlike goalId? and routineBlockId?. Nothing to clear it
+  to. Quarantining IS the repair, at every version. MY ISSUE ASKED FOR SOMETHING THAT CANNOT EXIST.
+- Every line number in my brief was stale; the checks had moved to :544-625. Read by symbol.
+- The per-stage fix did NOT need useAppStore.ts, which I had assumed it might.
+- The lane found a live second-order bug its own widened scope created: `entryIds` computed before
+  the linkage phase would judge a pointer against the pre-linkage set and re-brick the launch for
+  exactly the reason being fixed. Control C reds on it.
+
+### Launched
+open-timer-duration -> #4, THE LAST SCHEDULABLE BUG, from 9fcca7b. Sole lane; nothing else running.
+Briefed with the six PRs that have reshaped this file tonight, told to read by symbol not line, told
+to prefer reusing the quarantine sink over inventing a second path, and warned about the
+repairLegacyValues trap - which matters more here than anywhere, because #4 is squarely on the
+legacy path.
+
+### STOPPING CONDITION - active from the next pass
+When #4 lands, open work is: five director decisions (#11, #15, #31, #34, #35) and three
+product-sized features (#12, #13, #14). NOTHING schedulable that is not one of those.
+The next pass MUST: land #4, write HANDOVER-PROMPT.md from the skill's templates/handover.md, commit
+it, STOP THE WAKE CHAIN (schedule nothing further), and tell Kostas the queue is drained and the next
+move is his. Do not start a product feature unattended.
+
+### The unobserved item that outranks the rest
+PR #32 and PR #36 are two independent fixes to the same durability path, merged without either
+author seeing the other's code. The suite says they compose. Whether they do on a REAL torn write -
+the event both exist to survive - is unobserved and needs a device. This is the sharpest single item
+behind #15 and belongs at the top of the handover.
+
+### Last successful machine contact
+2026-09-12 01:40Z, bridge job zr-merge-lq, exit 0.
+
