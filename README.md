@@ -66,7 +66,23 @@ The app follows a clean separation of concerns:
 
 ## Project Status
 
-The project is being brought out of hibernation. See [the revival plan](docs/REVIVAL_PLAN.md) for the current assessment, product questions, staged upgrade path, and next milestone. Codex contributors should also read [AGENTS.md](AGENTS.md); multi-step work can use the repository $revival-loop skill.
+The project is being brought out of hibernation. See [the revival plan](docs/REVIVAL_PLAN.md) for the current assessment, staged upgrade path, and next milestone. Codex contributors should also read [AGENTS.md](AGENTS.md); multi-step work can use the repository $revival-loop skill.
+
+Product direction is settled: [docs/PRODUCT.md](docs/PRODUCT.md) records the director's decisions D1–D8 of 2026-09-11, which closed the five product questions the revival plan had been waiting on. Read it before proposing feature work — the revival plan's milestones follow it, not the other way round.
+
+Verification gate, measured on commit `9cca4f2` on 2026-09-12 with Node v22.23.2 and Vitest 4.1.11:
+
+```
+npm ci             -> exit 0
+npm run typecheck  -> exit 0
+npm test           -> exit 0   7 files, 79 tests passed
+npm run build:web  -> exit 0
+```
+
+Known limitations, so they are not rediscovered: four reviewed defects are still open on `main`
+(issues #4, #5, #6, #9), the public web beta is **not** built from `main` (issue #11), and this
+project has never had a physical-device smoke test (issue #15). The revival plan's assessment
+section carries the detail.
 
 ## Building for Production
 
