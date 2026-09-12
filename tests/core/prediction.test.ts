@@ -1,6 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { predictAllGoals, predictGoalCompletion } from '../../src/core/engine/prediction';
+import type { TrackingEntry } from '../../src/core/types';
 import {
   makeGoal,
   makeRoutine,
@@ -200,6 +201,75 @@ describe('shared-capacity forecasting', () => {
     expect(reversed.map((prediction) => prediction.goalId)).toEqual(['second', 'first']);
     expect(Object.fromEntries(forward.map((prediction) => [prediction.goalId, prediction])))
       .toEqual(Object.fromEntries(reversed.map((prediction) => [prediction.goalId, prediction])));
+  });
+});
+
+describe('confidence evidence is scoped to the goal it is shown against', () => {
+  /**
+   * Completed hour-long days on the shared activity, attributed to `goalId`.
+   * Pass `undefined` for the unlinked case that feeds the shared pool.
+   */
+  function evidenceDays(goalId: string | undefined, count: number, firstDayOfFebruary: number) {
+    return Array.from({ length: count }, (_, index) => {
+      const day = String(firstDayOfFebruary + index).padStart(2, '0');
+      return makeTrackingEntry({
+        id: `${goalId ?? 'unlinked'}-${day}`,
+        goalId,
+        date: `2026-02-${day}`,
+        startTime: `2026-02-${day}T09:00:00.000Z`,
+        endTime: `2026-02-${day}T10:00:00.000Z`,
+      });
+    });
+  }
+
+  /** Two active goals of one activity type, each really allocated 150 min/week. */
+  const goalA = makeGoal({ id: 'goal-a' });
+  const goalB = makeGoal({ id: 'goal-b' });
+
+  function predictPair(history: TrackingEntry[]) {
+    const [a, b] = predictAllGoals([goalA, goalB], routineWithCapacity(300), history);
+    expect(a.weeklyMinutesAllocated).toBe(150);
+    expect(b.weeklyMinutesAllocated).toBe(150);
+    return { a, b };
+  }
+
+  it('reports different confidence for co-allocated goals with different histories', () => {
+    const { a, b } = predictPair([
+      ...evidenceDays(goalA.id, 14, 2),
+      ...evidenceDays(goalB.id, 7, 16),
+    ]);
+
+    expect(a).toMatchObject({ confidenceLevel: 'high', evidenceDays: 14 });
+    expect(b).toMatchObject({ confidenceLevel: 'medium', evidenceDays: 7 });
+  });
+
+  it('never lets a goal inherit a sibling goal\'s evidence', () => {
+    const history = evidenceDays(goalA.id, 14, 2);
+    const { a, b } = predictPair(history);
+
+    expect(a).toMatchObject({ confidenceLevel: 'high', evidenceDays: 14 });
+    expect(b).toMatchObject({
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+      confidenceReason: 'No completed tracking days since this routine changed.',
+    });
+    expect(predictGoalCompletion(goalB, routineWithCapacity(300), history)).toMatchObject({
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+    });
+  });
+
+  it('counts unlinked tracking as evidence for every goal sharing the pool', () => {
+    // Deliberate: unlinked time is the shared pool this model divides between
+    // these goals, so it is evidence for both. Only time attributed to a
+    // different goal is excluded.
+    const { a, b } = predictPair([
+      ...evidenceDays(undefined, 14, 2),
+      ...evidenceDays('goal-elsewhere', 14, 2),
+    ]);
+
+    expect(a).toMatchObject({ confidenceLevel: 'high', evidenceDays: 14 });
+    expect(b).toMatchObject({ confidenceLevel: 'high', evidenceDays: 14 });
   });
 });
 
