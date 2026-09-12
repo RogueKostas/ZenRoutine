@@ -397,3 +397,69 @@ re-syncs it.
 ### Last successful machine contact
 2026-09-12 01:19Z, bridge job zr-lanes-6, exit 0.
 
+
+---
+
+## Pass 5 - 2026-09-12 00:20-00:40Z
+
+### Landed - two PRs, each gated by me on its own merged tree
+
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #28 | #20 | beb716d | ci 0, tsc 0, **88 tests**, web 0 | f445724 |
+| #29 | #11 repo half | 5c4ec54 | ci 0, tsc 0, **88 tests**, web 0, diff is one added line | 44a8916 |
+
+Suite: 86 at 1fbc197 -> 88 at beb716d. Both gated pushes clean, both remote refs read back matching.
+
+### Closed without code: #19, and it changes #18
+zustand-probe returned **CONFIRMED**. A pre-v4 device CAN lose a quarantined record entirely.
+Observed AsyncStorage order on a version-3 blob:
+  READ storage -> WRITE storage [stripped] -> READ quarantine -> WRITE quarantine
+Control on a version-4 blob: READ, READ, WRITE quarantine - no app-blob write at all. The exposure
+is specific to zustand's migrate path (middleware.mjs:390-421: setItem() is RETURNED into the
+rehydrate chain, and line 405 short-circuits when versions match). The merge path is already safe.
+Failure case demonstrated, not inferred: with the side-car write rejecting, appHoldsCorrupt=false
+AND sidecarPresent=false - gone from both keys, only a console.warn, hydration still reports ready.
+Recommended fix, now on #18: make the persist `migrate` option async and await the side-car append
+inside it, before returning clean state. Closes the window by construction.
+
+### THE CORRECTION THAT WOULD HAVE COST US A FAKE TEST
+The probe's FIRST attempt used `endTime < startTime` and quarantined NOTHING.
+`parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION)` means repairLegacyValues is TRUE on a
+pre-v4 blob, so that malformation is REPAIRED, not quarantined. **Any regression test written with
+endTime < startTime against a v3 envelope passes vacuously.** Use invalid `source`, a non-string
+`id`, an unparseable date, or a non-object row. Posted on #18 and #19 and written into the #5 brief.
+
+### Lane corrections to MY briefs this pass - both accepted
+- quarantine-blame: my brief said the non-empty-quarantine case was untested. IT IS TESTED
+  (tests/store/persistence.test.ts:194, from PR #17). What was untested is the UNRELATED dangling
+  pointer. And implementing my acceptance criterion literally - an id-set membership test - WOULD
+  HAVE BROKEN that existing test, because a record whose id is the corrupted field is quarantined
+  as id: null and can never match. Hence the two-armed rule. My brief's line numbers were stale too.
+- render-branch: Render's spec says an omitted `branch` uses the repo's DEFAULT branch, which is
+  already main. So render.yaml was NEVER what pinned the beta to codex/r1-data-safety - that is a
+  Render-side stored setting overriding the documented default. The commit records intent and
+  changes nothing about what is deployed. I had assumed the file was the pin. IT WAS NOT.
+
+### A guard rail of mine that fought a lane
+The deny list is built as `Bash(*<entry>*)` and one entry was `render`. That matched the worktree's
+own path, so `git -C C:/CoworkBridge/lanes/render-branch ...` and even `git add render.yaml` were
+auto-denied. Three denied calls before the lane diagnosed it - and it REPORTED it rather than
+absorbing it. Narrowed to `render deploy`, `render service`, `renderctl`.
+RULE: a substring deny entry that can appear in a path is a trap. Deny the command, not the word.
+
+### In flight at the end of this pass
+- routine-writers (#24) - FINISHED, result event present, NOT yet landed. Next pass lands it.
+- linkage-quarantine (#5, widened) - dispatched, src/store/persistence.ts
+- notice-scope (#21) - dispatched, App.tsx
+
+#18 (p0) is unblocked by #19 but COLLIDES with routine-writers on src/store/useAppStore.ts.
+Dispatch it the moment routine-writers lands, and not before.
+
+### Not yet verified - unchanged
+#15 is open. No physical-device smoke has ever been run. The Render blueprint still serves
+codex/r1-data-safety until the director re-syncs it; PR #29 did not and could not move it.
+
+### Last successful machine contact
+2026-09-12 00:37Z, bridge job zr-lanes-7, exit 0.
+
