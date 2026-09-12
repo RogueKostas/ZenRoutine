@@ -1,5 +1,5 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import {
   getHydrationSnapshot,
@@ -11,6 +11,7 @@ import {
 import {
   APP_STORAGE_KEY,
   CURRENT_SCHEMA_VERSION,
+  MAX_QUARANTINE_GENERATIONS,
   QUARANTINE_STORAGE_KEY,
   appendQuarantineGeneration,
   createInitialState,
@@ -256,6 +257,187 @@ describe('hydration of a store that already holds an unreadable entry', () => {
       error: 'Invalid tracking entry: endTime is before startTime',
     });
     expect(useAppStore.getState().trackingEntries).toEqual([]);
+  });
+});
+
+describe('durability of the quarantine side-car', () => {
+  const LEGACY_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION - 1;
+
+  // Two tests below need a write that fails for one key and succeeds for every other, which means
+  // replacing the base implementation rather than using a `...Once` variant. `restoreMocks` does
+  // not put back the base implementation of a `vi.fn(impl)`, so it is captured and restored here;
+  // without this the rejecting write leaks into every test that follows.
+  let storeItem: (key: string, value: string) => Promise<void>;
+
+  beforeAll(() => {
+    storeItem = vi.mocked(AsyncStorage.setItem).getMockImplementation()!;
+  });
+
+  afterEach(() => {
+    vi.mocked(AsyncStorage.setItem).mockImplementation(storeItem);
+  });
+
+  /** Make the side-car key, and only that key, unwritable. */
+  function failSidecarWrites(): void {
+    vi.mocked(AsyncStorage.setItem).mockImplementation(async (key: string, value: string) => {
+      if (key === QUARANTINE_STORAGE_KEY) throw new Error('disk full');
+      return storeItem(key, value);
+    });
+  }
+
+  // An invalid `source` throws in parseTrackingEntry whatever the leniency flag says. That
+  // matters: on a pre-v4 blob parseTrackingEntry runs with repairLegacyValues=true, so the
+  // endTime < startTime malformation used by the tests above is *repaired* rather than
+  // quarantined, and a migrate-path test built on it would pass while quarantining nothing.
+  const unreadableEntry = {
+    ...makeTrackingEntry({ id: 'entry-bad-source' }),
+    source: 'telepathy',
+  };
+
+  function blobHolding(version: number): string {
+    return JSON.stringify({
+      state: { ...makeAppState(), trackingEntries: [unreadableEntry] },
+      version,
+    });
+  }
+
+  /** Every AsyncStorage read and write of this hydration, in the order they were issued. */
+  function storageOperations(): string[] {
+    const getItem = vi.mocked(AsyncStorage.getItem);
+    const setItem = vi.mocked(AsyncStorage.setItem);
+    return [
+      ...getItem.mock.calls.map((call, index) => ({
+        order: getItem.mock.invocationCallOrder[index],
+        label: `READ ${String(call[0])}`,
+      })),
+      ...setItem.mock.calls.map((call, index) => ({
+        order: setItem.mock.invocationCallOrder[index],
+        label: `WRITE ${String(call[0])}`,
+      })),
+    ]
+      .sort((left, right) => left.order - right.order)
+      .map((operation) => operation.label);
+  }
+
+  it('writes the side-car before the migrate path rewrites the app blob', async () => {
+    // The migrate path is the exposed one: zustand rewrites the blob with the bad record already
+    // stripped out, so until the side-car holds it the record is in no durable location.
+    await AsyncStorage.setItem(APP_STORAGE_KEY, blobHolding(LEGACY_SCHEMA_VERSION));
+    vi.clearAllMocks();
+
+    await initializeAppStore({ force: true });
+
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    const operations = storageOperations();
+    const sidecarWrite = operations.indexOf(`WRITE ${QUARANTINE_STORAGE_KEY}`);
+    const blobWrite = operations.indexOf(`WRITE ${APP_STORAGE_KEY}`);
+    // The blob really is rewritten on this path -- if it ever stops being, this guard says so
+    // rather than letting the ordering assertion below pass vacuously.
+    expect(blobWrite).toBeGreaterThanOrEqual(0);
+    expect(sidecarWrite).toBeGreaterThanOrEqual(0);
+    expect(sidecarWrite).toBeLessThan(blobWrite);
+
+    // One hydration still produces exactly one generation: the migrate path has already written
+    // the side-car by the time initializeAppStore reaches its own append, which recognises the
+    // identical generation and writes nothing.
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    expect(archive.generations).toHaveLength(1);
+    expect(archive.generations[0].entries).toEqual([
+      expect.objectContaining({ id: 'entry-bad-source', record: unreadableEntry }),
+    ]);
+  });
+
+  it('leaves the record in the app blob when the side-car write fails on a pre-v4 blob', async () => {
+    const raw = blobHolding(LEGACY_SCHEMA_VERSION);
+    await AsyncStorage.setItem(APP_STORAGE_KEY, raw);
+    vi.clearAllMocks();
+    // Reject the side-car write specifically, whenever it is issued. Failing the *first* write
+    // instead would be satisfied by the broken ordering too, since there the first write is the
+    // app blob's.
+    failSidecarWrites();
+
+    await initializeAppStore({ force: true });
+
+    // The record must never be in neither key. With the side-car unwritable the app blob is the
+    // only place left for it, so hydration must refuse rather than report success over a record
+    // it just destroyed.
+    const blobAfter = await AsyncStorage.getItem(APP_STORAGE_KEY);
+    expect(blobAfter).toBe(raw);
+    expect(blobAfter).toContain('telepathy');
+    expect(getHydrationSnapshot()).toEqual({ status: 'error', error: 'disk full' });
+  });
+
+  it('still opens when the side-car write fails on a current-version blob', async () => {
+    // The merge path deliberately keeps the old behaviour: zustand writes nothing there, so the
+    // record stays in the app blob and refusing to open would cost the user their app for no
+    // gain. This pins that the asymmetry with `migrate` is intended, not an oversight.
+    await AsyncStorage.setItem(APP_STORAGE_KEY, blobHolding(CURRENT_SCHEMA_VERSION));
+    vi.clearAllMocks();
+    failSidecarWrites();
+
+    await initializeAppStore({ force: true });
+
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    expect(await AsyncStorage.getItem(APP_STORAGE_KEY)).toContain('telepathy');
+  });
+
+  it('does not let repeated launches over one bad record discard an earlier generation', async () => {
+    // Generation 1 holds record A, whose only copy this is -- it was quarantined long ago and is
+    // in no app blob any more. Record B then goes bad and is never cleaned out of the blob, so
+    // every cold start re-reads and re-quarantines it.
+    const earlier = appendQuarantineGeneration(
+      parseQuarantineArchive(null),
+      [{ index: 0, id: 'entry-record-a', reason: 'whatever', record: { id: 'record-a' } }],
+      '2026-03-01T00:00:00.000Z'
+    );
+    await AsyncStorage.setItem(QUARANTINE_STORAGE_KEY, JSON.stringify(earlier));
+    // A current-version blob, so nothing ever rewrites it and record B stays uncleaned.
+    await AsyncStorage.setItem(APP_STORAGE_KEY, blobHolding(CURRENT_SCHEMA_VERSION));
+
+    for (let launch = 0; launch < MAX_QUARANTINE_GENERATIONS + 5; launch += 1) {
+      await initializeAppStore({ force: true });
+      expect(getHydrationSnapshot().status).toBe('ready');
+    }
+
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    // Re-seeing the identical record consumes no generation, so record A -- whose only copy this
+    // is -- has not been rotated off the end of the cap by a record unrelated to it.
+    expect(archive.generations.map((generation) => generation.entries[0].id)).toEqual([
+      'entry-record-a',
+      'entry-bad-source',
+    ]);
+  });
+
+  it('still records a genuinely new set of bad records as its own generation', async () => {
+    // Suppressing the repeat must not suppress new damage: a second record going bad is a new
+    // event and has to be archived, even though the first record is in the set both times.
+    await AsyncStorage.setItem(APP_STORAGE_KEY, blobHolding(CURRENT_SCHEMA_VERSION));
+    await initializeAppStore({ force: true });
+
+    await AsyncStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+      state: {
+        ...makeAppState(),
+        trackingEntries: [
+          unreadableEntry,
+          { ...makeTrackingEntry({ id: 'entry-bad-date' }), date: 'not-a-date' },
+        ],
+      },
+      version: CURRENT_SCHEMA_VERSION,
+    }));
+    await initializeAppStore({ force: true });
+
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    expect(archive.generations).toHaveLength(2);
+    expect(archive.generations[1].entries.map((entry) => entry.id)).toEqual([
+      'entry-bad-source',
+      'entry-bad-date',
+    ]);
   });
 });
 

@@ -93,6 +93,66 @@ async function readQuarantineArchive(): Promise<QuarantineArchive> {
   }
 }
 
+/**
+ * Stable identity for a value read back out of JSON, used to recognise the same quarantined
+ * record arriving again on a later launch. Object keys are sorted, so the identity does not
+ * depend on the property order the stored blob happened to use.
+ */
+function quarantineFingerprint(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) {
+    return `[${value.map(quarantineFingerprint).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${quarantineFingerprint(nested)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Copy quarantined records to the side-car, skipping records an earlier generation already holds.
+ *
+ * This is the chosen fix for the generation-rotation half of #18 — option 2, an idempotent
+ * side-car — and it is preferred over cleaning the record out of the app blob (option 1) because
+ * it does not depend on a write succeeding. A quarantine that cannot be cleaned up (a full disk,
+ * a blob write that fails) is exactly the case where the record is re-read on every launch, so a
+ * fix that only works when the cleanup write lands does not cover its own worst case. Skipping
+ * costs a read the hydration path already performs and writes nothing at all in the repeat case.
+ *
+ * Consequence for the cap in `appendQuarantineGeneration`: a given set of bad records can consume
+ * at most one generation however many times it is re-read, so twenty cold starts over one
+ * uncleaned record can no longer rotate an unrelated earlier generation off the end. (The comment
+ * on MAX_QUARANTINE_GENERATIONS calling the cap "realistically unreachable" was wrong when it was
+ * written — re-quarantining on every launch was the repeating source it said did not exist. It
+ * lives in persistence.ts, which this lane must not edit; correcting it is owed there.)
+ *
+ * Deliberately compares whole generations rather than individual records: a launch that sees a
+ * second record go bad reports both together, which is a genuinely new event worth its own
+ * generation. What is suppressed is only the identical set arriving again.
+ *
+ * When it does write, it appends rather than replacing. Overwriting would mean a second
+ * quarantine event destroys what the first one saved, and by then those records may already be
+ * gone from the store's own blob — precisely the silent data loss the side-car exists to stop.
+ */
+async function persistQuarantinedEntries(
+  entries: readonly QuarantinedTrackingEntry[]
+): Promise<void> {
+  if (entries.length === 0) return;
+  const archive = await readQuarantineArchive();
+  const fingerprint = quarantineFingerprint(entries);
+  const alreadyArchived = archive.generations.some(
+    (generation) => quarantineFingerprint(generation.entries) === fingerprint
+  );
+  if (alreadyArchived) return;
+  await AsyncStorage.setItem(
+    QUARANTINE_STORAGE_KEY,
+    JSON.stringify(appendQuarantineGeneration(archive, entries))
+  );
+}
+
 function publishHydrationSnapshot(next: HydrationSnapshot): void {
   hydrationSnapshot = next;
   hydrationListeners.forEach((listener) => listener());
@@ -1342,8 +1402,33 @@ export const useAppStore = create<AppStore>()(
       version: CURRENT_SCHEMA_VERSION,
       skipHydration: true,
       partialize: selectPersistedAppState,
-      migrate: (persistedState, version) =>
-        migratePersistedState(persistedState, version, { quarantine: pendingQuarantine }),
+      migrate: async (persistedState, version) => {
+        const migrated = migratePersistedState(
+          persistedState,
+          version,
+          { quarantine: pendingQuarantine }
+        );
+        // Only the migrate path rewrites the app blob during hydration, and it does so with the
+        // quarantined record already stripped out. Measured order before this await existed
+        // (issue #19): READ storage, WRITE storage [stripped], READ quarantine, WRITE quarantine
+        // -- between those middle two steps the record is in no durable location at all.
+        //
+        // Awaiting the side-car write *here* closes that window by construction rather than
+        // narrowing it. zustand 5.0.11 detects a promise returned from `migrate` and chains it
+        // (node_modules/zustand/esm/middleware.mjs:392-396) before the `set` and the `setItem`
+        // that rewrite the blob (:419-421), so the blob cannot be rewritten until this resolves.
+        //
+        // A failure propagates here, unlike on the merge path below, and that asymmetry is the
+        // point. Rejecting aborts the rehydrate chain at :431 before that `setItem`, so the app
+        // blob keeps the record and the user gets the retryable hydration error. Swallowing it
+        // would let zustand strip the record anyway -- the failure #19 demonstrated rather than
+        // hypothesised, where a rejecting side-car write on a v3 blob left the record in neither
+        // key, with a console.warn as its only trace and hydration still reporting `ready`.
+        // Refusing to open is the lesser harm when this device holds the only copy of the user's
+        // history (docs/PRODUCT.md D6), and a full disk is something the user can act on.
+        await persistQuarantinedEntries(pendingQuarantine);
+        return migrated;
+      },
       merge: (persistedState, currentState) => {
         if (persistedState === undefined) return currentState;
         // Every save stamps CURRENT_SCHEMA_VERSION, so this is always the strict path and the
@@ -1387,24 +1472,27 @@ export function initializeAppStore(options?: { force?: boolean }): Promise<void>
       }
       // Quarantined records are out of live state, so the very next store write would overwrite
       // the only blob that still holds them. Copy them somewhere the store does not own, before
-      // anything below can trigger that write. A failure here must not re-brick hydration — the
-      // whole point of quarantining is that the app still opens — so it is reported in the
-      // session's in-memory report and nowhere else.
+      // anything below can trigger that write.
       //
-      // This appends a generation rather than replacing the side-car. Overwriting would mean a
-      // second quarantine event destroys what the first one saved, and by then those records are
-      // already gone from the store's own blob — which is precisely the silent data loss this
-      // whole lane exists to stop.
+      // This covers the merge path, where zustand reads the blob and writes nothing
+      // (middleware.mjs:405 short-circuits when the version matches), so the record is still in
+      // the app blob throughout and a failed side-car write loses nothing. That is why a failure
+      // is swallowed here but not in `migrate`: re-bricking hydration would defeat the point of
+      // quarantining when there is nothing to lose by opening.
+      //
+      // The migrate path has already written the side-car by the time we get here, and
+      // `persistQuarantinedEntries` recognises the identical generation and writes nothing, so
+      // one hydration still produces exactly one generation.
+      //
+      // Note what keeps the merge path safe: this write happens before `persistSnapshot` below,
+      // which is the first thing in hydration that can rewrite the blob. That is an ordering
+      // property of this function, not something the type system enforces — a store write added
+      // above this point would reopen the #19 window on the merge path too. `merge` cannot take
+      // the `migrate` treatment because zustand calls it synchronously (middleware.mjs:416).
       const quarantined = getQuarantinedTrackingEntries();
       if (quarantined.length > 0) {
         try {
-          await AsyncStorage.setItem(
-            QUARANTINE_STORAGE_KEY,
-            JSON.stringify(appendQuarantineGeneration(
-              await readQuarantineArchive(),
-              quarantined
-            ))
-          );
+          await persistQuarantinedEntries(quarantined);
         } catch (error) {
           console.warn('ZenRoutine could not save quarantined tracking entries', error);
         }
