@@ -561,22 +561,33 @@ export function migratePersistedState(
 
   let activeRoutineId = readNullableId(record, 'activeRoutineId');
   let currentTrackingEntryId = readNullableId(record, 'currentTrackingEntryId');
+  /**
+   * Can something this pass quarantined actually be blamed for the pointer no longer resolving?
+   * Only a dropped record that *could have been* the record the pointer named counts:
+   *
+   * - `id` matched the pointer — the entry the timer named is exactly what was dropped.
+   * - `id` is null — the record failed on the id field itself, so what it was called is unknown
+   *   and it cannot be ruled out. This is the case that matching on ids alone would miss, and it
+   *   is why the check is not a plain `quarantine.some((dropped) => dropped.id === pointer)`.
+   *
+   * A dropped record with a readable id that is some *other* entry explains nothing about this
+   * pointer, and must not buy it a silent clear.
+   */
+  const quarantineCanExplainPointer = (pointer: string) =>
+    quarantine !== undefined &&
+    quarantine.some((dropped) => dropped.id === pointer || dropped.id === null);
   if (
     currentTrackingEntryId !== null &&
-    quarantine !== undefined &&
-    quarantine.length > 0 &&
-    !entryIds.has(currentTrackingEntryId)
+    !entryIds.has(currentTrackingEntryId) &&
+    quarantineCanExplainPointer(currentTrackingEntryId)
   ) {
-    // The running timer pointed at a record that is no longer here, and this pass quarantined
-    // something. Clearing the pointer is what makes quarantining actually work: leaving it would
-    // trip the strict currentTrackingEntryId check below and brick hydration for exactly the
-    // reason we are trying to fix.
+    // The running timer pointed at a record that is no longer here, and a record this pass
+    // quarantined can be blamed for that. Clearing the pointer is what makes quarantining
+    // actually work: leaving it would trip the strict currentTrackingEntryId check below and
+    // brick hydration for exactly the reason we are trying to fix.
     //
-    // This deliberately asks "does the pointer still resolve?" rather than "is the pointer in the
-    // quarantine list?". A record whose own `id` was unreadable is quarantined with `id: null`, so
-    // matching on the list would miss precisely the entry that needs the pointer cleared. Gated on
-    // quarantine.length > 0 so that a launch which repaired nothing keeps the strict check intact:
-    // a dangling pointer with no bad record to blame is real corruption and should still be loud.
+    // Gated on the blame relationship, not merely on something having been quarantined: a
+    // dangling pointer with no bad record to blame is real corruption and should still be loud.
     currentTrackingEntryId = null;
   }
   const hasInvalidActiveRoutine = activeRoutineId !== null && !routineIds.has(activeRoutineId);
