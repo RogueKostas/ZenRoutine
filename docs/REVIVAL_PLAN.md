@@ -112,9 +112,21 @@ are carried here from the commit messages, which are the citable source:
 - The #3 side-car key is written but never read back: quarantined records are retained, not
   recoverable in-app, and there is no UI for them.
 - Duplicate tracking-entry ids still abort hydration; quarantine does not cover that corruption class.
-- `updateRoutine` (rename, activate) still bumps `updatedAt` without stamping `capacityChangedAt`, so
-  a pre-migration routine renamed before any block edit still collapses confidence through the
-  fallback (from #7, deliberately left to keep the diff narrow for #6).
+- ~~`updateRoutine` (rename, activate) still bumps `updatedAt` without stamping `capacityChangedAt`~~
+  — closed by #24, which also found the same defect in `setActiveRoutine` and `duplicateRoutine`.
+  The general rule, now enforced at all three: **any writer that bumps `routine.updatedAt` must also
+  seed `capacityChangedAt` via `withCapacityChangedAt`**, because un-seeded activity types read
+  `updatedAt` through `getCapacityChangedAt`'s fallback and a bare bump collapses their evidence.
+  `updateRoutine` can no longer activate at all — `isActive` was removed from its signature, since
+  its companion `activeRoutineId` (the field `useActiveRoutine` actually resolves) is maintained
+  only by `setActiveRoutine`.
+- `deleteGoal` clears `goalId` from every routine block that referenced the deleted goal. `goalId` is
+  in `CAPACITY_RELEVANT_BLOCK_FIELDS` — the time moves from a goal's dedicated pool to the shared
+  pool, changing every competing goal's allocation — but `deleteGoal` stamps nothing. This is the
+  **opposite** polarity to #7: it cannot collapse confidence (it never bumps `updatedAt`), it
+  under-reports a real capacity change. Found while enumerating writers for #24 and deliberately
+  left there: it is a goal mutation, and whether deleting a goal should reset its competitors'
+  evidence is a product decision, not a mechanical fix.
 - The 7/14 distinct-day confidence thresholds remain the unvalidated prototype assumption R3 recorded.
 - The tappable forecast date (D5) is tracked as issue #12 and is untouched by the #7 fix.
 - Whether the Render blueprint should be repointed from `codex/r1-data-safety` to `main` is issue #11

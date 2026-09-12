@@ -2,6 +2,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { AppState, Goal } from '../../src/core/types';
+import { getCapacityChangedAt } from '../../src/core/engine/prediction';
 import { useAppStore } from '../../src/store/useAppStore';
 import {
   CURRENT_SCHEMA_VERSION,
@@ -336,6 +337,224 @@ describe('routine block capacity timestamps', () => {
         [untouched.id]: '2026-03-02T09:02:00.000Z',
         [edited.id]: '2026-03-02T09:02:00.000Z',
       });
+    });
+  });
+});
+
+describe('routine-level capacity timestamps', () => {
+  function routineById(id: string) {
+    return useAppStore.getState().routines.find((routine) => routine.id === id)!;
+  }
+
+  function addBlock(routineId: string, activityTypeId: string, dayOfWeek: 0 | 1 | 2, endHour: number) {
+    return useAppStore.getState().addRoutineBlock(routineId, {
+      dayOfWeek,
+      startMinutes: 9 * 60,
+      endMinutes: endHour * 60,
+      activityTypeId,
+    });
+  }
+
+  /** A routine saved before `capacityChangedAt` existed: blocks, but no map. */
+  function legacyRoutine(id: string, activityTypeId: string, updatedAt: string) {
+    return {
+      id,
+      name: `Routine ${id}`,
+      isActive: false,
+      blocks: [{
+        id: `${id}-block`,
+        dayOfWeek: 1 as const,
+        startMinutes: 9 * 60,
+        endMinutes: 10 * 60,
+        activityTypeId,
+      }],
+      createdAt: '2026-01-01T00:00:00.000Z',
+      updatedAt,
+    };
+  }
+
+  describe('setActiveRoutine', () => {
+    it('leaves every routine that is not changing hands untouched', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const bystanderId = useAppStore.getState().addRoutine('Bystander');
+      addBlock(bystanderId, work.id, 1, 10);
+      const targetId = useAppStore.getState().addRoutine('Vacation');
+      const bystanderBefore = routineById(bystanderId);
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().setActiveRoutine(targetId);
+
+      // Object identity, not just equality: the old code rebuilt every routine
+      // in the list with a fresh `updatedAt`, whether or not `isActive` moved.
+      expect(routineById(bystanderId)).toBe(bystanderBefore);
+      expect(routineById(bystanderId).updatedAt).toBe(frozenTime);
+    });
+
+    it('seeds the routine being switched away from instead of collapsing it', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const legacyUpdatedAt = '2026-02-01T00:00:00.000Z';
+      useAppStore.setState({
+        routines: [
+          { ...legacyRoutine('outgoing', work.id, legacyUpdatedAt), isActive: true },
+          legacyRoutine('incoming', work.id, legacyUpdatedAt),
+        ],
+        activeRoutineId: 'outgoing',
+      });
+
+      useAppStore.getState().setActiveRoutine('incoming');
+
+      // `isActive` really did change, so `updatedAt` really does move -- but no
+      // block of the outgoing routine moved, so the cutoff a forecast reads
+      // must not follow it. This is issue #7 with no block ever touched.
+      expect(routineById('outgoing').updatedAt).toBe(frozenTime);
+      expect(getCapacityChangedAt(routineById('outgoing'), work.id)).toBe(legacyUpdatedAt);
+    });
+
+    it('stamps only the activity types whose schedule differs from the one going out', () => {
+      const [shared, differing] = useAppStore.getState().activityTypes;
+      const fromId = useAppStore.getState().addRoutine('From');
+      const toId = useAppStore.getState().addRoutine('To');
+      // Identical `shared` schedules; `differing` runs an hour longer in `to`.
+      addBlock(fromId, shared.id, 1, 10);
+      addBlock(toId, shared.id, 1, 10);
+      addBlock(fromId, differing.id, 2, 11);
+      addBlock(toId, differing.id, 2, 12);
+      useAppStore.getState().setActiveRoutine(fromId);
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().setActiveRoutine(toId);
+
+      // Switching between two routines that schedule an activity type the same
+      // way must leave its evidence alone, exactly as re-saving an unchanged
+      // block does. The one that genuinely moved resets.
+      expect(getCapacityChangedAt(routineById(toId), shared.id)).toBe(frozenTime);
+      expect(getCapacityChangedAt(routineById(toId), differing.id))
+        .toBe('2026-03-02T09:01:00.000Z');
+    });
+
+    it('stamps an activity type the routine going out did not schedule at all', () => {
+      const [carried, appearing] = useAppStore.getState().activityTypes;
+      const fromId = useAppStore.getState().addRoutine('From');
+      const toId = useAppStore.getState().addRoutine('To');
+      addBlock(fromId, carried.id, 1, 10);
+      addBlock(toId, carried.id, 1, 10);
+      addBlock(toId, appearing.id, 2, 11);
+      useAppStore.getState().setActiveRoutine(fromId);
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().setActiveRoutine(toId);
+
+      // Nothing was scheduled for `appearing` a moment ago, so its capacity
+      // moved from zero and its evidence starts here.
+      expect(getCapacityChangedAt(routineById(toId), appearing.id))
+        .toBe('2026-03-02T09:01:00.000Z');
+      expect(getCapacityChangedAt(routineById(toId), carried.id)).toBe(frozenTime);
+    });
+
+    it('writes nothing when the already-active routine is activated again', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const routineId = useAppStore.getState().addRoutine('Week');
+      addBlock(routineId, work.id, 1, 10);
+      useAppStore.getState().setActiveRoutine(routineId);
+      const before = routineById(routineId);
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().setActiveRoutine(routineId);
+
+      expect(routineById(routineId)).toBe(before);
+      expect(useAppStore.getState().activeRoutineId).toBe(routineId);
+    });
+  });
+
+  describe('updateRoutine', () => {
+    it('renames without moving any capacity cutoff', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const legacyUpdatedAt = '2026-02-01T00:00:00.000Z';
+      useAppStore.setState({
+        routines: [{ ...legacyRoutine('legacy', work.id, legacyUpdatedAt), isActive: true }],
+        activeRoutineId: 'legacy',
+      });
+
+      useAppStore.getState().updateRoutine('legacy', { name: 'Renamed' });
+
+      expect(routineById('legacy').name).toBe('Renamed');
+      expect(routineById('legacy').updatedAt).toBe(frozenTime);
+      // A rename is not a capacity change, so no goal may lose its evidence.
+      expect(getCapacityChangedAt(routineById('legacy'), work.id)).toBe(legacyUpdatedAt);
+    });
+
+    it('writes nothing when the name is already the name', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const routineId = useAppStore.getState().addRoutine('Week');
+      addBlock(routineId, work.id, 1, 10);
+      const before = routineById(routineId);
+
+      vi.advanceTimersByTime(60_000);
+      useAppStore.getState().updateRoutine(routineId, { name: 'Week' });
+
+      expect(routineById(routineId)).toBe(before);
+    });
+
+    it('cannot be used to clobber the capacity map or the active flag', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const routineId = useAppStore.getState().addRoutine('Week');
+      addBlock(routineId, work.id, 1, 10);
+      useAppStore.getState().setActiveRoutine(routineId);
+      const before = routineById(routineId);
+
+      useAppStore.getState().updateRoutine(routineId, {
+        // @ts-expect-error capacity is written only by the block mutations, which stamp as they go.
+        capacityChangedAt: { [work.id]: '2030-01-01T00:00:00.000Z' },
+      });
+      useAppStore.getState().updateRoutine(routineId, {
+        // @ts-expect-error `isActive` has a companion, `activeRoutineId`, that only setActiveRoutine maintains.
+        isActive: false,
+      });
+      useAppStore.getState().updateRoutine(routineId, { name: 'Renamed' });
+
+      expect(routineById(routineId).name).toBe('Renamed');
+      expect(routineById(routineId).capacityChangedAt).toEqual(before.capacityChangedAt);
+      expect(routineById(routineId).isActive).toBe(true);
+      expect(useAppStore.getState().activeRoutineId).toBe(routineId);
+    });
+  });
+
+  describe('duplicateRoutine', () => {
+    it('carries the source routine\'s capacity timestamps into the copy', () => {
+      const [work, fitness] = useAppStore.getState().activityTypes;
+      const sourceId = useAppStore.getState().addRoutine('Source');
+      addBlock(sourceId, work.id, 1, 10);
+      vi.advanceTimersByTime(60_000);
+      addBlock(sourceId, fitness.id, 2, 11);
+      const sourceMap = { ...routineById(sourceId).capacityChangedAt };
+      expect(sourceMap).toEqual({
+        [work.id]: frozenTime,
+        [fitness.id]: '2026-03-02T09:01:00.000Z',
+      });
+
+      vi.advanceTimersByTime(60_000);
+      const copyId = useAppStore.getState().duplicateRoutine(sourceId, 'Copy');
+      expect(copyId).not.toBeNull();
+
+      // The copy has the source's schedule, so it has the source's evidence.
+      expect(routineById(copyId!).capacityChangedAt).toEqual(sourceMap);
+      expect(routineById(copyId!).updatedAt).toBe('2026-03-02T09:02:00.000Z');
+    });
+
+    it('pins an activity type the source never stamped to the source\'s timestamp', () => {
+      const [work] = useAppStore.getState().activityTypes;
+      const legacyUpdatedAt = '2026-02-01T00:00:00.000Z';
+      useAppStore.setState({
+        routines: [{ ...legacyRoutine('legacy', work.id, legacyUpdatedAt), isActive: true }],
+        activeRoutineId: 'legacy',
+      });
+
+      const copyId = useAppStore.getState().duplicateRoutine('legacy', 'Copy');
+      expect(copyId).not.toBeNull();
+
+      // Without seeding, the copy's fresh `updatedAt` becomes the cutoff and
+      // the copy is born with no evidence for a schedule it did not change.
+      expect(getCapacityChangedAt(routineById(copyId!), work.id)).toBe(legacyUpdatedAt);
     });
   });
 });
