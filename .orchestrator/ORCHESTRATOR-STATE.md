@@ -533,3 +533,75 @@ Next after those: #4 (waits for linkage-quarantine to clear persistence.ts), the
 ### Last successful machine contact
 2026-09-12 01:06Z, bridge job zr-merge-rw, exit 0.
 
+
+---
+
+## Pass 7 - 2026-09-12 01:05-01:35Z
+
+### Landed - two PRs. #18 was THE LAST p0.
+
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #32 | #18 (p0) | fcde340 | ci 0, tsc 0, **103 tests**, web 0 | 1c4c66d |
+| #33 | #21 | 88bf24b | ci 0, tsc 0, **109 tests**, web 0 | 6acc9ae |
+
+Suite: 98 at 5d53b22 -> 103 at fcde340 -> 109 at 88bf24b. All measured by me on the merged tree.
+
+### THE GATED PUSH EARNED ITS KEEP
+`lane-push.ps1` REFUSED to push linkage-quarantine: a real content conflict in
+tests/store/hydrationAndBackup.test.ts, because sidecar-durability had landed in the same file
+minutes earlier. Three conflict regions, both lanes appending independent describe blocks. Left the
+merge in progress in the worktree and pushed nothing. Exactly the behaviour the script exists for.
+
+Resolution: RE-DISPATCHED THE LANE to resolve its own conflict rather than resolving it myself.
+The author owns the resolution; the orchestrator lands it. The second-dispatch brief tells it not to
+redo the fix, to treat the regions as a probable UNION but verify that per region, not to edit the
+other lane's work, and - the part that matters - to check its own `quarantineStartIndex`
+append-only assumption against PR #32, which made migrate async and the side-car idempotent. If that
+assumption broke, that is a finding, not a conflict.
+
+### #18: the lane chose against my recommended option, and was right
+I listed "clean the blob" first. It took the idempotent side-car instead, and said why in the code:
+**a fix that only works when the cleanup write lands does not cover its own worst case, which is
+precisely a device that cannot write.** It also verified zustand's source itself rather than trusting
+#19's reading of it. Control A reproduced the loss verbatim (`expected 3 to be less than 1` - side-car
+write at 3, blob write at 1); control B reproduced the rotation (20 copies, original gone).
+
+NEW BEHAVIOUR, flagged not buried: on the migrate path an unwritable side-car now makes the app
+REFUSE TO OPEN (retryable) rather than open having destroyed the record. Silent data loss is worse
+than a retryable failure, so I agree - but a user with a full disk now sees something new, and that
+path has never met real storage.
+
+### #21: two corrections, the second more useful than the fix
+- The side-car is NOT write-only in code - readQuarantineArchive() and a tested parseQuarantineArchive
+  already exist. What is missing is anything that SURFACES them. MY BRIEF WAS WRONG, and it makes a
+  viewer far cheaper than I implied.
+- There is no way to render a React Native component in this suite, and getting one means adding a
+  devDependency, which means regenerating the TRACKED lockfile - forbidden. The lane covered what it
+  could without a renderer and stated plainly what that does not prove. It did not skip the coverage
+  and it did not quietly break the rule.
+Costing delivered instead of a guess: viewing ~half a day, no new dependencies. Restoring is a
+different feature - the reason a record was quarantined has not changed, so re-inserting it just gets
+it quarantined again; "restore" really means "repair", a write path into user data.
+
+### Filed for the director - the decision queue is now the real backlog
+- #31 should deleting a goal reset its competitors' forecast evidence
+- #34 what happens when a SKELETON record (activity type, goal, routine) is unreadable. Two live
+  brick routes remain, named and pinned by a test rather than left latent. Also carries the owed
+  correction of the `realistically unreachable` comment at persistence.ts:63-66.
+- #35 should goal progress be reconciled when a tracking entry is quarantined
+These three plus #6's unlinked-entry rule are the same question from four sides: what happens to
+derived numbers when the records under them change. Worth answering together.
+
+### Backlog state - the bug queue is nearly drained
+Open: 10. Five are needs-decision/needs-kostas (#11, #15, #31, #34, #35). Three are product-sized
+(#12, #13, #14). #5 is in flight resolving its conflict. **#4 is the last schedulable bug** and it
+waits for #5 to clear src/store/persistence.ts.
+
+When #5 and #4 are in, there is nothing left that is not either the director's decision or a
+product-sized feature. THE LOOP SHOULD STOP THERE rather than start a large feature unattended:
+write the handover, stretch the cadence, and say plainly that the next move is his to pick.
+
+### Last successful machine contact
+2026-09-12 01:10Z, bridge job zr-merge-ns, exit 0.
+
