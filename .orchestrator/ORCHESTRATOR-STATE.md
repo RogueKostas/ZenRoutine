@@ -661,3 +661,62 @@ behind #15 and belongs at the top of the handover.
 ### Last successful machine contact
 2026-09-12 01:40Z, bridge job zr-merge-lq, exit 0.
 
+
+---
+
+## Pass 9 - 2026-09-12 01:45-02:05Z - FINAL PASS
+
+### Landed - the last bug
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #37 | #4 | e5ad0fa | ci 0, tsc 0, **129 tests**, web 0 | see below |
+
+Suite: 117 at 6d4388b -> 129. Eleven PRs merged this run, 62 -> 129 tests.
+
+### The final lane found the trap INSIDE the test my own brief told it to replace
+`tests/store/persistence.test.ts:113` asserted `openB.endTime === openB.startTime` - but
+`makeTrackingEntry`'s default `updatedAt` is 10:00 while that fixture sets `startTime: '11:00'`.
+`updatedAt` precedes `startTime`, so there is no evidence, and the FIXED code closes that entry at
+`startTime` too. The lane wrote the fix, ran the suite, got 117/117 green, and noticed the assertion
+had never moved. **A lane that trusted that test would have shipped nothing and called it done.**
+That is the second instance of the repairLegacyValues trap found tonight, and the more dangerous one:
+the first cost a probe, this one would have cost a false fix.
+
+### Two more corrections, accepted
+- "Never at startTime" is NOT achievable and should not be: with `updatedAt` at or before
+  `startTime` and nothing following, any later timestamp is INVENTED. Shipped the honest version -
+  close at `startTime` but tag `evidence: 'none'` and report it, so an unevidenced zero is never
+  indistinguishable from a discarded one. That is the real fix to the word "silently".
+- MY BRIEF CONTRADICTED ITSELF: scope said persistence.ts + tests, deliverable 2 said surface repairs
+  TO THE USER. A getter nothing renders is surfaced to a programmer. The lane took the deliverable,
+  touched App.tsx and QuarantineNotice.tsx, and FLAGGED the expansion rather than burying it.
+- On "reuse the quarantine sink": right about the plumbing, wrong about the array. A quarantined
+  record is ABSENT and verbatim; a repaired one is PRESENT and altered. One shared array would have
+  made the shipped notice false about every repaired entry. Separate `repairs` channel, own sentence.
+
+### It answered the composition question and found a real gap -> #38
+Read zustand's source rather than the comments. Order: migrate(:391) -> merge(:415) -> set(:419) ->
+`if (migrated) setItem()`(:421). **#32's awaited side-car write protects MIGRATE-stage drops only.**
+A record dropped by the MERGE stage during a migrate-path hydration is stripped from the blob at :421
+while its side-car write happens later in initializeAppStore, where failure is SWALLOWED. The comment
+justifying the swallow cites ":405 short-circuits when the version matches" - true of the pure merge
+path, FALSE for merge-stage drops on the migrate path. That is the #19 window, still open on one
+branch. Unreachable today ONLY because every lenient repair happens to emit strict-valid output, and
+NOTHING ENFORCES OR TESTS THAT INVARIANT. The lane verified its own repair preserves it and left the
+gap alone - a durability change to merged work is not a lane's call. Filed as #38.
+
+### STOPPED
+No lanes running. No worktrees. Nothing unpushed. Every agent/* branch merged and deleted.
+Open work is five director decisions (#11, #15, #31, #34, #35) and three product-sized features
+(#12, #13, #14), plus #38 which is small and schedulable. None started - a product feature must not
+begin unattended.
+
+HANDOVER-PROMPT.md written at the repo root. The wake chain is stopped; nothing further is scheduled.
+
+Roughly USD 62 of lane time across fourteen dispatches. Nine lane corrections to my briefs were
+accepted this run and every single one was right - the count is the point: a brief is a hypothesis,
+and the lane holding the file is better placed to falsify it than the orchestrator who wrote it.
+
+### Last successful machine contact
+2026-09-12 02:05Z.
+
