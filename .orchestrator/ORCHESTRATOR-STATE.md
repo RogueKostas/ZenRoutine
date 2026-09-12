@@ -463,3 +463,73 @@ codex/r1-data-safety until the director re-syncs it; PR #29 did not and could no
 ### Last successful machine contact
 2026-09-12 00:37Z, bridge job zr-lanes-7, exit 0.
 
+
+---
+
+## Pass 6 - 2026-09-12 00:40-01:05Z
+
+### Landed
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #30 | #24 | 41c01b0 | ci 0, tsc 0, **98 tests**, web 0 | aa81342 |
+
+Suite: 88 at 885015d -> 98 at 41c01b0. Gated push clean, remote ref read back matching.
+
+### The routine-writers lane did more than it was asked and was right about all of it
+It produced the exhaustive audit the issue asked for - FIFTEEN writers of routine.updatedAt or
+routine.blocks, each with a verdict - and found three broken, not the two I named.
+
+TWO CORRECTIONS TO MY BRIEF, both accepted:
+- I said `duplicateRoutine` was correct and needed only coverage. WRONG. The copy sets
+  `updatedAt: now`, so any activity type the SOURCE never stamped falls onto that fresh timestamp
+  and the copy is BORN with zero evidence for an identical schedule. Fourth instance of the class.
+- A third writer exists that I could not name: `deleteGoal` (useAppStore.ts:535) rewrites
+  routine.blocks clearing goalId - a CAPACITY_RELEVANT field - and stamps nothing.
+
+The generalisation the plan was missing, now written into REVIVAL_PLAN.md: **any writer that bumps
+routine.updatedAt must also seed capacityChangedAt, or the bump resets every un-seeded activity
+type.** That is the rule; the individual bugs were instances of it.
+
+### The lane refused to make a product decision, correctly
+`deleteGoal` is the opposite polarity to #7: it never bumps updatedAt so it cannot collapse
+confidence - it silently UNDER-reports a real capacity change. Competing goals keep citing evidence
+gathered under a schedule that no longer exists. Whether deleting a goal should reset its
+competitors' evidence is a product call, so the lane left it and documented it rather than patching
+it silently. Filed as **#31** for the director with three options and a recommendation (partial:
+stamp only when the deleted goal actually held dedicated capacity).
+
+### Judgement beyond the brief that I accepted
+`updateRoutine` now excludes `isActive` as well as `capacityChangedAt`. Not what I asked for, and
+right: `isActive` has a companion in `activeRoutineId`, which is what `useActiveRoutine` actually
+resolves and which only `setActiveRoutine` maintains, so `updateRoutine(id, {isActive: true})` would
+have left the two disagreeing about which routine a forecast reads. An UPDATABLE_ROUTINE_FIELDS
+allow list closes the plain-JS route, and two deliberate @ts-expect-error directives make the type
+itself the test - they fail typecheck if it ever loosens.
+
+### Product judgement now embedded in the code, and worth revisiting
+Activation stamps only the activity types whose schedule genuinely differs from the routine going
+out. Consequence: a Vacation Mode round trip WILL reset confidence for the types Vacation schedules
+differently. Defensible - evidence gathered on holiday was not gathered under the work schedule -
+but arguable. Isolated in `activationCapacityChanges`; reversing it is one function.
+
+### Honest scope limit the lane volunteered
+Two of the three fixes are store-API-only: `updateRoutine` and `duplicateRoutine` have ZERO call
+sites in the app today. Only `setActiveRoutine` is reachable (DebugPanel `__DEV__`, and
+RoutineScreen:166), and its production path is benign under the fix because the routine it activates
+is brand-new and empty.
+
+### In flight at the end of this pass
+- sidecar-durability (#18, THE LAST p0) - dispatched with #19's confirmed evidence, the recommended
+  async-migrate fix, and the vacuous-test trap written into the brief
+- linkage-quarantine (#5) - running
+- notice-scope (#21) - FINISHED, result event present, NOT yet landed. Next pass lands it.
+
+Next after those: #4 (waits for linkage-quarantine to clear persistence.ts), then product #13, #14,
+#12. #31 and #15 are the director's.
+
+### Not yet verified - unchanged
+#15 open. No physical-device smoke has ever been run. Render still serves codex/r1-data-safety.
+
+### Last successful machine contact
+2026-09-12 01:06Z, bridge job zr-merge-rw, exit 0.
+
