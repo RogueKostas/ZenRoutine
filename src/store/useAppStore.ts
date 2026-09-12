@@ -36,7 +36,11 @@ import {
   parseQuarantineArchive,
   selectPersistedAppState,
 } from './persistence';
-import type { QuarantineArchive, QuarantinedTrackingEntry } from './persistence';
+import type {
+  QuarantineArchive,
+  QuarantinedTrackingEntry,
+  RepairedTrackingEntry,
+} from './persistence';
 
 export type ImportResult =
   | { ok: true }
@@ -60,6 +64,14 @@ let quarantinedTrackingEntries: readonly QuarantinedTrackingEntry[] = NO_QUARANT
 // and the user should be told about all of them, not just the last stage to find one.
 let pendingQuarantine: QuarantinedTrackingEntry[] = [];
 
+// The repair channel, kept separate from the quarantine one all the way to the screen. A repaired
+// entry is *in* live state with an altered endTime; a quarantined one is absent and preserved
+// verbatim. Same plumbing, opposite facts, so they cannot share a report without one of the two
+// user-facing sentences being false. Reference-stable empty value for the same reason as above.
+const NO_REPAIRS: readonly RepairedTrackingEntry[] = [];
+let repairedTrackingEntries: readonly RepairedTrackingEntry[] = NO_REPAIRS;
+let pendingRepairs: RepairedTrackingEntry[] = [];
+
 /**
  * Tracking entries the last hydration could not read and therefore left out of live state.
  * Deliberately kept off HydrationSnapshot so the existing hydration contract is unchanged.
@@ -69,12 +81,24 @@ export function getQuarantinedTrackingEntries(): readonly QuarantinedTrackingEnt
 }
 
 /**
- * Drop the report after the state it described has been replaced wholesale (reset or import).
- * The durable QUARANTINE_STORAGE_KEY copy is left alone — this clears the notice, not the data.
+ * Tracking entries the last hydration kept but altered — currently only legacy open timers that
+ * had to be closed so one could stay running. These are in live state; what changed is recorded
+ * here and durably in the side-car, so the repair is not a silent rewrite of the user's history.
  */
-function clearQuarantineReport(): void {
-  if (quarantinedTrackingEntries === NO_QUARANTINE) return;
+export function getRepairedTrackingEntries(): readonly RepairedTrackingEntry[] {
+  return repairedTrackingEntries;
+}
+
+/**
+ * Drop both reports after the state they described has been replaced wholesale (reset or import).
+ * The durable QUARANTINE_STORAGE_KEY copy is left alone — this clears the notices, not the data.
+ */
+function clearHydrationReports(): void {
+  if (quarantinedTrackingEntries === NO_QUARANTINE && repairedTrackingEntries === NO_REPAIRS) {
+    return;
+  }
   quarantinedTrackingEntries = NO_QUARANTINE;
+  repairedTrackingEntries = NO_REPAIRS;
   hydrationListeners.forEach((listener) => listener());
 }
 
@@ -137,19 +161,24 @@ function quarantineFingerprint(value: unknown): string {
  * quarantine event destroys what the first one saved, and by then those records may already be
  * gone from the store's own blob — precisely the silent data loss the side-car exists to stop.
  */
-async function persistQuarantinedEntries(
-  entries: readonly QuarantinedTrackingEntry[]
+async function persistHydrationReports(
+  entries: readonly QuarantinedTrackingEntry[],
+  repairs: readonly RepairedTrackingEntry[] = []
 ): Promise<void> {
-  if (entries.length === 0) return;
+  if (entries.length === 0 && repairs.length === 0) return;
   const archive = await readQuarantineArchive();
-  const fingerprint = quarantineFingerprint(entries);
+  // Fingerprints the pair, so a launch that quarantines the same records but repairs something new
+  // is still recognised as a new event. `?? []` is what lets a generation written before repairs
+  // existed compare equal to a quarantine-only generation written now.
+  const fingerprint = quarantineFingerprint([entries, repairs]);
   const alreadyArchived = archive.generations.some(
-    (generation) => quarantineFingerprint(generation.entries) === fingerprint
+    (generation) =>
+      quarantineFingerprint([generation.entries, generation.repairs ?? []]) === fingerprint
   );
   if (alreadyArchived) return;
   await AsyncStorage.setItem(
     QUARANTINE_STORAGE_KEY,
-    JSON.stringify(appendQuarantineGeneration(archive, entries))
+    JSON.stringify(appendQuarantineGeneration(archive, entries, undefined, repairs))
   );
 }
 
@@ -1258,7 +1287,7 @@ export const useAppStore = create<AppStore>()(
         const nextState = createInitializedState();
         await persistSnapshot(nextState);
         set(nextState);
-        clearQuarantineReport();
+        clearHydrationReports();
       },
 
       initializeDefaults: () => {
@@ -1295,7 +1324,7 @@ export const useAppStore = create<AppStore>()(
           };
         }
         set(imported);
-        clearQuarantineReport();
+        clearHydrationReports();
         return { ok: true };
       },
 
@@ -1406,7 +1435,7 @@ export const useAppStore = create<AppStore>()(
         const migrated = migratePersistedState(
           persistedState,
           version,
-          { quarantine: pendingQuarantine }
+          { quarantine: pendingQuarantine, repairs: pendingRepairs }
         );
         // Only the migrate path rewrites the app blob during hydration, and it does so with the
         // quarantined record already stripped out. Measured order before this await existed
@@ -1426,7 +1455,11 @@ export const useAppStore = create<AppStore>()(
         // key, with a console.warn as its only trace and hydration still reporting `ready`.
         // Refusing to open is the lesser harm when this device holds the only copy of the user's
         // history (docs/PRODUCT.md D6), and a full disk is something the user can act on.
-        await persistQuarantinedEntries(pendingQuarantine);
+        //
+        // Legacy repairs ride the same await for the same reason, and they need it more: a
+        // repaired entry's original record is only in the app blob, and the `setItem` below is
+        // exactly what replaces it with the repaired version. This is the one chance to copy it.
+        await persistHydrationReports(pendingQuarantine, pendingRepairs);
         return migrated;
       },
       merge: (persistedState, currentState) => {
@@ -1437,16 +1470,23 @@ export const useAppStore = create<AppStore>()(
         const migrated = migratePersistedState(
           persistedState,
           CURRENT_SCHEMA_VERSION,
-          { quarantine: pendingQuarantine }
+          { quarantine: pendingQuarantine, repairs: pendingRepairs }
         );
         quarantinedTrackingEntries =
           pendingQuarantine.length > 0 ? pendingQuarantine : NO_QUARANTINE;
+        // Repairs only ever come from the `migrate` stage — this call is strict, so the
+        // `version < CURRENT_SCHEMA_VERSION` branch that repairs open entries cannot run here.
+        // Publishing from `merge` anyway is what carries a migrate-stage repair to the screen,
+        // since `merge` is the later of the two stages and the sink is shared across both.
+        repairedTrackingEntries = pendingRepairs.length > 0 ? pendingRepairs : NO_REPAIRS;
         return { ...currentState, ...migrated };
       },
       onRehydrateStorage: () => {
         hydrationFailure = null;
         pendingQuarantine = [];
+        pendingRepairs = [];
         quarantinedTrackingEntries = NO_QUARANTINE;
+        repairedTrackingEntries = NO_REPAIRS;
         return (_state, error) => {
           hydrationFailure = error ?? null;
         };
@@ -1490,11 +1530,12 @@ export function initializeAppStore(options?: { force?: boolean }): Promise<void>
       // above this point would reopen the #19 window on the merge path too. `merge` cannot take
       // the `migrate` treatment because zustand calls it synchronously (middleware.mjs:416).
       const quarantined = getQuarantinedTrackingEntries();
-      if (quarantined.length > 0) {
+      const repaired = getRepairedTrackingEntries();
+      if (quarantined.length > 0 || repaired.length > 0) {
         try {
-          await persistQuarantinedEntries(quarantined);
+          await persistHydrationReports(quarantined, repaired);
         } catch (error) {
-          console.warn('ZenRoutine could not save quarantined tracking entries', error);
+          console.warn('ZenRoutine could not save its hydration report', error);
         }
       }
 

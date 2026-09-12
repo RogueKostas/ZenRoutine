@@ -8,6 +8,7 @@ import { RootNavigator } from './src/navigation';
 import {
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
+  getRepairedTrackingEntries,
   initializeAppStore,
   resetAppStoreAfterHydrationError,
   subscribeHydration,
@@ -18,8 +19,10 @@ import { ThemeProvider, useTheme, colors, darkColors } from './src/theme';
 import { OnboardingScreen } from './src/screens';
 import {
   QuarantineNotice,
-  isQuarantineNoticeVisible,
+  RepairNotice,
+  isHydrationNoticeVisible,
   type QuarantineReport,
+  type RepairReport,
 } from './src/components/common';
 
 // Custom navigation themes
@@ -68,6 +71,15 @@ function AppContent() {
   // forced rehydrate that sets different records aside would write the side-car and say nothing.
   const [dismissedQuarantineReport, setDismissedQuarantineReport] =
     useState<QuarantineReport | null>(null);
+  const repaired = useSyncExternalStore(
+    subscribeHydration,
+    getRepairedTrackingEntries,
+    getRepairedTrackingEntries
+  );
+  // Dismissed separately from the quarantine report: they are different events with different
+  // consequences, and silencing "we set records aside" must not also silence "we changed an end
+  // time in your history".
+  const [dismissedRepairReport, setDismissedRepairReport] = useState<RepairReport | null>(null);
 
   useEffect(() => {
     void initializeAppStore();
@@ -151,7 +163,12 @@ function AppContent() {
 
   // Hydration succeeded but left records behind. Say so rather than letting history go missing
   // quietly — the raw records are kept on device under QUARANTINE_STORAGE_KEY.
-  const showQuarantineNotice = isQuarantineNoticeVisible(quarantined, dismissedQuarantineReport);
+  const showQuarantineNotice = isHydrationNoticeVisible(quarantined, dismissedQuarantineReport);
+  // Hydration succeeded but rewrote something. A legacy blob with two timers left running can only
+  // keep one, so the others were ended at the last moment there was evidence for. That is a change
+  // to data the user authored, and it is not allowed to be silent (issue #4); the originals are
+  // kept alongside the quarantined records under QUARANTINE_STORAGE_KEY.
+  const showRepairNotice = isHydrationNoticeVisible(repaired, dismissedRepairReport);
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -160,6 +177,13 @@ function AppContent() {
           count={quarantined.length}
           colors={themeColors}
           onDismiss={() => setDismissedQuarantineReport(quarantined)}
+        />
+      ) : null}
+      {showRepairNotice ? (
+        <RepairNotice
+          count={repaired.length}
+          colors={themeColors}
+          onDismiss={() => setDismissedRepairReport(repaired)}
         />
       ) : null}
       <NavigationContainer theme={isDark ? DarkNavigationTheme : LightNavigationTheme}>

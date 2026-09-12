@@ -12,10 +12,13 @@ export type { BadgeVariant, BadgeSize } from './Badge';
 
 export {
   QuarantineNotice,
+  RepairNotice,
+  isHydrationNoticeVisible,
   isQuarantineNoticeVisible,
   quarantineNoticeMessage,
+  repairNoticeMessage,
 } from './QuarantineNotice';
-export type { QuarantineReport } from './QuarantineNotice';
+export type { QuarantineReport, RepairReport } from './QuarantineNotice';
 
 export {
   FadeInView,
