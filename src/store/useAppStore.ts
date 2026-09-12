@@ -93,6 +93,66 @@ async function readQuarantineArchive(): Promise<QuarantineArchive> {
   }
 }
 
+/**
+ * Stable identity for a value read back out of JSON, used to recognise the same quarantined
+ * record arriving again on a later launch. Object keys are sorted, so the identity does not
+ * depend on the property order the stored blob happened to use.
+ */
+function quarantineFingerprint(value: unknown): string {
+  if (value === undefined) return 'undefined';
+  if (Array.isArray(value)) {
+    return `[${value.map(quarantineFingerprint).join(',')}]`;
+  }
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>)
+      .sort(([left], [right]) => (left < right ? -1 : left > right ? 1 : 0))
+      .map(([key, nested]) => `${JSON.stringify(key)}:${quarantineFingerprint(nested)}`);
+    return `{${entries.join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+/**
+ * Copy quarantined records to the side-car, skipping records an earlier generation already holds.
+ *
+ * This is the chosen fix for the generation-rotation half of #18 — option 2, an idempotent
+ * side-car — and it is preferred over cleaning the record out of the app blob (option 1) because
+ * it does not depend on a write succeeding. A quarantine that cannot be cleaned up (a full disk,
+ * a blob write that fails) is exactly the case where the record is re-read on every launch, so a
+ * fix that only works when the cleanup write lands does not cover its own worst case. Skipping
+ * costs a read the hydration path already performs and writes nothing at all in the repeat case.
+ *
+ * Consequence for the cap in `appendQuarantineGeneration`: a given set of bad records can consume
+ * at most one generation however many times it is re-read, so twenty cold starts over one
+ * uncleaned record can no longer rotate an unrelated earlier generation off the end. (The comment
+ * on MAX_QUARANTINE_GENERATIONS calling the cap "realistically unreachable" was wrong when it was
+ * written — re-quarantining on every launch was the repeating source it said did not exist. It
+ * lives in persistence.ts, which this lane must not edit; correcting it is owed there.)
+ *
+ * Deliberately compares whole generations rather than individual records: a launch that sees a
+ * second record go bad reports both together, which is a genuinely new event worth its own
+ * generation. What is suppressed is only the identical set arriving again.
+ *
+ * When it does write, it appends rather than replacing. Overwriting would mean a second
+ * quarantine event destroys what the first one saved, and by then those records may already be
+ * gone from the store's own blob — precisely the silent data loss the side-car exists to stop.
+ */
+async function persistQuarantinedEntries(
+  entries: readonly QuarantinedTrackingEntry[]
+): Promise<void> {
+  if (entries.length === 0) return;
+  const archive = await readQuarantineArchive();
+  const fingerprint = quarantineFingerprint(entries);
+  const alreadyArchived = archive.generations.some(
+    (generation) => quarantineFingerprint(generation.entries) === fingerprint
+  );
+  if (alreadyArchived) return;
+  await AsyncStorage.setItem(
+    QUARANTINE_STORAGE_KEY,
+    JSON.stringify(appendQuarantineGeneration(archive, entries))
+  );
+}
+
 function publishHydrationSnapshot(next: HydrationSnapshot): void {
   hydrationSnapshot = next;
   hydrationListeners.forEach((listener) => listener());
@@ -269,6 +329,92 @@ const CAPACITY_RELEVANT_BLOCK_FIELDS: readonly (keyof RoutineBlock)[] = [
   'goalId',
 ];
 
+/**
+ * Everything about one block that a forecast can see, as a comparable string.
+ *
+ * Derived from `CAPACITY_RELEVANT_BLOCK_FIELDS` rather than listing the fields
+ * again, so a field opted into that list is compared here too instead of being
+ * silently ignored when two routines are compared across an activation.
+ */
+function blockCapacitySignature(block: RoutineBlock): string {
+  return CAPACITY_RELEVANT_BLOCK_FIELDS
+    .map((field) => `${field}=${block[field] ?? ''}`)
+    .join(',');
+}
+
+/** One activity type's whole schedule within a routine, order-independent. */
+function activityScheduleSignature(
+  routine: Routine | undefined,
+  activityTypeId: string
+): string {
+  return (routine?.blocks ?? [])
+    .filter((block) => block.activityTypeId === activityTypeId)
+    .map(blockCapacitySignature)
+    .sort()
+    .join('|');
+}
+
+/**
+ * Which activity types genuinely change capacity when `incoming` replaces
+ * `outgoing` as the active routine.
+ *
+ * Only the active routine is ever read for a forecast, so activating a routine
+ * does change which capacity applies -- but only for the activity types whose
+ * schedule actually differs between the two. Switching between routines that
+ * schedule Fitness identically must leave Fitness's evidence alone, exactly as
+ * re-saving an unchanged block does; switching to a routine that drops Fitness
+ * to two hours must reset it. Comparing is what tells those apart.
+ *
+ * Restricted to the activity types `incoming` schedules: for anything else its
+ * weekly capacity is zero, and a forecast never reads a cutoff it has no
+ * capacity for.
+ *
+ * `outgoing` is looked up by `activeRoutineId` because that -- not the
+ * `isActive` flag -- is what `useActiveRoutine` resolves, so it is the schedule
+ * the evidence was really gathered under.
+ */
+function activationCapacityChanges(
+  outgoing: Routine | undefined,
+  incoming: Routine
+): string[] {
+  const activityTypeIds = new Set(incoming.blocks.map((block) => block.activityTypeId));
+  return [...activityTypeIds].filter(
+    (activityTypeId) =>
+      activityScheduleSignature(outgoing, activityTypeId) !==
+      activityScheduleSignature(incoming, activityTypeId)
+  );
+}
+
+/**
+ * What `updateRoutine` is allowed to change.
+ *
+ * `blocks` and `capacityChangedAt` are excluded because they are capacity, and
+ * capacity is only ever written by the four block mutations, which stamp as
+ * they go; letting a caller pass either would clobber the map wholesale.
+ * `isActive` is excluded because it has a companion, `activeRoutineId`, that
+ * only `setActiveRoutine` maintains -- writing the flag here would leave the
+ * two disagreeing about which routine a forecast reads.
+ */
+type RoutineUpdate = Partial<
+  Omit<Routine, 'id' | 'createdAt' | 'updatedAt' | 'blocks' | 'isActive' | 'capacityChangedAt'>
+>;
+
+/**
+ * The fields `updateRoutine` copies across, listed rather than taken from
+ * `Object.keys(data)` so that the runtime enforces what `RoutineUpdate`
+ * declares. A plain JavaScript caller cannot smuggle `capacityChangedAt`
+ * through, and a field added to `Routine` later has to be opted in here
+ * deliberately instead of becoming writable by accident.
+ */
+const UPDATABLE_ROUTINE_FIELDS: readonly (keyof RoutineUpdate)[] = ['name'];
+
+/** The updatable keys of `data` that differ from the value already stored. */
+function changedRoutineFields(routine: Routine, data: RoutineUpdate): (keyof RoutineUpdate)[] {
+  return UPDATABLE_ROUTINE_FIELDS.filter(
+    (field) => data[field] !== undefined && data[field] !== routine[field]
+  );
+}
+
 function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   try {
     parseLocalDateKey(entry.date);
@@ -315,7 +461,7 @@ interface AppActions {
 
   // Routine Actions
   addRoutine: (name: string) => string;
-  updateRoutine: (id: string, data: Partial<Omit<Routine, 'id' | 'createdAt' | 'updatedAt' | 'blocks'>>) => void;
+  updateRoutine: (id: string, data: RoutineUpdate) => void;
   deleteRoutine: (id: string) => void;
   setActiveRoutine: (id: string | null) => void;
   duplicateRoutine: (id: string, newName: string) => string | null;
@@ -607,13 +753,37 @@ export const useAppStore = create<AppStore>()(
       },
 
       updateRoutine: (id, data) => {
-        set((state) => ({
-          routines: state.routines.map((r) =>
-            r.id === id
-              ? { ...r, ...data, updatedAt: new Date().toISOString() }
-              : r
-          ),
-        }));
+        set((state) => {
+          const routine = state.routines.find((candidate) => candidate.id === id);
+          if (!routine) return state;
+          const changedFields = changedRoutineFields(routine, data);
+          // A rename that renames nothing must write nothing, for the same
+          // reason re-saving an unchanged block does: `updatedAt` is the
+          // capacity fallback, so any write here is a write to confidence.
+          if (changedFields.length === 0) return state;
+          const patch = Object.fromEntries(
+            changedFields.map((field) => [field, data[field]])
+          ) as RoutineUpdate;
+
+          const now = new Date().toISOString();
+          return {
+            routines: state.routines.map((r) =>
+              r.id === id
+                ? {
+                    ...r,
+                    ...patch,
+                    // Nothing this action can change is capacity, so nothing is
+                    // stamped -- but `updatedAt` moves, and every activity type
+                    // this routine has never stamped reads `updatedAt` through
+                    // `getCapacityChangedAt`'s fallback. Seeding pins those to
+                    // the cutoff they were already being read under.
+                    capacityChangedAt: withCapacityChangedAt(r, [], now),
+                    updatedAt: now,
+                  }
+                : r
+            ),
+          };
+        });
       },
 
       deleteRoutine: (id) => {
@@ -636,13 +806,45 @@ export const useAppStore = create<AppStore>()(
       },
 
       setActiveRoutine: (id) => {
-        if (id !== null && !get().routines.some((routine) => routine.id === id)) return;
+        const current = get();
+        if (id !== null && !current.routines.some((routine) => routine.id === id)) return;
+
+        const outgoing = current.routines.find(
+          (routine) => routine.id === current.activeRoutineId
+        );
+        const incoming = current.routines.find((routine) => routine.id === id);
+        const activatedChanges = incoming
+          ? activationCapacityChanges(outgoing, incoming)
+          : [];
+        const now = new Date().toISOString();
+
         set((state) => ({
-          routines: state.routines.map((r) => ({
-            ...r,
-            isActive: r.id === id,
-            updatedAt: new Date().toISOString(),
-          })),
+          routines: state.routines.map((routine) => {
+            const isActive = routine.id === id;
+            // Every routine that is not changing hands keeps its identity. The
+            // old code rebuilt all of them with a fresh `updatedAt`, which
+            // collapsed the forecast evidence of every routine that had an
+            // activity type not yet in its map -- issue #7 with no block
+            // touched, on routines the user never even named.
+            if (routine.isActive === isActive) return routine;
+            return {
+              ...routine,
+              isActive,
+              // The two that do change hands still get a new `updatedAt`, so
+              // they still have to be seeded or the fallback does the same
+              // damage. The routine being activated additionally stamps the
+              // activity types whose schedule really differs from the one
+              // going out; the one being deactivated stamps nothing, because
+              // its own blocks did not move and nothing reads it until it is
+              // activated again, which compares afresh.
+              capacityChangedAt: withCapacityChangedAt(
+                routine,
+                isActive ? activatedChanges : [],
+                now
+              ),
+              updatedAt: now,
+            };
+          }),
           activeRoutineId: id,
         }));
       },
@@ -663,6 +865,12 @@ export const useAppStore = create<AppStore>()(
             ...b,
             id: generateId(),
           })),
+          // The copy has the source's schedule, so it inherits the source's
+          // cutoffs. Seeding rather than spreading matters because `updatedAt`
+          // moves to now: an activity type the source never stamped would
+          // otherwise fall through the fallback onto a fresh timestamp and the
+          // copy would be born with no evidence for a schedule it did not change.
+          capacityChangedAt: withCapacityChangedAt(sourceRoutine, [], now),
           createdAt: now,
           updatedAt: now,
         };
@@ -1194,8 +1402,33 @@ export const useAppStore = create<AppStore>()(
       version: CURRENT_SCHEMA_VERSION,
       skipHydration: true,
       partialize: selectPersistedAppState,
-      migrate: (persistedState, version) =>
-        migratePersistedState(persistedState, version, { quarantine: pendingQuarantine }),
+      migrate: async (persistedState, version) => {
+        const migrated = migratePersistedState(
+          persistedState,
+          version,
+          { quarantine: pendingQuarantine }
+        );
+        // Only the migrate path rewrites the app blob during hydration, and it does so with the
+        // quarantined record already stripped out. Measured order before this await existed
+        // (issue #19): READ storage, WRITE storage [stripped], READ quarantine, WRITE quarantine
+        // -- between those middle two steps the record is in no durable location at all.
+        //
+        // Awaiting the side-car write *here* closes that window by construction rather than
+        // narrowing it. zustand 5.0.11 detects a promise returned from `migrate` and chains it
+        // (node_modules/zustand/esm/middleware.mjs:392-396) before the `set` and the `setItem`
+        // that rewrite the blob (:419-421), so the blob cannot be rewritten until this resolves.
+        //
+        // A failure propagates here, unlike on the merge path below, and that asymmetry is the
+        // point. Rejecting aborts the rehydrate chain at :431 before that `setItem`, so the app
+        // blob keeps the record and the user gets the retryable hydration error. Swallowing it
+        // would let zustand strip the record anyway -- the failure #19 demonstrated rather than
+        // hypothesised, where a rejecting side-car write on a v3 blob left the record in neither
+        // key, with a console.warn as its only trace and hydration still reporting `ready`.
+        // Refusing to open is the lesser harm when this device holds the only copy of the user's
+        // history (docs/PRODUCT.md D6), and a full disk is something the user can act on.
+        await persistQuarantinedEntries(pendingQuarantine);
+        return migrated;
+      },
       merge: (persistedState, currentState) => {
         if (persistedState === undefined) return currentState;
         // Every save stamps CURRENT_SCHEMA_VERSION, so this is always the strict path and the
@@ -1239,24 +1472,27 @@ export function initializeAppStore(options?: { force?: boolean }): Promise<void>
       }
       // Quarantined records are out of live state, so the very next store write would overwrite
       // the only blob that still holds them. Copy them somewhere the store does not own, before
-      // anything below can trigger that write. A failure here must not re-brick hydration — the
-      // whole point of quarantining is that the app still opens — so it is reported in the
-      // session's in-memory report and nowhere else.
+      // anything below can trigger that write.
       //
-      // This appends a generation rather than replacing the side-car. Overwriting would mean a
-      // second quarantine event destroys what the first one saved, and by then those records are
-      // already gone from the store's own blob — which is precisely the silent data loss this
-      // whole lane exists to stop.
+      // This covers the merge path, where zustand reads the blob and writes nothing
+      // (middleware.mjs:405 short-circuits when the version matches), so the record is still in
+      // the app blob throughout and a failed side-car write loses nothing. That is why a failure
+      // is swallowed here but not in `migrate`: re-bricking hydration would defeat the point of
+      // quarantining when there is nothing to lose by opening.
+      //
+      // The migrate path has already written the side-car by the time we get here, and
+      // `persistQuarantinedEntries` recognises the identical generation and writes nothing, so
+      // one hydration still produces exactly one generation.
+      //
+      // Note what keeps the merge path safe: this write happens before `persistSnapshot` below,
+      // which is the first thing in hydration that can rewrite the blob. That is an ordering
+      // property of this function, not something the type system enforces — a store write added
+      // above this point would reopen the #19 window on the merge path too. `merge` cannot take
+      // the `migrate` treatment because zustand calls it synchronously (middleware.mjs:416).
       const quarantined = getQuarantinedTrackingEntries();
       if (quarantined.length > 0) {
         try {
-          await AsyncStorage.setItem(
-            QUARANTINE_STORAGE_KEY,
-            JSON.stringify(appendQuarantineGeneration(
-              await readQuarantineArchive(),
-              quarantined
-            ))
-          );
+          await persistQuarantinedEntries(quarantined);
         } catch (error) {
           console.warn('ZenRoutine could not save quarantined tracking entries', error);
         }

@@ -397,3 +397,139 @@ re-syncs it.
 ### Last successful machine contact
 2026-09-12 01:19Z, bridge job zr-lanes-6, exit 0.
 
+
+---
+
+## Pass 5 - 2026-09-12 00:20-00:40Z
+
+### Landed - two PRs, each gated by me on its own merged tree
+
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #28 | #20 | beb716d | ci 0, tsc 0, **88 tests**, web 0 | f445724 |
+| #29 | #11 repo half | 5c4ec54 | ci 0, tsc 0, **88 tests**, web 0, diff is one added line | 44a8916 |
+
+Suite: 86 at 1fbc197 -> 88 at beb716d. Both gated pushes clean, both remote refs read back matching.
+
+### Closed without code: #19, and it changes #18
+zustand-probe returned **CONFIRMED**. A pre-v4 device CAN lose a quarantined record entirely.
+Observed AsyncStorage order on a version-3 blob:
+  READ storage -> WRITE storage [stripped] -> READ quarantine -> WRITE quarantine
+Control on a version-4 blob: READ, READ, WRITE quarantine - no app-blob write at all. The exposure
+is specific to zustand's migrate path (middleware.mjs:390-421: setItem() is RETURNED into the
+rehydrate chain, and line 405 short-circuits when versions match). The merge path is already safe.
+Failure case demonstrated, not inferred: with the side-car write rejecting, appHoldsCorrupt=false
+AND sidecarPresent=false - gone from both keys, only a console.warn, hydration still reports ready.
+Recommended fix, now on #18: make the persist `migrate` option async and await the side-car append
+inside it, before returning clean state. Closes the window by construction.
+
+### THE CORRECTION THAT WOULD HAVE COST US A FAKE TEST
+The probe's FIRST attempt used `endTime < startTime` and quarantined NOTHING.
+`parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION)` means repairLegacyValues is TRUE on a
+pre-v4 blob, so that malformation is REPAIRED, not quarantined. **Any regression test written with
+endTime < startTime against a v3 envelope passes vacuously.** Use invalid `source`, a non-string
+`id`, an unparseable date, or a non-object row. Posted on #18 and #19 and written into the #5 brief.
+
+### Lane corrections to MY briefs this pass - both accepted
+- quarantine-blame: my brief said the non-empty-quarantine case was untested. IT IS TESTED
+  (tests/store/persistence.test.ts:194, from PR #17). What was untested is the UNRELATED dangling
+  pointer. And implementing my acceptance criterion literally - an id-set membership test - WOULD
+  HAVE BROKEN that existing test, because a record whose id is the corrupted field is quarantined
+  as id: null and can never match. Hence the two-armed rule. My brief's line numbers were stale too.
+- render-branch: Render's spec says an omitted `branch` uses the repo's DEFAULT branch, which is
+  already main. So render.yaml was NEVER what pinned the beta to codex/r1-data-safety - that is a
+  Render-side stored setting overriding the documented default. The commit records intent and
+  changes nothing about what is deployed. I had assumed the file was the pin. IT WAS NOT.
+
+### A guard rail of mine that fought a lane
+The deny list is built as `Bash(*<entry>*)` and one entry was `render`. That matched the worktree's
+own path, so `git -C C:/CoworkBridge/lanes/render-branch ...` and even `git add render.yaml` were
+auto-denied. Three denied calls before the lane diagnosed it - and it REPORTED it rather than
+absorbing it. Narrowed to `render deploy`, `render service`, `renderctl`.
+RULE: a substring deny entry that can appear in a path is a trap. Deny the command, not the word.
+
+### In flight at the end of this pass
+- routine-writers (#24) - FINISHED, result event present, NOT yet landed. Next pass lands it.
+- linkage-quarantine (#5, widened) - dispatched, src/store/persistence.ts
+- notice-scope (#21) - dispatched, App.tsx
+
+#18 (p0) is unblocked by #19 but COLLIDES with routine-writers on src/store/useAppStore.ts.
+Dispatch it the moment routine-writers lands, and not before.
+
+### Not yet verified - unchanged
+#15 is open. No physical-device smoke has ever been run. The Render blueprint still serves
+codex/r1-data-safety until the director re-syncs it; PR #29 did not and could not move it.
+
+### Last successful machine contact
+2026-09-12 00:37Z, bridge job zr-lanes-7, exit 0.
+
+
+---
+
+## Pass 6 - 2026-09-12 00:40-01:05Z
+
+### Landed
+| PR | issue | branch tip gated | my gate | merged main |
+|---|---|---|---|---|
+| #30 | #24 | 41c01b0 | ci 0, tsc 0, **98 tests**, web 0 | aa81342 |
+
+Suite: 88 at 885015d -> 98 at 41c01b0. Gated push clean, remote ref read back matching.
+
+### The routine-writers lane did more than it was asked and was right about all of it
+It produced the exhaustive audit the issue asked for - FIFTEEN writers of routine.updatedAt or
+routine.blocks, each with a verdict - and found three broken, not the two I named.
+
+TWO CORRECTIONS TO MY BRIEF, both accepted:
+- I said `duplicateRoutine` was correct and needed only coverage. WRONG. The copy sets
+  `updatedAt: now`, so any activity type the SOURCE never stamped falls onto that fresh timestamp
+  and the copy is BORN with zero evidence for an identical schedule. Fourth instance of the class.
+- A third writer exists that I could not name: `deleteGoal` (useAppStore.ts:535) rewrites
+  routine.blocks clearing goalId - a CAPACITY_RELEVANT field - and stamps nothing.
+
+The generalisation the plan was missing, now written into REVIVAL_PLAN.md: **any writer that bumps
+routine.updatedAt must also seed capacityChangedAt, or the bump resets every un-seeded activity
+type.** That is the rule; the individual bugs were instances of it.
+
+### The lane refused to make a product decision, correctly
+`deleteGoal` is the opposite polarity to #7: it never bumps updatedAt so it cannot collapse
+confidence - it silently UNDER-reports a real capacity change. Competing goals keep citing evidence
+gathered under a schedule that no longer exists. Whether deleting a goal should reset its
+competitors' evidence is a product call, so the lane left it and documented it rather than patching
+it silently. Filed as **#31** for the director with three options and a recommendation (partial:
+stamp only when the deleted goal actually held dedicated capacity).
+
+### Judgement beyond the brief that I accepted
+`updateRoutine` now excludes `isActive` as well as `capacityChangedAt`. Not what I asked for, and
+right: `isActive` has a companion in `activeRoutineId`, which is what `useActiveRoutine` actually
+resolves and which only `setActiveRoutine` maintains, so `updateRoutine(id, {isActive: true})` would
+have left the two disagreeing about which routine a forecast reads. An UPDATABLE_ROUTINE_FIELDS
+allow list closes the plain-JS route, and two deliberate @ts-expect-error directives make the type
+itself the test - they fail typecheck if it ever loosens.
+
+### Product judgement now embedded in the code, and worth revisiting
+Activation stamps only the activity types whose schedule genuinely differs from the routine going
+out. Consequence: a Vacation Mode round trip WILL reset confidence for the types Vacation schedules
+differently. Defensible - evidence gathered on holiday was not gathered under the work schedule -
+but arguable. Isolated in `activationCapacityChanges`; reversing it is one function.
+
+### Honest scope limit the lane volunteered
+Two of the three fixes are store-API-only: `updateRoutine` and `duplicateRoutine` have ZERO call
+sites in the app today. Only `setActiveRoutine` is reachable (DebugPanel `__DEV__`, and
+RoutineScreen:166), and its production path is benign under the fix because the routine it activates
+is brand-new and empty.
+
+### In flight at the end of this pass
+- sidecar-durability (#18, THE LAST p0) - dispatched with #19's confirmed evidence, the recommended
+  async-migrate fix, and the vacuous-test trap written into the brief
+- linkage-quarantine (#5) - running
+- notice-scope (#21) - FINISHED, result event present, NOT yet landed. Next pass lands it.
+
+Next after those: #4 (waits for linkage-quarantine to clear persistence.ts), then product #13, #14,
+#12. #31 and #15 are the director's.
+
+### Not yet verified - unchanged
+#15 open. No physical-device smoke has ever been run. Render still serves codex/r1-data-safety.
+
+### Last successful machine contact
+2026-09-12 01:06Z, bridge job zr-merge-rw, exit 0.
+

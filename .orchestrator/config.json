@@ -53,7 +53,9 @@
     "eas build",
     "eas submit",
     "npx expo login",
-    "render"
+    "render deploy",
+    "render service",
+    "renderctl"
   ],
   "trackedGeneratedFiles": [
     "package-lock.json"
