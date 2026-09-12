@@ -15,11 +15,14 @@ vi.mock('react-native', () => ({
 
 import {
   QuarantineNotice,
+  RepairNotice,
+  isHydrationNoticeVisible,
   isQuarantineNoticeVisible,
   type QuarantineReport,
 } from '../../src/components/common/QuarantineNotice';
 import {
   getQuarantinedTrackingEntries,
+  getRepairedTrackingEntries,
   initializeAppStore,
   useAppStore,
 } from '../../src/store/useAppStore';
@@ -151,6 +154,66 @@ describe('the quarantine notice itself', () => {
     expect(textOf(elementsOfType(tree, 'View')[0])).toContain(
       'We couldn’t read 4 tracking entries, so they were set aside. Everything else loaded.'
     );
+  });
+
+  it('does not announce a repair as something it could not read', () => {
+    // The two notices describe opposite facts. A repaired entry loaded fine and is in the user's
+    // history with a changed end time; saying it was "set aside" would be false twice over.
+    const tree = RepairNotice({ count: 1, colors: noticeColors, onDismiss: vi.fn() });
+    const text = textOf(elementsOfType(tree, 'View')[0]);
+
+    expect(text).toContain('still running');
+    expect(text).toContain('Check that entry’s end time.');
+    expect(text).not.toContain('couldn’t read');
+    expect(text).not.toContain('set aside');
+
+    // Same banner affordances as the quarantine notice: polite live region, one dismiss button.
+    expect(propsOf(elementsOfType(tree, 'View')[0]).accessibilityLiveRegion).toBe('polite');
+    expect(elementsOfType(tree, 'Pressable')).toHaveLength(1);
+  });
+
+  it('counts the timers it ended', () => {
+    const tree = RepairNotice({ count: 3, colors: noticeColors, onDismiss: vi.fn() });
+
+    expect(textOf(elementsOfType(tree, 'View')[0])).toContain(
+      '3 timers from an older version were still running'
+    );
+  });
+
+  it('keeps the two notices independently dismissable', async () => {
+    // Silencing "we set records aside" must not also silence "we changed an end time in your
+    // history" — different events, different consequences. Needs one hydration that does both.
+    const openSelected = makeTrackingEntry({ id: 'open-selected', endTime: undefined });
+    const openStranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T12:30:00.000Z',
+      endTime: undefined,
+    });
+    // A malformation that throws even on the lenient legacy path. `endTime < startTime` — the one
+    // the other tests here use — is *repaired* at a pre-v4 version rather than quarantined, so it
+    // would leave the quarantine report empty and make this pass vacuously.
+    const unreadable = { ...makeTrackingEntry({ id: 'entry-bad' }), source: 'nope' };
+    const state = makeAppState({ trackingEntries: [openSelected, openStranded] });
+
+    await AsyncStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+      state: {
+        ...state,
+        trackingEntries: [...state.trackingEntries, unreadable],
+        currentTrackingEntryId: 'open-selected',
+      },
+      version: CURRENT_SCHEMA_VERSION - 1,
+    }));
+    await initializeAppStore({ force: true });
+
+    const quarantineReport = getQuarantinedTrackingEntries();
+    const repairReport = getRepairedTrackingEntries();
+    expect(quarantineReport.map((entry) => entry.id)).toEqual(['entry-bad']);
+    expect(repairReport.map((entry) => entry.id)).toEqual(['open-stranded']);
+
+    // Dismissing the quarantine notice leaves the repair notice on screen.
+    expect(isQuarantineNoticeVisible(quarantineReport, quarantineReport)).toBe(false);
+    expect(isHydrationNoticeVisible(repairReport, quarantineReport as never)).toBe(true);
   });
 
   it('lets the message take the width the dismiss button does not need', () => {

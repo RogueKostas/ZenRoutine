@@ -9,7 +9,10 @@ import {
   migratePersistedState,
   selectPersistedAppState,
 } from '../../src/store/persistence';
-import type { QuarantinedTrackingEntry } from '../../src/store/persistence';
+import type {
+  QuarantinedTrackingEntry,
+  RepairedTrackingEntry,
+} from '../../src/store/persistence';
 import {
   TEST_TIMESTAMP,
   makeActivityType,
@@ -110,9 +113,146 @@ describe('persisted-state migrations', () => {
     expect(migrated.trackingEntries.filter((entry) => !entry.endTime)).toEqual([
       expect.objectContaining({ id: 'open-a' }),
     ]);
+    // open-b's own updatedAt (10:00) predates its startTime (11:00), so there is genuinely no
+    // evidence it ran at all and it closes at zero. Asserted with `evidence: 'none'` alongside,
+    // because the *reason* is the contract here — an unevidenced zero, not a discarded duration.
     expect(migrated.trackingEntries.find((entry) => entry.id === 'open-b')?.endTime)
       .toBe(openB.startTime);
   });
+});
+
+/**
+ * Issue #4. Closing every non-selected open entry at its own `startTime` recorded a zero duration
+ * for time the user really worked, and said nothing about it. These pin the replacement contract:
+ * close at the last moment there is evidence for, never invent time that was not evidenced, and
+ * report every entry altered this way.
+ */
+describe('legacy open timers that have to be closed', () => {
+  const migrateOpenEntries = (
+    entries: readonly ReturnType<typeof makeTrackingEntry>[],
+    currentTrackingEntryId: string | null,
+    repairs?: RepairedTrackingEntry[]
+  ) => migratePersistedState(
+    makeAppState({ trackingEntries: [...entries], currentTrackingEntryId }),
+    CURRENT_SCHEMA_VERSION - 1,
+    repairs ? { repairs } : undefined
+  );
+
+  const openSelected = makeTrackingEntry({ id: 'open-selected', endTime: undefined });
+
+  it('closes a stranded open timer at its last-updated time rather than zeroing it', () => {
+    // 90 minutes of real work: started 11:00, and the record was still being written at 12:30.
+    const stranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T12:30:00.000Z',
+      endTime: undefined,
+    });
+
+    const migrated = migrateOpenEntries([openSelected, stranded], 'open-selected');
+
+    const closed = migrated.trackingEntries.find((entry) => entry.id === 'open-stranded');
+    expect(closed?.endTime).toBe('2026-03-02T12:30:00.000Z');
+    expect(closed?.endTime).not.toBe(stranded.startTime);
+    // The point of the whole issue, stated as a duration rather than a timestamp.
+    expect(
+      Date.parse(closed!.endTime!) - Date.parse(closed!.startTime)
+    ).toBe(90 * 60 * 1000);
+  });
+
+  it('clamps to the next entry\'s start rather than inventing duration past it', () => {
+    // updatedAt says 18:00, but the user demonstrably started something else at 12:00. The entry
+    // was over by then, so 12:00 is an upper bound the repair is not allowed to run past.
+    const stranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T18:00:00.000Z',
+      endTime: undefined,
+    });
+    const nextActivity = makeTrackingEntry({
+      id: 'entry-next',
+      startTime: '2026-03-02T12:00:00.000Z',
+      endTime: '2026-03-02T13:00:00.000Z',
+    });
+
+    const migrated = migrateOpenEntries(
+      [openSelected, stranded, nextActivity],
+      'open-selected'
+    );
+
+    expect(migrated.trackingEntries.find((entry) => entry.id === 'open-stranded')?.endTime)
+      .toBe('2026-03-02T12:00:00.000Z');
+  });
+
+  it('closes at startTime only when nothing at all outlived it', () => {
+    const stranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T11:00:00.000Z',
+      endTime: undefined,
+    });
+    const repairs: RepairedTrackingEntry[] = [];
+
+    const migrated = migrateOpenEntries([openSelected, stranded], 'open-selected', repairs);
+
+    expect(migrated.trackingEntries.find((entry) => entry.id === 'open-stranded')?.endTime)
+      .toBe('2026-03-02T11:00:00.000Z');
+    // A zero duration is acceptable here, but only because it is honest — and it is still reported,
+    // so an unevidenced zero is never indistinguishable from a discarded one.
+    expect(repairs).toEqual([
+      expect.objectContaining({ id: 'open-stranded', evidence: 'none' }),
+    ]);
+  });
+
+  it('reports every repaired entry with its original record and position', () => {
+    const stranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T12:30:00.000Z',
+      endTime: undefined,
+    });
+    const repairs: RepairedTrackingEntry[] = [];
+
+    migrateOpenEntries([openSelected, stranded], 'open-selected', repairs);
+
+    expect(repairs).toEqual([{
+      index: 1,
+      id: 'open-stranded',
+      reason: 'Open tracking entry closed at its last-updated time: only one entry can be open',
+      closedAt: '2026-03-02T12:30:00.000Z',
+      evidence: 'lastUpdated',
+      // Verbatim, so the reconstruction can always be checked against what the device held.
+      record: stranded,
+    }]);
+  });
+
+  it('repairs without a sink too, so a legacy backup still imports', () => {
+    // decodeBackup passes no options at all. Unlike quarantining, a missing repair sink must not
+    // turn the repair into a throw — a v1 blob has no other route into the app.
+    const stranded = makeTrackingEntry({
+      id: 'open-stranded',
+      startTime: '2026-03-02T11:00:00.000Z',
+      updatedAt: '2026-03-02T12:30:00.000Z',
+      endTime: undefined,
+    });
+
+    const migrated = migrateOpenEntries([openSelected, stranded], 'open-selected');
+
+    expect(migrated.trackingEntries.find((entry) => entry.id === 'open-stranded')?.endTime)
+      .toBe('2026-03-02T12:30:00.000Z');
+  });
+
+  it('reports nothing when the blob has only the one open timer', () => {
+    const repairs: RepairedTrackingEntry[] = [];
+
+    const migrated = migrateOpenEntries([openSelected], 'open-selected', repairs);
+
+    expect(migrated.trackingEntries.filter((entry) => !entry.endTime)).toHaveLength(1);
+    expect(repairs).toEqual([]);
+  });
+});
+
+describe('persisted-state migrations, continued', () => {
 
   it.each([-1, 1.5, Number.NaN, CURRENT_SCHEMA_VERSION + 1])(
     'rejects unsupported schema version %s',

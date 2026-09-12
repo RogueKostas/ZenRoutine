@@ -59,6 +59,48 @@ export interface QuarantinedTrackingEntry {
   record: unknown;
 }
 
+/**
+ * Where the `endTime` given to a force-closed legacy open entry came from.
+ *
+ * The distinction is the whole point of reporting a repair at all: `lastUpdated` is a reconstruction
+ * from real evidence, while `none` means the migration found nothing that outlived `startTime` and
+ * the entry genuinely closes at zero. A user looking at a corrected history needs to know which.
+ */
+export type RepairEvidence =
+  /** The record's own `updatedAt` was later than its `startTime`, so the entry was alive that long. */
+  | 'lastUpdated'
+  /** `updatedAt` ran past the moment the user started tracking something else; clamped back to it. */
+  | 'nextEntryStart'
+  /** Nothing recorded outlived `startTime`. The entry closes with zero duration, honestly. */
+  | 'none';
+
+/**
+ * A tracking entry hydration kept in live state but had to alter. The mirror of
+ * `QuarantinedTrackingEntry`, and deliberately a *separate* channel from it rather than a reuse of
+ * the same array: a quarantined record is gone from live state and preserved verbatim, a repaired
+ * record is present in live state and no longer verbatim. Those need different sentences to the
+ * user — "we couldn't read it, so it was set aside" is simply false about a repaired entry — and
+ * folding them together would make the existing quarantine notice lie.
+ */
+export interface RepairedTrackingEntry {
+  /** Position in the persisted trackingEntries array, as for a quarantined record. */
+  index: number;
+  /** Repaired entries parsed cleanly, so the id is always readable — unlike a quarantined one. */
+  id: string;
+  /** What was wrong and what was done about it, in terms the side-car can be read back with. */
+  reason: string;
+  /** The endTime this migration chose. */
+  closedAt: string;
+  /** What `closedAt` was derived from. */
+  evidence: RepairEvidence;
+  /**
+   * The record exactly as it was stored. A repair is a reconstruction, not a fact, so the original
+   * has to outlive it: the app blob is rewritten without it on the very next write, and then this
+   * is the only evidence left of what the user's device actually held.
+   */
+  record: unknown;
+}
+
 export const QUARANTINE_ARCHIVE_FORMAT = 'zenroutine-quarantine-archive';
 /**
  * Cap on retained generations, so a device that somehow quarantines on every launch cannot grow
@@ -72,6 +114,11 @@ export interface QuarantineGeneration {
   quarantinedAt: string;
   schemaVersion: number;
   entries: QuarantinedTrackingEntry[];
+  /**
+   * Entries this hydration kept but altered. Optional because generations written before repairs
+   * were reported have none, and a reader must not treat their absence as corruption.
+   */
+  repairs?: RepairedTrackingEntry[];
 }
 
 export interface QuarantineArchive {
@@ -116,11 +163,19 @@ export function parseQuarantineArchive(serialized: string | null): QuarantineArc
 export function appendQuarantineGeneration(
   archive: QuarantineArchive,
   entries: readonly QuarantinedTrackingEntry[],
-  quarantinedAt = new Date().toISOString()
+  quarantinedAt = new Date().toISOString(),
+  repairs: readonly RepairedTrackingEntry[] = []
 ): QuarantineArchive {
   const generations = [
     ...archive.generations,
-    { quarantinedAt, schemaVersion: CURRENT_SCHEMA_VERSION, entries: [...entries] },
+    {
+      quarantinedAt,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+      entries: [...entries],
+      // Omitted entirely when empty, so a quarantine-only generation serialises exactly as it did
+      // before repairs existed and the archive stays diffable against older devices.
+      ...(repairs.length > 0 ? { repairs: [...repairs] } : {}),
+    },
   ];
   return {
     ...archive,
@@ -136,6 +191,17 @@ export interface MigrationOptions {
    * so it should fail loudly rather than quietly drop records.
    */
   quarantine?: QuarantinedTrackingEntry[];
+  /**
+   * When supplied, legacy repairs that alter a record the user authored are pushed here so the
+   * caller can tell them about it.
+   *
+   * Note the asymmetry with `quarantine`: omitting that sink makes an unreadable record *throw*,
+   * but omitting this one does not make a repair throw. The repair is the legacy path's job and
+   * happens either way — a v1 blob has no other route into the app. The sink only decides whether
+   * anybody gets told. Backup import (`decodeBackup`) passes no options and relies on exactly
+   * this: a legacy backup still imports, it just has no UI to announce the repair to.
+   */
+  repairs?: RepairedTrackingEntry[];
 }
 
 export function createInitialState(): AppState {
@@ -428,6 +494,70 @@ function parseTrackingEntry(value: unknown, repairLegacyValues: boolean): Tracki
   };
 }
 
+const REPAIR_REASON: Record<RepairEvidence, string> = {
+  lastUpdated:
+    'Open tracking entry closed at its last-updated time: only one entry can be open',
+  nextEntryStart:
+    'Open tracking entry closed at the next entry\'s start time: only one entry can be open',
+  none:
+    'Open tracking entry closed at its start time: nothing recorded outlived it',
+};
+
+/**
+ * Pick the `endTime` for a legacy open entry that has to be closed so that one timer can stay
+ * running, and say where that time came from.
+ *
+ * Two rules, and they are deliberately asymmetric:
+ *
+ * 1. **Never destroy evidenced duration.** `updatedAt` is stamped every time the app touches the
+ *    record, so a value later than `startTime` is a moment the entry demonstrably still existed.
+ *    Closing before it throws away time the user actually worked — the defect this repairs, which
+ *    closed every stranded entry at `startTime` and zeroed it.
+ * 2. **Never invent duration.** Another entry starting later proves the open one was *over* by
+ *    then; it does not prove it ran that long. So a following entry is only ever an upper bound
+ *    that clamps `updatedAt` back, never a source that extends it. Treating it as a source would
+ *    be the same error as (1) with the sign flipped — writing minutes the user never worked into
+ *    their history, which then feed goal progress.
+ *
+ * When neither rule yields anything — `updatedAt` at or before `startTime`, which is what a blob
+ * written by a version that never updated the record looks like — the entry closes at `startTime`
+ * with `evidence: 'none'`. That is a zero duration, but it is an *honest* zero rather than a
+ * discarded one, and the repair report says so. A blanket "never close at startTime" is not
+ * available: with no evidence at all, any later time would be invented.
+ *
+ * The bound is taken across every entry, not only entries for the same activity. The v4 invariant
+ * ("only one entry can be open") is what makes a later start meaningful at all — it is evidence
+ * about the *timer*, not about the activity — and a same-activity-only bound would be strictly
+ * looser with no better justification. Clamping can only ever shorten, so a bound drawn from an
+ * overlapping retroactive manual entry is conservative rather than wrong.
+ */
+function closeStrandedOpenEntry(
+  entry: TrackingEntry,
+  allEntries: readonly TrackingEntry[]
+): { endTime: string; evidence: RepairEvidence } {
+  const startedAt = Date.parse(entry.startTime);
+  const lastUpdated = Date.parse(entry.updatedAt);
+  // Both are validated ISO date-times by the time this runs, so neither parse can be NaN; the
+  // comparison is written to fail closed regardless.
+  if (!(lastUpdated > startedAt)) {
+    return { endTime: entry.startTime, evidence: 'none' };
+  }
+
+  const nextStart = allEntries.reduce<{ at: number; iso: string } | null>((earliest, other) => {
+    if (other.id === entry.id) return earliest;
+    const otherStart = Date.parse(other.startTime);
+    if (!(otherStart > startedAt)) return earliest;
+    return earliest === null || otherStart < earliest.at
+      ? { at: otherStart, iso: other.startTime }
+      : earliest;
+  }, null);
+
+  if (nextStart !== null && nextStart.at < lastUpdated) {
+    return { endTime: nextStart.iso, evidence: 'nextEntryStart' };
+  }
+  return { endTime: entry.updatedAt, evidence: 'lastUpdated' };
+}
+
 export function migratePersistedState(
   persistedState: unknown,
   version: number,
@@ -672,11 +802,44 @@ export function migratePersistedState(
       (entry) => entry.id === currentTrackingEntryId
     ) ?? openEntries.at(-1);
     currentTrackingEntryId = selectedOpenEntry?.id ?? null;
-    trackingEntries = trackingEntries.map((entry) =>
-      entry.endTime === undefined && entry.id !== currentTrackingEntryId
-        ? { ...entry, endTime: entry.startTime }
-        : entry
-    );
+    /**
+     * Close every open entry except the one that stays resumable.
+     *
+     * This used to be `endTime: entry.startTime` unconditionally, which recorded a zero duration
+     * for work the user really did and said nothing about it (issue #4). The contract now is:
+     * close at the last moment there is evidence for, and report every entry closed this way.
+     *
+     * The close times are all computed against `trackingEntries` *before* any of them is applied,
+     * so the bound each stranded entry is clamped by is the persisted history, not a history this
+     * loop has already been rewriting. Otherwise the result would depend on iteration order.
+     */
+    const stranded = openEntries.filter((entry) => entry.id !== currentTrackingEntryId);
+    if (stranded.length > 0) {
+      const closures = new Map(
+        stranded.map((entry) => [entry.id, closeStrandedOpenEntry(entry, trackingEntries)])
+      );
+      const repairs = options?.repairs;
+      if (repairs) {
+        for (const entry of stranded) {
+          const closure = closures.get(entry.id)!;
+          const origin = entryOrigins.get(entry.id);
+          repairs.push({
+            // As in `quarantineEntries`: every entry that reached live state has an origin, and the
+            // fallbacks exist only so a lookup miss cannot become a throw on the hydration path.
+            index: origin?.index ?? -1,
+            id: entry.id,
+            reason: REPAIR_REASON[closure.evidence],
+            closedAt: closure.endTime,
+            evidence: closure.evidence,
+            record: origin?.record ?? entry,
+          });
+        }
+      }
+      trackingEntries = trackingEntries.map((entry) => {
+        const closure = closures.get(entry.id);
+        return closure ? { ...entry, endTime: closure.endTime } : entry;
+      });
+    }
   } else {
     if (hasInvalidActiveRoutine) {
       throw new Error('Invalid activeRoutineId: routine does not exist');

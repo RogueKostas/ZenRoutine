@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import {
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
+  getRepairedTrackingEntries,
   initializeAppStore,
   subscribeHydration,
   useAppStore,
@@ -302,6 +303,85 @@ describe('hydration of a store whose references have gone stale', () => {
     }]);
     expect(getQuarantinedTrackingEntries()).toEqual(archive.generations[0].entries);
     expect(await AsyncStorage.getItem(APP_STORAGE_KEY)).toBe(raw);
+  });
+});
+
+describe('hydration of a legacy store that was left with two timers running', () => {
+  const LEGACY = CURRENT_SCHEMA_VERSION - 1;
+  // The one that stays resumable, and the one that used to be silently zeroed (issue #4).
+  const openSelected = makeTrackingEntry({ id: 'open-selected', endTime: undefined });
+  const openStranded = makeTrackingEntry({
+    id: 'open-stranded',
+    startTime: '2026-03-02T11:00:00.000Z',
+    updatedAt: '2026-03-02T12:30:00.000Z',
+    endTime: undefined,
+  });
+
+  async function hydrateLegacyWithTwoOpenTimers(): Promise<void> {
+    await AsyncStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+      state: makeAppState({
+        trackingEntries: [openSelected, openStranded],
+        currentTrackingEntryId: 'open-selected',
+      }),
+      version: LEGACY,
+    }));
+    vi.clearAllMocks();
+    await initializeAppStore({ force: true });
+  }
+
+  it('keeps the worked duration and tells the user it changed the entry', async () => {
+    await hydrateLegacyWithTwoOpenTimers();
+
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    const closed = useAppStore.getState().trackingEntries
+      .find((entry) => entry.id === 'open-stranded');
+    expect(closed?.endTime).toBe('2026-03-02T12:30:00.000Z');
+    expect(useAppStore.getState().currentTrackingEntryId).toBe('open-selected');
+
+    // The repair has to reach the screen. Without this the migration is still silent, which is
+    // half of what issue #4 was about.
+    expect(getRepairedTrackingEntries()).toEqual([
+      expect.objectContaining({
+        id: 'open-stranded',
+        closedAt: '2026-03-02T12:30:00.000Z',
+        evidence: 'lastUpdated',
+        record: openStranded,
+      }),
+    ]);
+    // Repairs are their own channel: nothing was set aside, so the quarantine notice stays silent.
+    expect(getQuarantinedTrackingEntries()).toEqual([]);
+  });
+
+  it('copies the unrepaired original to the side-car before the blob is rewritten', async () => {
+    await hydrateLegacyWithTwoOpenTimers();
+
+    // migrate rewrites the app blob at v4 with endTime already filled in, so this side-car copy is
+    // the only remaining evidence of what the device actually held.
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    expect(archive.generations).toHaveLength(1);
+    expect(archive.generations[0].entries).toEqual([]);
+    expect(archive.generations[0].repairs).toEqual([
+      expect.objectContaining({ id: 'open-stranded', record: openStranded }),
+    ]);
+
+    const rewritten = JSON.parse(
+      (await AsyncStorage.getItem(APP_STORAGE_KEY))!
+    ) as { state: { trackingEntries: { id: string; endTime?: string }[] } };
+    expect(rewritten.state.trackingEntries.find((entry) => entry.id === 'open-stranded')?.endTime)
+      .toBe('2026-03-02T12:30:00.000Z');
+  });
+
+  it('writes one generation, not one per hydration stage', async () => {
+    // migrate writes the side-car and initializeAppStore writes it again; the content fingerprint
+    // has to recognise the second as the same event, exactly as it does for quarantined records.
+    await hydrateLegacyWithTwoOpenTimers();
+
+    const archive = parseQuarantineArchive(
+      await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)
+    );
+    expect(archive.generations).toHaveLength(1);
   });
 });
 
