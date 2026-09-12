@@ -720,3 +720,28 @@ and the lane holding the file is better placed to falsify it than the orchestrat
 ### Last successful machine contact
 2026-09-12 02:05Z.
 
+
+### CORRECTION - posted 2026-09-12 02:10Z, same pass
+
+The first draft of HANDOVER-PROMPT.md said "Eleven PRs merged. Ten issues closed." **Both numbers
+were wrong**, and they contradicted the fourteen-row table directly beneath them in the same file.
+
+Re-counted from the API, not from memory:
+- `gh pr list --state merged` -> 15, of which **#1 predates this run**, so **14 merged this run**:
+  #2, #16, #17, #22, #25, #26, #27, #28, #29, #30, #32, #33, #36, #37.
+- `gh issue list --state closed` -> **14, all of them this run**: #3, #4, #5, #6, #7, #8, #9, #10,
+  #18, #19, #20, #21, #23, #24.
+
+Corrected in the handover in place, with the correction visible in the file rather than the numbers
+silently swapped. This is precisely the habit this run spent a whole lane (#10) correcting in
+docs/REVIVAL_PLAN.md, and the orchestrator committed it in the last document it wrote. Recorded
+because a tally nobody checks is how the original "11 tests" survived three SDK upgrades.
+
+### Final gate, run on `main` itself rather than on a branch - 2026-09-12 02:09Z
+npm ci exit 0 - typecheck exit 0 - **129 tests, 8 files** - build:web `Exported: dist`.
+main = ed0c771. Local and remote refs read back equal.
+
+### Loop stopped
+No wake is scheduled. No lanes are running. `git worktree list` shows only the main checkout.
+Open: #38 (small, schedulable), #11/#15/#31/#34/#35 (director), #12/#13/#14 (product-sized).
+
