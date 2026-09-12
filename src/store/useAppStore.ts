@@ -269,6 +269,92 @@ const CAPACITY_RELEVANT_BLOCK_FIELDS: readonly (keyof RoutineBlock)[] = [
   'goalId',
 ];
 
+/**
+ * Everything about one block that a forecast can see, as a comparable string.
+ *
+ * Derived from `CAPACITY_RELEVANT_BLOCK_FIELDS` rather than listing the fields
+ * again, so a field opted into that list is compared here too instead of being
+ * silently ignored when two routines are compared across an activation.
+ */
+function blockCapacitySignature(block: RoutineBlock): string {
+  return CAPACITY_RELEVANT_BLOCK_FIELDS
+    .map((field) => `${field}=${block[field] ?? ''}`)
+    .join(',');
+}
+
+/** One activity type's whole schedule within a routine, order-independent. */
+function activityScheduleSignature(
+  routine: Routine | undefined,
+  activityTypeId: string
+): string {
+  return (routine?.blocks ?? [])
+    .filter((block) => block.activityTypeId === activityTypeId)
+    .map(blockCapacitySignature)
+    .sort()
+    .join('|');
+}
+
+/**
+ * Which activity types genuinely change capacity when `incoming` replaces
+ * `outgoing` as the active routine.
+ *
+ * Only the active routine is ever read for a forecast, so activating a routine
+ * does change which capacity applies -- but only for the activity types whose
+ * schedule actually differs between the two. Switching between routines that
+ * schedule Fitness identically must leave Fitness's evidence alone, exactly as
+ * re-saving an unchanged block does; switching to a routine that drops Fitness
+ * to two hours must reset it. Comparing is what tells those apart.
+ *
+ * Restricted to the activity types `incoming` schedules: for anything else its
+ * weekly capacity is zero, and a forecast never reads a cutoff it has no
+ * capacity for.
+ *
+ * `outgoing` is looked up by `activeRoutineId` because that -- not the
+ * `isActive` flag -- is what `useActiveRoutine` resolves, so it is the schedule
+ * the evidence was really gathered under.
+ */
+function activationCapacityChanges(
+  outgoing: Routine | undefined,
+  incoming: Routine
+): string[] {
+  const activityTypeIds = new Set(incoming.blocks.map((block) => block.activityTypeId));
+  return [...activityTypeIds].filter(
+    (activityTypeId) =>
+      activityScheduleSignature(outgoing, activityTypeId) !==
+      activityScheduleSignature(incoming, activityTypeId)
+  );
+}
+
+/**
+ * What `updateRoutine` is allowed to change.
+ *
+ * `blocks` and `capacityChangedAt` are excluded because they are capacity, and
+ * capacity is only ever written by the four block mutations, which stamp as
+ * they go; letting a caller pass either would clobber the map wholesale.
+ * `isActive` is excluded because it has a companion, `activeRoutineId`, that
+ * only `setActiveRoutine` maintains -- writing the flag here would leave the
+ * two disagreeing about which routine a forecast reads.
+ */
+type RoutineUpdate = Partial<
+  Omit<Routine, 'id' | 'createdAt' | 'updatedAt' | 'blocks' | 'isActive' | 'capacityChangedAt'>
+>;
+
+/**
+ * The fields `updateRoutine` copies across, listed rather than taken from
+ * `Object.keys(data)` so that the runtime enforces what `RoutineUpdate`
+ * declares. A plain JavaScript caller cannot smuggle `capacityChangedAt`
+ * through, and a field added to `Routine` later has to be opted in here
+ * deliberately instead of becoming writable by accident.
+ */
+const UPDATABLE_ROUTINE_FIELDS: readonly (keyof RoutineUpdate)[] = ['name'];
+
+/** The updatable keys of `data` that differ from the value already stored. */
+function changedRoutineFields(routine: Routine, data: RoutineUpdate): (keyof RoutineUpdate)[] {
+  return UPDATABLE_ROUTINE_FIELDS.filter(
+    (field) => data[field] !== undefined && data[field] !== routine[field]
+  );
+}
+
 function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   try {
     parseLocalDateKey(entry.date);
@@ -315,7 +401,7 @@ interface AppActions {
 
   // Routine Actions
   addRoutine: (name: string) => string;
-  updateRoutine: (id: string, data: Partial<Omit<Routine, 'id' | 'createdAt' | 'updatedAt' | 'blocks'>>) => void;
+  updateRoutine: (id: string, data: RoutineUpdate) => void;
   deleteRoutine: (id: string) => void;
   setActiveRoutine: (id: string | null) => void;
   duplicateRoutine: (id: string, newName: string) => string | null;
@@ -607,13 +693,37 @@ export const useAppStore = create<AppStore>()(
       },
 
       updateRoutine: (id, data) => {
-        set((state) => ({
-          routines: state.routines.map((r) =>
-            r.id === id
-              ? { ...r, ...data, updatedAt: new Date().toISOString() }
-              : r
-          ),
-        }));
+        set((state) => {
+          const routine = state.routines.find((candidate) => candidate.id === id);
+          if (!routine) return state;
+          const changedFields = changedRoutineFields(routine, data);
+          // A rename that renames nothing must write nothing, for the same
+          // reason re-saving an unchanged block does: `updatedAt` is the
+          // capacity fallback, so any write here is a write to confidence.
+          if (changedFields.length === 0) return state;
+          const patch = Object.fromEntries(
+            changedFields.map((field) => [field, data[field]])
+          ) as RoutineUpdate;
+
+          const now = new Date().toISOString();
+          return {
+            routines: state.routines.map((r) =>
+              r.id === id
+                ? {
+                    ...r,
+                    ...patch,
+                    // Nothing this action can change is capacity, so nothing is
+                    // stamped -- but `updatedAt` moves, and every activity type
+                    // this routine has never stamped reads `updatedAt` through
+                    // `getCapacityChangedAt`'s fallback. Seeding pins those to
+                    // the cutoff they were already being read under.
+                    capacityChangedAt: withCapacityChangedAt(r, [], now),
+                    updatedAt: now,
+                  }
+                : r
+            ),
+          };
+        });
       },
 
       deleteRoutine: (id) => {
@@ -636,13 +746,45 @@ export const useAppStore = create<AppStore>()(
       },
 
       setActiveRoutine: (id) => {
-        if (id !== null && !get().routines.some((routine) => routine.id === id)) return;
+        const current = get();
+        if (id !== null && !current.routines.some((routine) => routine.id === id)) return;
+
+        const outgoing = current.routines.find(
+          (routine) => routine.id === current.activeRoutineId
+        );
+        const incoming = current.routines.find((routine) => routine.id === id);
+        const activatedChanges = incoming
+          ? activationCapacityChanges(outgoing, incoming)
+          : [];
+        const now = new Date().toISOString();
+
         set((state) => ({
-          routines: state.routines.map((r) => ({
-            ...r,
-            isActive: r.id === id,
-            updatedAt: new Date().toISOString(),
-          })),
+          routines: state.routines.map((routine) => {
+            const isActive = routine.id === id;
+            // Every routine that is not changing hands keeps its identity. The
+            // old code rebuilt all of them with a fresh `updatedAt`, which
+            // collapsed the forecast evidence of every routine that had an
+            // activity type not yet in its map -- issue #7 with no block
+            // touched, on routines the user never even named.
+            if (routine.isActive === isActive) return routine;
+            return {
+              ...routine,
+              isActive,
+              // The two that do change hands still get a new `updatedAt`, so
+              // they still have to be seeded or the fallback does the same
+              // damage. The routine being activated additionally stamps the
+              // activity types whose schedule really differs from the one
+              // going out; the one being deactivated stamps nothing, because
+              // its own blocks did not move and nothing reads it until it is
+              // activated again, which compares afresh.
+              capacityChangedAt: withCapacityChangedAt(
+                routine,
+                isActive ? activatedChanges : [],
+                now
+              ),
+              updatedAt: now,
+            };
+          }),
           activeRoutineId: id,
         }));
       },
@@ -663,6 +805,12 @@ export const useAppStore = create<AppStore>()(
             ...b,
             id: generateId(),
           })),
+          // The copy has the source's schedule, so it inherits the source's
+          // cutoffs. Seeding rather than spreading matters because `updatedAt`
+          // moves to now: an activity type the source never stamped would
+          // otherwise fall through the fallback onto a fresh timestamp and the
+          // copy would be born with no evidence for a schedule it did not change.
+          capacityChangedAt: withCapacityChangedAt(sourceRoutine, [], now),
           createdAt: now,
           updatedAt: now,
         };
