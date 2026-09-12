@@ -260,6 +260,24 @@ describe('persisted-state migrations', () => {
     ]);
   });
 
+  it('does not let an earlier stage\'s dropped record excuse this stage\'s dangling pointer', () => {
+    // One hydration attempt shares a single sink across persist's `migrate` and `merge` stages,
+    // and it is reset per attempt rather than per stage. An id-less drop is the wildcard that
+    // excuses any pointer, so a `migrate`-stage drop must not answer for a `merge`-stage pointer:
+    // the two stages are looking at different data.
+    const quarantine: QuarantinedTrackingEntry[] = [
+      { index: 0, id: null, reason: 'Invalid id: expected a string', record: { id: 99 } },
+    ];
+
+    expect(() => migratePersistedState(
+      { ...makeAppState(), currentTrackingEntryId: 'entry-that-never-existed' },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    )).toThrow('Invalid currentTrackingEntryId');
+    // Scoped by reading, not by clearing: the accumulated report the user is shown survives.
+    expect(quarantine).toHaveLength(1);
+  });
+
   it('keeps the dangling-pointer check strict when nothing was quarantined', () => {
     // A pointer that resolves to nothing with no bad record to blame is real corruption, and the
     // quarantine sink being present must not soften that.
@@ -268,6 +286,186 @@ describe('persisted-state migrations', () => {
       CURRENT_SCHEMA_VERSION,
       { quarantine: [] }
     )).toThrow('Invalid currentTrackingEntryId');
+  });
+});
+
+describe('stale reference linkage', () => {
+  // Each of these entries parses perfectly — valid dates, valid source, readable id. What is
+  // wrong is the store around it: the record it points at is no longer in the blob, the shape a
+  // torn write during a delete, a hand-edited blob or a bad restore leaves behind. Throwing on
+  // that bricks every future launch and leaves the destructive reset as the only exit.
+
+  it('quarantines an entry whose activity type went missing, at every version', () => {
+    // activityTypeId is required on a TrackingEntry, so unlike its two siblings there is no
+    // clearing it on a legacy blob. Quarantining is the repair, which is why this one behaves
+    // the same either side of the version gate.
+    const orphan = makeTrackingEntry({ id: 'entry-orphan', activityTypeId: 'activity-vanished' });
+    const state = makeAppState({
+      goals: [makeGoal()],
+      trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), orphan],
+    });
+
+    for (const version of [3, CURRENT_SCHEMA_VERSION]) {
+      const quarantine: QuarantinedTrackingEntry[] = [];
+      const migrated = migratePersistedState(state, version, { quarantine });
+
+      expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+      expect(migrated.goals.map((goal) => goal.id)).toEqual(['goal-focus']);
+      expect(quarantine).toEqual([{
+        index: 1,
+        id: 'entry-orphan',
+        reason: 'Invalid tracking entry: referenced activity type does not exist',
+        record: orphan,
+      }]);
+    }
+
+    // No sink still means strict and all-or-nothing, which is what backup import relies on.
+    expect(() => migratePersistedState(state, CURRENT_SCHEMA_VERSION)).toThrow(
+      'referenced activity type does not exist'
+    );
+  });
+
+  it('repairs a dangling entry goal on a legacy blob and quarantines it at current version', () => {
+    const orphan = makeTrackingEntry({ id: 'entry-orphan', goalId: 'goal-vanished' });
+    const state = makeAppState({
+      trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), orphan],
+    });
+
+    // Legacy: clear the optional reference and keep the entry, minutes and all.
+    const legacyQuarantine: QuarantinedTrackingEntry[] = [];
+    const legacy = migratePersistedState(state, 3, { quarantine: legacyQuarantine });
+    expect(legacy.trackingEntries.map((entry) => entry.id)).toEqual([
+      'entry-good',
+      'entry-orphan',
+    ]);
+    expect(legacy.trackingEntries[1].goalId).toBeUndefined();
+    expect(legacyQuarantine).toEqual([]);
+
+    // Current version: set it aside instead of throwing, and leave everything else alone.
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const migrated = migratePersistedState(state, CURRENT_SCHEMA_VERSION, { quarantine });
+    expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+    expect(quarantine).toEqual([{
+      index: 1,
+      id: 'entry-orphan',
+      reason: 'Invalid tracking entry goal: goal is missing or uses another activity type',
+      record: orphan,
+    }]);
+
+    expect(() => migratePersistedState(state, CURRENT_SCHEMA_VERSION)).toThrow(
+      'Invalid tracking entry goal'
+    );
+  });
+
+  it('repairs a dangling entry routine block on a legacy blob and quarantines it at current version', () => {
+    const orphan = makeTrackingEntry({ id: 'entry-orphan', routineBlockId: 'block-vanished' });
+    const state = makeAppState({
+      routines: [makeRoutine({ blocks: [makeRoutineBlock()] })],
+      trackingEntries: [
+        makeTrackingEntry({ id: 'entry-good', routineBlockId: 'block-focus' }),
+        orphan,
+      ],
+    });
+
+    const legacyQuarantine: QuarantinedTrackingEntry[] = [];
+    const legacy = migratePersistedState(state, 3, { quarantine: legacyQuarantine });
+    expect(legacy.trackingEntries.map((entry) => entry.id)).toEqual([
+      'entry-good',
+      'entry-orphan',
+    ]);
+    expect(legacy.trackingEntries[1].routineBlockId).toBeUndefined();
+    expect(legacy.trackingEntries[0].routineBlockId).toBe('block-focus');
+    expect(legacyQuarantine).toEqual([]);
+
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const migrated = migratePersistedState(state, CURRENT_SCHEMA_VERSION, { quarantine });
+    expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+    expect(quarantine).toEqual([{
+      index: 1,
+      id: 'entry-orphan',
+      reason:
+        'Invalid tracking entry routineBlockId: block is missing or does not match the entry',
+      record: orphan,
+    }]);
+  });
+
+  it('sets aside both stale-reference shapes at once and keeps the rest of the store intact', () => {
+    const goalOrphan = makeTrackingEntry({ id: 'entry-no-goal', goalId: 'goal-vanished' });
+    const blockOrphan = makeTrackingEntry({
+      id: 'entry-no-block',
+      routineBlockId: 'block-vanished',
+    });
+    const quarantine: QuarantinedTrackingEntry[] = [];
+
+    const migrated = migratePersistedState(
+      makeAppState({
+        goals: [makeGoal()],
+        routines: [makeRoutine({ blocks: [makeRoutineBlock()] })],
+        trackingEntries: [
+          goalOrphan,
+          makeTrackingEntry({ id: 'entry-good', goalId: 'goal-focus' }),
+          blockOrphan,
+        ],
+      }),
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    );
+
+    expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+    expect(migrated.goals.map((goal) => goal.id)).toEqual(['goal-focus']);
+    expect(migrated.routines[0].blocks.map((block) => block.id)).toEqual(['block-focus']);
+    expect(quarantine).toEqual([
+      expect.objectContaining({ index: 0, id: 'entry-no-goal', record: goalOrphan }),
+      expect.objectContaining({ index: 2, id: 'entry-no-block', record: blockOrphan }),
+    ]);
+  });
+
+  it('clears the running timer when the entry it names is quarantined for a stale reference', () => {
+    // The pointer's own record is what left live state, so it is answerable for the pointer no
+    // longer resolving. Without this the strict pointer check would brick the launch anyway.
+    const quarantine: QuarantinedTrackingEntry[] = [];
+
+    const migrated = migratePersistedState(
+      {
+        ...makeAppState(),
+        trackingEntries: [makeTrackingEntry({
+          id: 'entry-running',
+          endTime: undefined,
+          goalId: 'goal-vanished',
+        })],
+        currentTrackingEntryId: 'entry-running',
+      },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    );
+
+    expect(migrated.trackingEntries).toEqual([]);
+    expect(migrated.currentTrackingEntryId).toBeNull();
+    expect(quarantine).toEqual([
+      expect.objectContaining({ id: 'entry-running' }),
+    ]);
+  });
+
+  it('still rejects a goal or routine block whose activity type went missing', () => {
+    // Not softened here, and deliberately so: goals and routines are the skeleton the rest of
+    // the state hangs off, their activityTypeId cannot be cleared either, and there is no
+    // side-car for those record types to be set aside into. Still a live brick route.
+    expect(() => migratePersistedState(
+      { ...makeAppState(), goals: [makeGoal({ activityTypeId: 'activity-vanished' })] },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid goals: referenced activity type does not exist');
+
+    expect(() => migratePersistedState(
+      {
+        ...makeAppState(),
+        routines: [makeRoutine({
+          blocks: [makeRoutineBlock({ activityTypeId: 'activity-vanished' })],
+        })],
+      },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid routines: referenced activity type does not exist');
   });
 });
 

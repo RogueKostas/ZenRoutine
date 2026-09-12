@@ -438,6 +438,17 @@ export function migratePersistedState(
   }
 
   const quarantine = options?.quarantine;
+  /**
+   * Only records dropped by *this* call may be blamed for this call's dangling pointers.
+   *
+   * The sink is shared across a whole hydration: persist runs `migrate` and then `merge`, both
+   * pushing into the same array, and it is reset once per attempt rather than once per stage.
+   * Without this offset a record dropped during `migrate` could excuse a pointer that only went
+   * dangling during `merge` — a different stage looking at different data — which is a wider
+   * gate than the blame relationship is meant to be. Scoping the read, rather than resetting the
+   * array, keeps the accumulated report intact for the user.
+   */
+  const quarantineStartIndex = quarantine?.length ?? 0;
   const record = readRecord(persistedState, 'persisted state');
   const activityTypes = readArray(record, 'activityTypes').map(
     (value) => parseActivityType(value, version < 2)
@@ -452,10 +463,17 @@ export function migratePersistedState(
   // Tracking entries are a flat list where each record stands alone, so one bad row can be set
   // aside while the remaining history loads normally. `trackingEntries` not being an array at
   // all still throws — that is blob-level corruption, not one bad row.
+  //
+  // `entryOrigins` remembers where each surviving entry came from, so that an entry set aside
+  // further down for a *linkage* failure rather than a parse failure still reaches the side-car
+  // with its original index and its record exactly as it was stored.
+  const entryOrigins = new Map<string, { index: number; record: unknown }>();
   let trackingEntries: TrackingEntry[] = readArray(record, 'trackingEntries')
     .flatMap<TrackingEntry>((value, index) => {
       try {
-        return [parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION)];
+        const entry = parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION);
+        entryOrigins.set(entry.id, { index, record: value });
+        return [entry];
       } catch (error) {
         if (!quarantine) throw error;
         quarantine.push({
@@ -469,7 +487,6 @@ export function migratePersistedState(
     });
   const activityIds = new Set(activityTypes.map((activity) => activity.id));
   const routineIds = new Set(routines.map((routine) => routine.id));
-  const entryIds = new Set(trackingEntries.map((entry) => entry.id));
   const assertUniqueIds = (ids: string[], label: string) => {
     if (new Set(ids).size !== ids.length) {
       throw new Error(`Invalid ${label}: duplicate ids`);
@@ -486,6 +503,44 @@ export function migratePersistedState(
   const allRoutineBlocks = routines.flatMap((routine) => routine.blocks);
   assertUniqueIds(allRoutineBlocks.map((block) => block.id), 'routine blocks');
 
+  /**
+   * Set aside tracking entries whose references no longer resolve.
+   *
+   * A linkage failure is not a defect in the record: the entry parsed perfectly, with valid
+   * dates and a valid source. What broke is the store around it — a goal, routine block or
+   * activity type is no longer in the blob, because of a torn AsyncStorage write during a
+   * delete, a hand-edited blob, or a restore that dropped a record. Throwing on that made every
+   * subsequent launch fail identically, leaving the destructive reset as the user's only exit
+   * (issue #3's failure mode reached by a different corruption shape). So a stale reference is
+   * routed to the same side-car a parse failure is: out of live state, and never destroyed.
+   *
+   * With no sink this still throws. That is the backup-import path, a deliberate act on a file
+   * the user can re-choose, and it must fail loudly rather than quietly shed records.
+   */
+  const quarantineEntries = (
+    referenceIsStale: (entry: TrackingEntry) => boolean,
+    reason: string
+  ): void => {
+    const stale = trackingEntries.filter(referenceIsStale);
+    if (stale.length === 0) return;
+    if (!quarantine) throw new Error(reason);
+    for (const entry of stale) {
+      const origin = entryOrigins.get(entry.id);
+      quarantine.push({
+        // The parse loop records an origin for every entry that reaches live state, and the
+        // repair steps in between rewrite references without touching ids, so a miss here is
+        // unreachable. The fallbacks exist because a lookup miss must not become a throw on the
+        // hydration path — that is the failure mode this whole mechanism exists to remove.
+        index: origin?.index ?? -1,
+        id: entry.id,
+        reason,
+        record: origin?.record ?? entry,
+      });
+    }
+    const staleIds = new Set(stale.map((entry) => entry.id));
+    trackingEntries = trackingEntries.filter((entry) => !staleIds.has(entry.id));
+  };
+
   if (goals.some((goal) => !activityIds.has(goal.activityTypeId))) {
     throw new Error('Invalid goals: referenced activity type does not exist');
   }
@@ -494,9 +549,14 @@ export function migratePersistedState(
   ))) {
     throw new Error('Invalid routines: referenced activity type does not exist');
   }
-  if (trackingEntries.some((entry) => !activityIds.has(entry.activityTypeId))) {
-    throw new Error('Invalid tracking entries: referenced activity type does not exist');
-  }
+  // Unlike the goalId and routineBlockId checks below, this one has no lenient repair to fall
+  // back to at legacy versions: activityTypeId is required on a TrackingEntry, so there is no
+  // clearing it the way an optional reference can be cleared. Quarantining *is* the repair, and
+  // it therefore applies at every version — a legacy blob has no better answer available either.
+  quarantineEntries(
+    (entry) => !activityIds.has(entry.activityTypeId),
+    'Invalid tracking entry: referenced activity type does not exist'
+  );
 
   const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
   const blockGoalIsInvalid = (block: RoutineBlock) => {
@@ -510,7 +570,6 @@ export function migratePersistedState(
     return !goal || goal.activityTypeId !== entry.activityTypeId;
   };
   const hasInvalidBlockGoal = routines.some((routine) => routine.blocks.some(blockGoalIsInvalid));
-  const hasInvalidEntryGoal = trackingEntries.some(entryGoalIsInvalid);
   if (version < CURRENT_SCHEMA_VERSION) {
     if (hasInvalidBlockGoal) {
       routines = routines.map((routine) => ({
@@ -520,7 +579,12 @@ export function migratePersistedState(
         ),
       }));
     }
-    if (hasInvalidEntryGoal) {
+    // Legacy repair is kept, and is deliberately preferred over quarantining: clearing an
+    // optional reference keeps the entry — and its minutes — in the user's history, which is
+    // strictly better than setting the whole record aside. It is only available here because a
+    // pre-v4 blob is expected to be sloppy; at current version a silent rewrite of a record the
+    // user did not touch is exactly what the version gate exists to prevent.
+    if (trackingEntries.some(entryGoalIsInvalid)) {
       trackingEntries = trackingEntries.map((entry) =>
         entryGoalIsInvalid(entry) ? { ...entry, goalId: undefined } : entry
       );
@@ -529,9 +593,10 @@ export function migratePersistedState(
     if (hasInvalidBlockGoal) {
       throw new Error('Invalid routine block goal: goal is missing or uses another activity type');
     }
-    if (hasInvalidEntryGoal) {
-      throw new Error('Invalid tracking entry goal: goal is missing or uses another activity type');
-    }
+    quarantineEntries(
+      entryGoalIsInvalid,
+      'Invalid tracking entry goal: goal is missing or uses another activity type'
+    );
   }
 
   const routineBlocksById = new Map(
@@ -544,21 +609,25 @@ export function migratePersistedState(
       block.activityTypeId !== entry.activityTypeId ||
       Boolean(block.goalId && block.goalId !== entry.goalId);
   };
-  const hasInvalidEntryRoutineBlock = trackingEntries.some(entryRoutineBlockIsInvalid);
   if (version < CURRENT_SCHEMA_VERSION) {
-    if (hasInvalidEntryRoutineBlock) {
+    if (trackingEntries.some(entryRoutineBlockIsInvalid)) {
       trackingEntries = trackingEntries.map((entry) =>
         entryRoutineBlockIsInvalid(entry)
           ? { ...entry, routineBlockId: undefined }
           : entry
       );
     }
-  } else if (hasInvalidEntryRoutineBlock) {
-    throw new Error(
+  } else {
+    quarantineEntries(
+      entryRoutineBlockIsInvalid,
       'Invalid tracking entry routineBlockId: block is missing or does not match the entry'
     );
   }
 
+  // Computed here rather than alongside activityIds and routineIds: the linkage phase above
+  // removes entries, and the pointer checks below have to be judged against what actually
+  // survived into live state, not against what the blob started with.
+  const entryIds = new Set(trackingEntries.map((entry) => entry.id));
   let activeRoutineId = readNullableId(record, 'activeRoutineId');
   let currentTrackingEntryId = readNullableId(record, 'currentTrackingEntryId');
   /**
@@ -572,10 +641,15 @@ export function migratePersistedState(
    *
    * A dropped record with a readable id that is some *other* entry explains nothing about this
    * pointer, and must not buy it a silent clear.
+   *
+   * Read from `quarantineStartIndex` on, so only this stage's drops can answer for this stage's
+   * pointer. See the note there.
    */
   const quarantineCanExplainPointer = (pointer: string) =>
     quarantine !== undefined &&
-    quarantine.some((dropped) => dropped.id === pointer || dropped.id === null);
+    quarantine
+      .slice(quarantineStartIndex)
+      .some((dropped) => dropped.id === pointer || dropped.id === null);
   if (
     currentTrackingEntryId !== null &&
     !entryIds.has(currentTrackingEntryId) &&
