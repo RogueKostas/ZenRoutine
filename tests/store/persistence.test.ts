@@ -213,6 +213,53 @@ describe('persisted-state migrations', () => {
     ]);
   });
 
+  it('clears a dangling timer pointer when the quarantined record is the one it names', () => {
+    // The running timer's own record is unreadable for a reason other than its id, so it is
+    // dropped with its id intact. That id is what makes it answerable for the dangling pointer.
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const migrated = migratePersistedState(
+      {
+        ...makeAppState(),
+        trackingEntries: [
+          makeTrackingEntry({ id: 'entry-good' }),
+          { ...makeTrackingEntry({ id: 'entry-running', endTime: undefined }), source: 'bogus' },
+        ],
+        currentTrackingEntryId: 'entry-running',
+      },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    );
+
+    expect(migrated.trackingEntries.map((entry) => entry.id)).toEqual(['entry-good']);
+    expect(migrated.currentTrackingEntryId).toBeNull();
+    expect(quarantine).toEqual([
+      expect.objectContaining({ index: 1, id: 'entry-running' }),
+    ]);
+  });
+
+  it('keeps the dangling-pointer check strict when the quarantined record is unrelated', () => {
+    // Something was quarantined, but it is a different, readable-id entry that has nothing to do
+    // with where the pointer points. An unrelated dangling pointer is still real corruption, and
+    // an unrelated bad record must not buy it a silent clear.
+    const quarantine: QuarantinedTrackingEntry[] = [];
+
+    expect(() => migratePersistedState(
+      {
+        ...makeAppState(),
+        trackingEntries: [
+          makeTrackingEntry({ id: 'entry-good' }),
+          { ...makeTrackingEntry({ id: 'entry-unrelated' }), source: 'bogus' },
+        ],
+        currentTrackingEntryId: 'entry-that-never-existed',
+      },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine }
+    )).toThrow('Invalid currentTrackingEntryId');
+    expect(quarantine).toEqual([
+      expect.objectContaining({ index: 1, id: 'entry-unrelated' }),
+    ]);
+  });
+
   it('keeps the dangling-pointer check strict when nothing was quarantined', () => {
     // A pointer that resolves to nothing with no bad record to blame is real corruption, and the
     // quarantine sink being present must not soften that.
