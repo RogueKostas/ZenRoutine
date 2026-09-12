@@ -5,6 +5,7 @@ services:
     name: zenroutine-web
     runtime: static
     repo: https://github.com/RogueKostas/ZenRoutine
+    branch: main
     buildCommand: npm ci && npm run build:web
     staticPublishPath: ./dist
     autoDeployTrigger: checksPass
