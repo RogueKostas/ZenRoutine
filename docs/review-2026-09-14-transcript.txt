@@ -1,0 +1,279 @@
+[00:00] okay I am doing a review of zen routine in its current state I've got a test
+[00:09] plan here that I meant to be following so let's have a look this is the welcome
+[00:17] flow oh not a great start so if I click the next here welcome to zen routine
+[00:25] take control of your life of your time and achieve your goals and intention
+[00:28] routine clinic oh I click next three times but nothing changed and then all
+[00:35] of a sudden I was dropped in the app okay right set up I'm gonna beat and get
+[00:47] best pass onboarding everything is in your browser's local storage at the
+[00:52] moment so you start completely empty tap skip top right okay I didn't do that
+[00:58] we're doing a full five card on boarding once on camera before you skip it see
+[01:04] the realistic week okay so I'm meant to do this via developer tools for now so
+[01:15] f12 console
+[01:23] paste this type paste in okay reload the page all right okay so now what you're
+[01:47] holding we've got three goals it looks like learn guitar read read twelve books
+[01:55] run a 10k okay let me close the developer tools and then it says tap an
+[02:10] activity to start tracking okay it's quite confusing obviously I'm we I'm
+[02:22] interacting with this on a like 4k desktop monitor which is not the way I
+[02:31] expect most people use this I mean it is meant to be predominantly a phone app
+[02:36] but anyway let's have a quick look what I'll do as well in the background is I
+[02:46] will open my very original design dock for this with my very crappy diagrams
+[02:57] and things
+[03:00] we can be using this as well for comparison because well because it's
+[03:13] quite simple I like that it's simple so yes it has it has a lot of detail on the
+[03:24] onboarding so it shows you the week and how you set up activities so kind of
+[03:36] skipped all of this stuff with the current build and we're effectively
+[03:44] already in this kind of home page aren't we so this is these are examples of how
+[03:57] you add and edit daily routines yeah and you've got these routine breakdowns so
+[04:09] yes there's some fundamental principles here that you know this is kind of what
+[04:15] I'd expect to see like for example the goals page look it's such a simple thing
+[04:19] right and we have activity filters so I'd love to just try and follow this a
+[04:27] bit more faithfully instead of what we have now which is a bit like the agent
+[04:41] seems to have done its own thing okay so yeah so we're kind of here right like
+[04:47] effectively this is and actually this is for three aspect ratio so because I
+[04:54] guess this was designed for iPad originally so you know we could follow
+[04:57] this very faithfully to begin with and then we can iterate and improve that's
+[05:07] fine but like right now if I compare this screen to what we have here it's
+[05:18] like whoa I mean some of that might be just kind of UI improvements but anyway
+[05:28] so let's have a look I mean so how would I let me follow I'll follow the test
+[05:35] plan so I'm being fair in my judgment to home the daily surface a greeting in
+[05:44] today's date sure I mean again this takes up I find you want to know what
+[05:54] the date is I'm gonna look at my computer calendar on my device comes I
+[05:57] mean sure it should be somewhere but like you know
+[06:00] would maybe embed it here because this takes up what like 50 pixels right quick
+[06:14] start grid of six activity times to day schedule with the next block band next
+[06:20] yeah okay the time here right okay yeah I mean you know seeing the current time
+[06:29] somewhere like a big digital analog clock would make sense big and then
+[06:34] seeing or maybe some linear thing right like this and seeing like a carrot with
+[06:46] the time sorry not where are we so here so having this at the very top for
+[06:58] example like my little like a linear progress bar of the day and you know the
+[07:06] little colored activity slots and you know like a little line with a with a
+[07:14] time ticking you know from left to right that could be quite useful right so I
+[07:18] could see what's already happened and you know where I am now and on the phone
+[07:26] I guess this could be a vertical thing that I could just tap and scroll right
+[07:29] and it could it maybe even be the landing page okay because yeah this like
+[07:39] tap an activity to start tracking like what this quick start thing feels random
+[07:46] right like I should be already tracking the activity that's scheduled like you
+[07:55] know nine times out of ten right who happens if I'm okay tracking work okay
+[08:13] and now this is not actually counting up be like the next scheduled activity is
+[08:29] personal development from seven to eight
+[08:43] but it doesn't actually show me what I would be doing like the the activity
+[08:51] types are not that important right like is it learning guitar or read 12 books
+[09:00] Oh, I see, yes.
+[09:00] So that's why we have this icon, right?
+[09:02] Because this is the activity type.
+[09:03] So that's fine.
+[09:05] But like here, today's schedule,
+[09:08] I should be seeing the specific goals
+[09:11] that are committed against that activity type.
+[09:21] Oh, okay, one minute elapsed.
+[09:22] Okay, so this timer is just not showing seconds,
+[09:25] which is kind of silly.
+[09:30] And you know, ideally, when we're tracking,
+[09:36] I would like to use the Pomodoro technique.
+[09:38] So 25, five, 25, five.
+[09:41] And then what is it after four Pomodoro's?
+[09:44] You get to do a 15 minute break.
+[09:52] So yeah, it'd be nice to show that somewhere.
+[09:55] Could be an optional thing because, you know,
+[09:56] I guess not everyone likes Pomodoro,
+[09:58] but I like that.
+[10:05] In Pomodoro, I like that it has that break,
+[10:08] five minute break sort of concept embedded to it.
+[10:12] Because mainly because it helps you focus actually,
+[10:16] because like when you get distracted, you go, no, no.
+[10:19] I will get distracted in 17 minutes from now, right?
+[10:23] Because I have a break scheduled.
+[10:28] And then 25 minutes, if I just started.
+[10:30] So yeah, that's why I think it'd be good to like,
+[10:33] make almost like a default for the amp.
+[10:35] But then, you know, in the settings,
+[10:37] you could have like turned it off.
+[10:39] You know, I don't want,
+[10:40] I will choose when to do my own breaks kind of thing.
+[10:44] Okay, let me stop this tracking.
+[10:46] Okay, so now that's,
+[10:50] it's gone back to this view.
+[10:55] Okay, and now if I do,
+[10:57] so personal development is my next goal.
+[10:58] So if I track this now, okay, I see.
+[11:01] So no goal, track without linking to a goal.
+[11:04] It asks me to choose.
+[11:07] I see.
+[11:10] 240 minutes out of 1200 minutes.
+[11:14] I mean, you know, these should be converted to hours
+[11:17] once it's over 60 minutes, right?
+[11:20] Okay, so I will attach it to LearnGuitar.
+[11:25] And then it says personal development
+[11:27] instead of LearnGuitar.
+[11:28] So this is kind of like,
+[11:30] it feels like it's missed the point a little bit.
+[11:36] Okay, I'm gonna stop tracking.
+[11:42] Yeah, and here, active goals.
+[11:45] Okay, it says 20%.
+[11:47] So we've got these progress bars.
+[11:50] So yeah, that's cool.
+[11:53] It's just, I find it hard to comment
+[11:55] because it's very different to, it's just like loosely based on the design as opposed
+[12:00] so okay let's do edit routine okay we have like okay so this is not too bad my
+[12:11] week I would start on a Saturday and end on a Monday let's see is this something
+[12:19] that we can change in the settings sorry I will start on a Monday and end on a
+[12:25] Saturday Sunday sorry I would start on a Monday and end on a Sunday as opposed to
+[12:32] Sunday to Monday there's no setting to change that it would be nice to add it
+[12:38] to the setting settings okay so yeah ooh so go these little page selectors tabs
+[12:50] whatever at the bottom here do they want to be at the bottom or should they be at
+[12:54] the top okay we've got this all right let's let's go through them mistero
+[13:06] times I looked at home and yeah not a huge fan like I said let's look at a
+[13:15] routine so I'm looking on Monday right now which has one block scheduled and I
+[13:26] have okay there's an ad button here okay so what time is it now so if we add side
+[13:35] projects start oh this is this is all right 1 p.m. and quick select Wow
+[14:05] this is a crazy widget like why is it not embedded I should just have like a
+[14:10] little drop down here or something right link to goal okay there's no I be great
+[14:19] if I could just quickly add goals here while I'm creating the routine okay so
+[14:31] let me just try this and that's his side project so if I go to goals whoa this is
+[14:42] like quite broken this view let me add and we'll say let me add a build combat
+[14:57] system.
+[15:00] And this will be optional description, that's fine.
+[15:04] How long is it going to take me in minutes?
+[15:06] Well, I would rather this be able to read like if I do 12 hours, for example.
+[15:16] Right, 12 H or 12 HR.
+[15:22] I would rather this input field knows what I'm talking about.
+[15:27] But let's do, so we will do 6000 minutes, I guess.
+[15:35] Ooh, 6000 minutes is 100 hours, correct.
+[15:39] That's what I meant.
+[15:41] So I want 500 minutes.
+[15:46] I can't do maths right now.
+[15:48] 600.
+[15:50] Okay, so I'm looking for 720 is the number I'm looking for.
+[15:57] Okay, 720 minutes.
+[15:59] I'm going to say, side project, high priority.
+[16:03] Okay, cool.
+[16:05] Again, the UI and now I have to go all the way to the top right.
+[16:08] Like we don't need the whole page like I was expecting to see like little pop-ups and things.
+[16:14] Anyway, so we've now added.
+[16:19] Okay, I see now.
+[16:21] So I don't know what these are all goals, right?
+[16:24] Active completed.
+[16:25] Okay, so these are the filters.
+[16:27] This feels like broken CSS or something.
+[16:30] So let me see.
+[16:31] So if I just look at my side project goals now.
+[16:34] Yeah, I've got just the one that I just added.
+[16:39] One week, one hour per week, I look at from one hour scheduled.
+[16:44] Okay.
+[16:46] All right, so now if I go back to the routine side project, can I, so now this does have a goal.
+[16:54] And I can apply this goal.
+[16:59] So every Monday, lunchtime, I'm meant to be working on my combat system.
+[17:08] Okay, that makes sense.
+[17:14] Now, well, actually, no, that's wrong.
+[17:19] Okay, yeah, that's wrong.
+[17:21] So I don't want to be committing.
+[17:26] I think, again, there's a misunderstanding of how this is meant to work here.
+[17:31] And I even confuse myself like testing this.
+[17:35] I don't want to be committing activities to the routine.
+[17:41] Sorry, goals to the routine.
+[17:43] I don't want to be committing activity types.
+[17:47] Right.
+[17:50] Yeah, so again, this is no blocks and Friday.
+[17:57] Okay, so that then when I go.
+[18:00] to the calendar view which is completely missing I can see right and and you know
+[18:08] I set my priorities so when I go to the calendar view here
+[18:15] golds golds golds golds here right you see I should be able to see what I'm
+[18:28] doing each day based on what I've what activity type I've committed to the
+[18:41] routine right so the the whole point is that yeah there you go you can read this
+[18:46] thing here the calendar view combines data from your goals and you're
+[18:49] currently active routine to show you when you are forecasted to have completed
+[18:57] your goals it gives you at a glance insight into what the feature holds and
+[19:02] the ability to reprioritize goals or change your team so you can hit your
+[19:07] targets yeah I mean this specific kind of use is showing you gold completion
+[19:13] which is cool and you know it makes me realize we probably won like a calendar
+[19:22] that shows you what you're doing each day right so kind of what we have here
+[19:30] where it shows you okay building combat system learning guitar right so yeah I
+[19:39] guess this view that has been implemented could kind of pass as the
+[19:46] specific activity calendar view but in my head the routine planning is a
+[19:55] different thing to then reviewing okay what am I meant to be doing right and
+[20:02] then also different thing to okay what when are my goals projected to be
+[20:08] completed based on my current plan right yeah again like I say and then we have
+[20:26] analytics so that's fine you know like we can come back to this when you know
+[20:33] other things are working better I mean yeah I don't mind like having this seed
+[20:38] of data because yeah we can get a feel for analytics obviously you need to be
+[20:48] using the app to do for us have a good feel for how this would work but yeah if
+[20:53] I have like maybe a bit more you know maybe
+[21:00] follow my specific examples here because you know like this this example is kind
+[21:07] of like yeah and you can see it like how the live tracking works and
+[21:27] yeah this this thing at the end of this document I don't really like the whole
+[21:32] start tracking change of plan I think what I'm worried that the app would get
+[21:39] quite stressful if it's like constantly going right next thing next thing next
+[21:42] thing if it's too much of a drumbeat I think what we could do is when you load
+[21:47] the app maybe there's like a queue of things that happened before and you can
+[21:53] quickly like you know imagine like loads of notifications at that point and you
+[21:57] can go yep yep yep did that did that did that did that or you know did not do
+[22:02] it did not do it you know maybe if I can quickly catch up with the past as
+[22:10] opposed to like live tracking and update I think for some people yes you know be
+[22:16] good to have like this whole you know live tracking and live drum beats like
+[22:24] okay now you said you're gonna start doing you know this thing that will be
+[22:30] useful for some people but for most people I think you know just like a
+[22:34] catch-up with like you know did you do the things you said you're going to do
+[22:40] and like if you deviated you know by how much right and that could be again like
+[22:50] a very soft thing where you just you tap the notification then you just drag a
+[22:54] slider like left or right to say yeah kind of did it but maybe not like fully
+[23:01] and that that would be enough data right to to feed the algorithm okay I think
+[23:10] like say you know maybe I'll go through the rest of the thing the test plan
+[23:20] but I think I think I'd rather we match a bit more closely what the intention is
+[23:34] here and then I give feedback to the specific thing as opposed to like this
+[23:40] this seems a bit off target basically right so home I commented on goals yeah
+[23:48] goals again like it's it's very different to what I have here look it's
+[23:54] literally like a it's like a little if you just
+[24:00] follow I don't know if maybe you haven't followed you haven't read this
+[24:03] document and I know it's all scribbles so it might be tricky and not like
+[24:08] handwritten notes yeah like watch so there's in the goals segment you just add
+[24:19] goals let's go over to the very top okay goals look it's just an empty list right
+[24:26] and then we type something and then you know asks us it feels in like default
+[24:33] you know what is the type is like a question mark what is the so here says
+[24:38] catch up with strange things - wow that's how long I first wrote this and then
+[24:43] question mark for the activity type and it says one hour by default right and
+[24:48] then up here you can see we've got the activity type filter but it's such a
+[24:53] simple view right and the way I know we're here is like this is like what
+[24:58] is going on it's crazy yeah yeah I would follow this UI UX even if it's like
+[25:15] super simplistic and then we can polish right and then the user here they go
+[25:22] through right it's like a little drop down so they pick entertainment okay
+[25:29] boom and now that little icon that is filled in the app the okay and then
+[25:39] they're updating to 10 hours because there's 10 episodes I guess or something
+[25:45] like that whatever right and then look and then you can see okay catch up with
+[25:49] strange things follow up with John implement Facebook login feature blues
+[25:53] 10k blah blah blah blah blah and then over here they're filtering by work
+[26:02] tasks I guess okay so now we're just looking at work tasks so integrate
+[26:08] analytics framework design first-time user experience flow implement Facebook
+[26:12] login feature integrate in that purchase framework right so and then while we're
+[26:17] looking at just the work goals look we're moving things up and down just
+[26:28] just grabbing a goal and moving it higher up the list or lower up the list
+[26:33] okay and that changes the priority we're not even showing the priority here you
+[26:41] know there's no column for priority we're just ordering goals right so then
+[26:51] what that does is when in the calendar view right if I go to the activity view
+[26:58] so this
+[27:00] sort of view and this is like a month view I guess but you know we should have
+[27:06] all the usual options where I can zoom in to a day or a week right and I could
+[27:12] and I could see you know this sort of like linear for a day right so when we
+[27:18] have work blocks I should first be seeing let's say the first one what was
+[27:24] it design first-time user experience flow six hours right and then integrate
+[27:30] analytics framework so let's say every day we have just a four-hour work block
+[27:37] yeah and then so then I would see on Monday design first-time user experience
+[27:45] flow then on Tuesday for four hours then on Tuesday the first two hours would be
+[27:51] design first-time user experience flow and then that goal would be done right
+[27:56] halfway through Tuesday and then we have two hours of integrate analytics
+[28:03] framework on Tuesday and then that leaves six hours on Wednesday which don't
+[28:11] fit so we have four hours of integrate analytics framework and then Thursday we
+[28:16] would see integrate analytics framework complete on Thursday right so so that's
+[28:25] the sort of year would expect to see you know with these little things here boom
+[28:28] that's done that's done and you can see it here this is when that's done this is
+[28:33] when that's done and so on and so forth and then you know like in an ideal world
+[28:42] like I said if we have AI features I could also just ask it hey when when is
+[28:48] the full you know when is the Facebook login feature due to be complete and we
+[28:58] say oh that's Friday 14th of September whatever I go oh no no that's not good I
+[29:04] need to jump into my goals and push that further up or you know again if we're
+[29:10] using a MCP integration which is tell it oh can you push that right at the top of
+[29:17] my you know or I could say I need that to be done on Wednesday can you move
+[29:24] things around right but for now let's assume no AI integration right okay I'm
+[29:37] just gonna skip through through the test plan I can see it's asking me to go
+[29:44] through everything I kind of did that already so yeah that's not a nice like
+[29:49] half-hour review so I will leave it there and let's do an iteration and go
+[29:57] from there
