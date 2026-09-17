@@ -983,3 +983,49 @@ Wave B issues: #48 #49 #50 #51 #55 #60 closed.
 ### In flight
 current-activity (#54 + #53; schema v9), ribbon-drag (#58 remainder).
 Then: sidecar #38 (after current-activity), then Wave C gate + review readiness.
+
+
+## Pass 16 - 2026-09-17 ~18:15-19:45 local - ITERATION 1 COMPLETE, REVIEW READY
+
+### Landed
+| PR | lane | issues | tests | evidence |
+|---|---|---|---|---|
+| #83 | ribbon-drag | #58 (closed) | 589 | REAL MOUSE DRAGS: shared boundary 1pm -> 1:30 moves Food+Work together; free edge 9pm -> 9:15; clamp at 9:30; zoom 4h with half-hour ticks |
+| #84 | current-activity | #53, #54 (closed) | 697 | Pomodoro LIVE, 24:58->24:55, PAUSED freezes, pauses stored at v9, grey untracked on ribbon + "Not tracked" rows |
+| #85 | sidecar-merge | #38 (closed) | 725 | no UI; NC1b reproduced #38 (pre-fix: hydration "ready" with the record in NEITHER key) and showed the fix closing it |
+| #86 | (orchestrator) | - | 725 | docs/REVIEW-READINESS.md |
+
+### My two landing errors this run, both corrected publicly
+1. #73 merged with CI RED (chained checks+merge). Rule: never chain; read the result. Recorded pass 12.
+2. #83: my union Edit failed ("file has not been read") and I committed+pushed the merge WITH CONFLICT MARKERS.
+   Caught by CI, fixed in the next commit, corrected on the PR. `lane-push.ps1` now REFUSES any diff that adds a
+   conflict marker (negative control run: it rejected the bad commit).
+
+### Lane quality note
+The current-activity lane's first result had correct behaviour but a broken 1280px layout (columns collapsed to one
+character wide). I caught it in a rendered check, sent it back with evidence, and it returned the real cause:
+`flex: 0` reaches RNW as `flex: 0 1 0%`, whose flex-basis overrode `width: 220`. It also found a second bug
+(gutter mismatch overflowing a ~280px phone) and that its own first NC run passed VACUOUSLY because vitest 4
+removed `--reporter=basic`. Rendered checks earn their cost: unit tests and typecheck were green throughout.
+
+### Host incident
+The disk filled (0 bytes free) mid-run: my headless-Edge screenshot profiles leaked - 32 dirs, 5 GB, plus 271 stray
+msedge processes. cdp-shot.js now kills the process TREE (taskkill /T), reuses ONE profile dir wiped on entry, and
+kills only its own leftovers matched by that profile path. Freed 6.3 GB.
+
+### Wave C gate - LIVE build, fresh profile
+1. calendar dates every goal with ALL tracking history deleted - PASS
+2. day zoom shows which goal fills each block - PASS (#80)
+3. reorder moves the dates - PASS: before Ship 2 Oct / Q4 6 Oct; after dragging Q4 to top: Q4 21 Sep / Ship 6 Oct
+4. pomodoro session, tomatoes, settings off - PASS except a full 25-min cycle (unit-tested only)
+5. untracked time visible - PASS (grey ribbon spans + 3 "Not tracked" rows)
+
+### Review script (all 9 steps) - LIVE build, fresh profile, real keyboard/mouse - ALL PASS
+Recorded in docs/REVIEW-READINESS.md with per-step evidence, the 8 judgement calls, known gaps and the
+bug/drift/design tagging guide for the director.
+
+### Final state
+main dd47e73 - typecheck 0, **725 tests / 44 files**, build:web exported, CI green, deployed.
+Iteration 1 issues ALL CLOSED: #38 #39 #40 #41 #42 #43 #44 #45 #46 #47 #48 #49 #50 #51 #52 #53 #54 #55 #56 #58
+#59 #60 #62 #63. Open: #57 #12 #13 #14 (out of scope, Iteration 2) and #15 #31 #34 #35 (director).
+Lanes: none running. Worktrees removed. Briefs committed under .orchestrator/briefs/.
