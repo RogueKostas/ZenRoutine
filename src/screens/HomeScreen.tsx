@@ -21,6 +21,7 @@ import {
   minutesToTimeString,
 } from '../core/utils/time';
 import { ActiveTimer, QuickStart } from '../components/tracking';
+import { TodayRibbon } from '../components/ribbon';
 import type { TabScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
@@ -89,6 +90,8 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             {getDayName(dayOfWeek)}, {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
           </Text>
         </View>
+
+        <TodayRibbon />
 
         {showExampleDataOffer && (
           <View style={[styles.exampleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
