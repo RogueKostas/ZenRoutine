@@ -15,12 +15,16 @@ import {
   useActivityTypes,
   useActiveRoutine,
   useTrackingEntries,
+  useWeekStartsOn,
 } from '../../store';
 import { predictAllGoals } from '../../core/engine/prediction';
 import {
   addDaysToDateKey,
   differenceInCalendarDays,
   formatDuration,
+  getDayName,
+  getMonthGridDates,
+  orderedWeekDays,
   parseLocalDateKey,
   toLocalDateKey,
 } from '../../core/utils/time';
@@ -30,8 +34,6 @@ const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December',
 ];
-
-const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 
 export const ACTIVITY_CALENDAR_TITLE = 'Activity calendar';
 export const ACTIVITY_CALENDAR_SUBTITLE =
@@ -61,6 +63,11 @@ export function ActivityCalendar() {
   const activityTypes = useActivityTypes();
   const activeRoutine = useActiveRoutine();
   const trackingEntries = useTrackingEntries();
+  const weekStartsOn = useWeekStartsOn();
+  const dayLabels = useMemo(
+    () => orderedWeekDays(weekStartsOn).map((day) => getDayName(day, true)),
+    [weekStartsOn]
+  );
 
   // Get predictions for all active goals
   const predictions = useMemo(() => {
@@ -70,79 +77,44 @@ export function ActivityCalendar() {
 
   // Build calendar data for the current month
   const calendarDays = useMemo(() => {
-    const year = currentDate.getFullYear();
     const month = currentDate.getMonth();
+    const todayKey = toLocalDateKey();
 
-    // Get first day of month and total days
-    const firstDayOfMonth = new Date(year, month, 1);
-    const lastDayOfMonth = new Date(year, month + 1, 0);
-    const daysInMonth = lastDayOfMonth.getDate();
-    const startingDayOfWeek = firstDayOfMonth.getDay();
-
-    // Get today's date for comparison
-    const today = new Date();
-    const isCurrentMonth = today.getFullYear() === year && today.getMonth() === month;
-
-    // Create array of days
-    const days: CalendarDay[] = [];
-
-    // Add days from previous month to fill first week
-    const prevMonthLastDay = new Date(year, month, 0).getDate();
-    for (let i = startingDayOfWeek - 1; i >= 0; i--) {
-      const day = prevMonthLastDay - i;
-      const date = new Date(year, month - 1, day);
-      days.push({
-        date,
-        dayOfMonth: day,
-        isCurrentMonth: false,
-        isToday: false,
-        blocks: [],
-        goalCompletions: [],
-      });
-    }
-
-    // Add days of current month
-    for (let day = 1; day <= daysInMonth; day++) {
-      const date = new Date(year, month, day);
-      const dayOfWeek = date.getDay() as DayOfWeek;
-      const isToday = isCurrentMonth && today.getDate() === day;
+    // 6 rows x 7 days = 42, columns in the user's week order. Days outside the month are
+    // shown faded and carry nothing.
+    return getMonthGridDates(currentDate.getFullYear(), month, weekStartsOn).map((date): CalendarDay => {
+      const dateString = toLocalDateKey(date);
+      if (date.getMonth() !== month) {
+        return {
+          date,
+          dayOfMonth: date.getDate(),
+          isCurrentMonth: false,
+          isToday: false,
+          blocks: [],
+          goalCompletions: [],
+        };
+      }
 
       // Get blocks for this day of week
+      const dayOfWeek = date.getDay() as DayOfWeek;
       const blocks = activeRoutine?.blocks.filter(b => b.dayOfWeek === dayOfWeek) || [];
 
       // Find goals predicted to complete on this date
-      const dateString = toLocalDateKey(date);
       const completingGoals = predictions
         .filter(p => p.predictedCompletionDate === dateString)
         .map(p => goals.find(g => g.id === p.goalId))
         .filter((g): g is Goal => g !== undefined);
 
-      days.push({
+      return {
         date,
-        dayOfMonth: day,
+        dayOfMonth: date.getDate(),
         isCurrentMonth: true,
-        isToday,
+        isToday: dateString === todayKey,
         blocks,
         goalCompletions: completingGoals,
-      });
-    }
-
-    // Add days from next month to complete the grid (6 rows x 7 days = 42)
-    const remainingDays = 42 - days.length;
-    for (let day = 1; day <= remainingDays; day++) {
-      const date = new Date(year, month + 1, day);
-      days.push({
-        date,
-        dayOfMonth: day,
-        isCurrentMonth: false,
-        isToday: false,
-        blocks: [],
-        goalCompletions: [],
-      });
-    }
-
-    return days;
-  }, [currentDate, activeRoutine, predictions, goals]);
+      };
+    });
+  }, [currentDate, activeRoutine, predictions, goals, weekStartsOn]);
 
   const handlePrevMonth = () => {
     setCurrentDate(new Date(currentDate.getFullYear(), currentDate.getMonth() - 1, 1));
@@ -219,7 +191,7 @@ export function ActivityCalendar() {
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
         {/* Day Labels */}
         <View style={styles.dayLabels}>
-          {DAY_LABELS.map(day => (
+          {dayLabels.map(day => (
             <View key={day} style={styles.dayLabelCell}>
               <Text style={[styles.dayLabelText, { color: colors.textSecondary }]}>{day}</Text>
             </View>

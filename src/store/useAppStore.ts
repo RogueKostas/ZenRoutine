@@ -12,6 +12,7 @@ import {
   TrackingEntry,
   TrackingSource,
   DayOfWeek,
+  WeekStartsOn,
 } from '../core/types';
 import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
@@ -527,6 +528,7 @@ interface AppActions {
   resetState: () => Promise<void>;
   initializeDefaults: () => void;
   completeOnboarding: () => void;
+  setWeekStartsOn: (weekStartsOn: WeekStartsOn) => void;
   exportData: () => string;
   importData: (serialized: string) => Promise<ImportResult>;
 
@@ -1289,7 +1291,10 @@ export const useAppStore = create<AppStore>()(
       // State Management
       // ============================================
       resetState: async () => {
-        const nextState = createInitializedState();
+        // "Reset All Data" deletes goals, routines and history; how the user likes their week
+        // drawn is a setting, not data, so it survives. Import, by contrast, restores the
+        // backup's own preferences.
+        const nextState = { ...createInitializedState(), preferences: get().preferences };
         await persistSnapshot(nextState);
         set(nextState);
         clearHydrationReports();
@@ -1313,6 +1318,11 @@ export const useAppStore = create<AppStore>()(
 
       completeOnboarding: () => {
         set({ hasCompletedOnboarding: true });
+      },
+
+      setWeekStartsOn: (weekStartsOn) => {
+        if (weekStartsOn !== 0 && weekStartsOn !== 1) return;
+        set((state) => ({ preferences: { ...state.preferences, weekStartsOn } }));
       },
 
       exportData: () => encodeBackup(selectPersistedAppState(get())),
@@ -1589,3 +1599,4 @@ export const useCurrentTracking = () => {
 };
 
 export const useHasCompletedOnboarding = () => useAppStore((s) => s.hasCompletedOnboarding);
+export const useWeekStartsOn = () => useAppStore((s) => s.preferences.weekStartsOn);
