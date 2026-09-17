@@ -12,7 +12,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useAppStore, useActivityTypes, useWeekStartsOn } from '../store';
+import { useAppStore, useActivityTypes, usePomodoroEnabled, useWeekStartsOn } from '../store';
 import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { ThemeMode } from '../theme';
@@ -88,8 +88,10 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
   const { colors, mode, setMode, isDark } = useTheme();
   const activityTypes = useActivityTypes();
-  const { resetState, exportData, importData, _addSampleData, setWeekStartsOn } = useAppStore();
+  const { resetState, exportData, importData, _addSampleData, setWeekStartsOn, setPomodoroEnabled } =
+    useAppStore();
   const weekStartsOn = useWeekStartsOn();
+  const pomodoroEnabled = usePomodoroEnabled();
   const dialog = useDialog();
 
   const handleThemeChange = async () => {
@@ -249,6 +251,24 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               type="select"
               rightText={weekStartLabel}
               onPress={handleWeekStartChange}
+            />
+          </View>
+        </View>
+
+        {/* Tracking Section */}
+        <View style={styles.section}>
+          <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Tracking</Text>
+          <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <SettingItem
+              title="Pomodoro timer"
+              subtitle={
+                pomodoroEnabled
+                  ? '25 min focus, 5 min break, 15 min after four. Tap to turn off.'
+                  : 'Off: the timer just counts up. Tap to turn on.'
+              }
+              type="select"
+              rightText={pomodoroEnabled ? 'On' : 'Off'}
+              onPress={() => setPomodoroEnabled(!pomodoroEnabled)}
             />
           </View>
         </View>

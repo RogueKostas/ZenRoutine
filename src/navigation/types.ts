@@ -18,6 +18,8 @@ export type RootStackParamList = {
   ActivityTypeEditor: { activityTypeId?: string };
   ActivityTypes: undefined;
   BlockEditor: { routineId: string; blockId?: string };
+  /** The Pomodoro timer for the running entry (#53). */
+  CurrentActivity: undefined;
   Debug: undefined;
 };
 

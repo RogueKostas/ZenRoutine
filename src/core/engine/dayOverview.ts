@@ -3,9 +3,12 @@ import {
   addDaysToDateKey,
   getDayName,
   getRoutineBlockDurationMinutes,
+  getTrackedMilliseconds,
+  getTrackedSpans,
   getTrackingEntryDurationMinutes,
   minutesToTimeString,
   toLocalDateKey,
+  type TimeSpan,
 } from '../utils/time';
 import {
   forecastGoals,
@@ -50,7 +53,7 @@ const MINUTES_PER_DAY = 1440;
 
 export type DayOverviewGoal = ForecastGoal & Pick<Goal, 'name'> & { completedAt?: string };
 
-export type DayOverviewEntry = Pick<TrackingEntry, 'startTime' | 'endTime' | 'goalId'>;
+export type DayOverviewEntry = Pick<TrackingEntry, 'startTime' | 'endTime' | 'goalId' | 'pauses'>;
 
 export interface DayOverviewInput {
   routine: { blocks: readonly ForecastBlock[] } | null | undefined;
@@ -155,9 +158,8 @@ function isSameBlock(allocation: ForecastAllocation, block: TodayBlock): boolean
 
 interface TodayEntry {
   goalId: string;
-  start: number;
-  /** The end time, or `now` for a running entry. */
-  end: number;
+  /** Tracked spans, paused time left out (#54); a running entry's run to `now`. */
+  spans: TimeSpan[];
 }
 
 /**
@@ -174,19 +176,18 @@ function getTodayMinutes(entries: readonly DayOverviewEntry[], now: Date) {
     const start = new Date(entry.startTime);
     if (!Number.isFinite(start.getTime())) continue;
     let minutes: number;
-    let end: number;
     if (entry.endTime) {
       minutes = getTrackingEntryDurationMinutes(entry);
-      end = new Date(entry.endTime).getTime();
     } else {
       // A running entry is not in `loggedMinutes` yet.
-      minutes = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 60000));
-      end = now.getTime();
+      minutes = Math.max(0, Math.floor(getTrackedMilliseconds(entry, now.getTime()) / 60000));
       running.set(entry.goalId, (running.get(entry.goalId) ?? 0) + minutes);
     }
     if (toLocalDateKey(start) === today) {
       loggedToday.set(entry.goalId, (loggedToday.get(entry.goalId) ?? 0) + minutes);
-      if (minutes > 0) todayEntries.push({ goalId: entry.goalId, start: start.getTime(), end });
+      if (minutes > 0) {
+        todayEntries.push({ goalId: entry.goalId, spans: getTrackedSpans(entry, now.getTime()) });
+      }
     }
   }
   return { loggedToday, running, todayEntries };
@@ -278,7 +279,11 @@ export function getDayOverview(input: DayOverviewInput): DayOverviewRow[] {
     let total = 0;
     for (const entry of todayEntries) {
       if (entry.goalId !== goalId) continue;
-      total += Math.max(0, Math.round((Math.min(entry.end, until) - entry.start) / 60000));
+      let milliseconds = 0;
+      for (const span of entry.spans) {
+        milliseconds += Math.max(0, Math.min(span.end, until) - span.start);
+      }
+      total += Math.round(milliseconds / 60000);
     }
     return total;
   };

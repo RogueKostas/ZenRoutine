@@ -22,13 +22,23 @@ export const APP_STORAGE_KEY = 'zenroutine-storage';
  */
 export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
 /**
+ * v9 (#54) let a tracking entry carry pauses; see TRACKING_PAUSES_SCHEMA_VERSION.
  * v8 (#50) made a goal's activity type and estimate optional; see OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION.
  * v7 (#49) replaced `Goal.priority` with `Goal.order`; see GOAL_ORDER_SCHEMA_VERSION. v6 (#60)
  * removed `RoutineBlock.goalId`; see BLOCK_GOAL_REMOVED_SCHEMA_VERSION. v5 (#44) added
  * `preferences`. v4 was the first version written under the strict invariants below; see
  * STRICT_SCHEMA_VERSION.
  */
-export const CURRENT_SCHEMA_VERSION = 8;
+export const CURRENT_SCHEMA_VERSION = 9;
+/**
+ * The first schema version whose tracking entries may carry `pauses` (#54: scheduled, started and
+ * tracked are different states, and the user can pause tracking). No blob below it has paused
+ * entries, so the v8 -> v9 step fills nothing: an entry with no `pauses` was never paused and
+ * keeps exactly the duration it had. Below v9 a `pauses` key is not the store's and is dropped
+ * unread, like any other unknown key. Like v5–v8 it gates only itself and leaves the repair gate
+ * where it was.
+ */
+export const TRACKING_PAUSES_SCHEMA_VERSION = 9;
 /**
  * The first schema version whose goals may leave out `activityTypeId` and `estimatedMinutes`
  * (#50: the goals list works as a plain to-do list). Every blob below it has both on every goal,
@@ -610,11 +620,17 @@ function readPreferences(record: UnknownRecord): Preferences {
   const defaults = createDefaultPreferences();
   const value = record.preferences;
   if (!isRecord(value)) return defaults;
+  // The Pomodoro choice (#53) is kept only when it is readable; absent means on, so an unreadable
+  // one falls back to the default by being left out.
+  const pomodoro = isRecord(value.pomodoro) && typeof value.pomodoro.enabled === 'boolean'
+    ? { enabled: value.pomodoro.enabled }
+    : undefined;
   return {
     weekStartsOn:
       value.weekStartsOn === 0 || value.weekStartsOn === 1
         ? value.weekStartsOn
         : defaults.weekStartsOn,
+    ...(pomodoro ? { pomodoro } : {}),
   };
 }
 
@@ -631,7 +647,56 @@ function parseRoutine(value: unknown, version: number): Routine {
   };
 }
 
-function parseTrackingEntry(value: unknown, repairLegacyValues: boolean): TrackingEntry {
+/**
+ * Why an entry's pauses are not a valid history, or null when they are (#54). Pauses must lie
+ * inside the entry, in time order, without overlapping, and only a running entry's last pause may
+ * still be open. Shared by hydration and by the store's own edit checks, so the store can never
+ * write a pause history that the next launch refuses.
+ */
+export function describeInvalidPauses(
+  entry: Pick<TrackingEntry, 'startTime' | 'endTime' | 'pauses'>
+): string | null {
+  const pauses = entry.pauses ?? [];
+  const start = Date.parse(entry.startTime);
+  const end = entry.endTime !== undefined ? Date.parse(entry.endTime) : undefined;
+  let previousEnd = start;
+  for (const [index, pause] of pauses.entries()) {
+    const pauseStart = Date.parse(pause.start);
+    const isLast = index === pauses.length - 1;
+    if (!(pauseStart >= previousEnd)) {
+      return 'a pause starts before the entry or overlaps the pause before it';
+    }
+    if (pause.end === undefined) {
+      if (!isLast) return 'only the last pause can be open';
+      if (end !== undefined) return 'a finished entry cannot have an open pause';
+      continue;
+    }
+    const pauseEnd = Date.parse(pause.end);
+    if (!(pauseEnd >= pauseStart)) return 'a pause ends before it starts';
+    if (end !== undefined && !(pauseEnd <= end)) return 'a pause ends after the entry';
+    previousEnd = pauseEnd;
+  }
+  return null;
+}
+
+/** An entry's pauses from v9 on; below v9 the key is not read (see TRACKING_PAUSES_SCHEMA_VERSION). */
+function readTrackingPauses(record: UnknownRecord, version: number): TrackingEntry['pauses'] {
+  if (version < TRACKING_PAUSES_SCHEMA_VERSION) return undefined;
+  if (record.pauses === undefined || record.pauses === null) return undefined;
+  const pauses = readArray(record, 'pauses').map((value) => {
+    const pause = readRecord(value, 'pause');
+    const end = readOptionalIsoDateTime(pause, 'end');
+    return { start: readIsoDateTime(pause, 'start'), ...(end !== undefined ? { end } : {}) };
+  });
+  // An empty list says nothing a missing one does not, and the store never writes one.
+  return pauses.length > 0 ? pauses : undefined;
+}
+
+function parseTrackingEntry(
+  value: unknown,
+  repairLegacyValues: boolean,
+  version: number
+): TrackingEntry {
   const record = readRecord(value, 'tracking entry');
   const source = readString(record, 'source');
   if (!TRACKING_SOURCES.includes(source as TrackingSource)) {
@@ -645,6 +710,9 @@ function parseTrackingEntry(value: unknown, repairLegacyValues: boolean): Tracki
     }
     endTime = startTime;
   }
+  const pauses = readTrackingPauses(record, version);
+  const pauseError = describeInvalidPauses({ startTime, endTime, pauses });
+  if (pauseError) throw new Error(`Invalid tracking entry pauses: ${pauseError}`);
   return {
     id: readString(record, 'id'),
     date: readDateKey(record, 'date'),
@@ -654,6 +722,8 @@ function parseTrackingEntry(value: unknown, repairLegacyValues: boolean): Tracki
     goalId: readOptionalString(record, 'goalId'),
     routineBlockId: readOptionalString(record, 'routineBlockId'),
     source: source as TrackingSource,
+    // Left off when absent, like a goal's optional fields, so an unpaused entry keeps its shape.
+    ...(pauses ? { pauses } : {}),
     notes: readOptionalString(record, 'notes'),
     createdAt: readIsoDateTime(record, 'createdAt'),
     updatedAt: readIsoDateTime(record, 'updatedAt'),
@@ -765,7 +835,7 @@ export function migratePersistedState(
   let trackingEntries: TrackingEntry[] = readArray(record, 'trackingEntries')
     .flatMap<TrackingEntry>((value, index) => {
       try {
-        const entry = parseTrackingEntry(value, version < STRICT_SCHEMA_VERSION);
+        const entry = parseTrackingEntry(value, version < STRICT_SCHEMA_VERSION, version);
         entryOrigins.set(entry.id, { index, record: value });
         return [entry];
       } catch (error) {

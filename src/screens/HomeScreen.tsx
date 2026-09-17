@@ -22,8 +22,9 @@ import {
   getScheduleFocus,
   type DayOverviewRow,
 } from '../core/engine/dayOverview';
-import { ActiveTimer } from '../components/tracking';
-import { TodayRibbon, useNow } from '../components/ribbon';
+import { describeUntrackedRow } from '../core/engine/trackingState';
+import { ActiveTimer, TrackedDayRibbon } from '../components/tracking';
+import { useNow } from '../components/ribbon';
 import {
   DayOverviewList,
   HomeClock,
@@ -70,14 +71,18 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
         ? `Started tracking ${row.goalName ?? activity?.name ?? 'scheduled activity'}.`
         : 'Unable to start tracking. Check that no other timer is running.'
     );
+    // Starting a scheduled block opens its Pomodoro timer (#53).
+    if (entryId) navigation.navigate('CurrentActivity');
   };
+  const untrackedNote = (row: DayOverviewRow) => describeUntrackedRow(row, trackingEntries, now);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
         <HomeClock now={now} />
 
-        <TodayRibbon />
+        {/* Grey where today's scheduled time was not tracked (#54) */}
+        <TrackedDayRibbon testID="today-ribbon" />
 
         {showExampleDataOffer && (
           <View style={[styles.exampleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -106,6 +111,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
           <View style={styles.trackingSection}>
             <ActiveTimer
               onStopped={() => setTrackingStatus('Tracking stopped and saved. You can review it below.')}
+              onOpen={() => navigation.navigate('CurrentActivity')}
             />
           </View>
         ) : (
@@ -130,6 +136,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
               activityTypes={activityTypes}
               canStart={!activeTracking}
               onStart={startScheduledRow}
+              rowNote={untrackedNote}
             />
           ) : (
             <View style={styles.emptyState}>

@@ -9,6 +9,8 @@ export {
   useCurrentTracking,
   useHasCompletedOnboarding,
   useWeekStartsOn,
+  usePomodoroEnabled,
+  isPomodoroEnabled,
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
   getRepairedTrackingEntries,

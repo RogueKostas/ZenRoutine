@@ -105,7 +105,7 @@ describe('the fixture really is a pre-change v7 store', () => {
 
 describe('schema 8: a goal\'s type and estimate are optional (#50)', () => {
   it('bumps the schema without moving the repair gate', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(8);
+    expect(CURRENT_SCHEMA_VERSION).toBeGreaterThanOrEqual(OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION);
     expect(OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION).toBe(8);
     expect(GOAL_ORDER_SCHEMA_VERSION).toBe(7);
     expect(STRICT_SCHEMA_VERSION).toBe(4);
@@ -140,7 +140,7 @@ describe('schema 8: a goal\'s type and estimate are optional (#50)', () => {
       version: number;
       state: StoredState;
     };
-    expect(rewritten.version).toBe(8);
+    expect(rewritten.version).toBe(CURRENT_SCHEMA_VERSION);
     expect(rewritten.state).toEqual(expectedV8(stored));
   });
 

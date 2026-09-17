@@ -10,9 +10,20 @@ import { TrackingEntry } from './TrackingEntry';
  */
 export type WeekStartsOn = 0 | 1;
 
-/** User choices that are not data. Wave C adds its Pomodoro toggle here. */
+/** The Current Activity view's Pomodoro timer (#53). */
+export interface PomodoroPreference {
+  /** Off: the view shows a plain running timer. */
+  enabled: boolean;
+}
+
+/** User choices that are not data. */
 export interface Preferences {
   weekStartsOn: WeekStartsOn;
+  /**
+   * Absent until the user changes it, and absent means on (the director: "almost a default for
+   * the app"). Read it through `isPomodoroEnabled`.
+   */
+  pomodoro?: PomodoroPreference;
 }
 
 export interface AppState {
