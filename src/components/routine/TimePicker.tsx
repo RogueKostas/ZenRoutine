@@ -7,7 +7,7 @@ import {
   ScrollView,
   StyleSheet,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme, type ThemeColors } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { minutesToTimeString, parseTimeOfDay } from '../../core/utils/time';
 import {
@@ -44,6 +44,8 @@ function TimeField({
   open,
   onOpenChange,
 }: TimeFieldProps) {
+  const { colors } = useTheme();
+  const styles = useThemedStyles();
   const [draft, setDraft] = useState(() => minutesToTimeString(value));
   const focused = useRef(false);
   const listRef = useRef<ScrollView>(null);
@@ -170,6 +172,7 @@ export function TimeRangePicker({
   onEndDraftChange,
   minuteInterval = TIME_OPTION_STEP,
 }: TimeRangePickerProps) {
+  const styles = useThemedStyles();
   const options = useMemo(() => timeOptions(minuteInterval), [minuteInterval]);
   const [openField, setOpenField] = useState<'start' | 'end' | null>(null);
 
@@ -207,7 +210,12 @@ export function TimeRangePicker({
   );
 }
 
-const styles = StyleSheet.create({
+function useThemedStyles() {
+  const { colors } = useTheme();
+  return useMemo(() => makeStyles(colors), [colors]);
+}
+
+const makeStyles = (colors: ThemeColors) => StyleSheet.create({
   rangeContainer: {
     backgroundColor: colors.surface,
     borderRadius: borderRadius.lg,

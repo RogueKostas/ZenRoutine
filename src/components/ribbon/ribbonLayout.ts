@@ -491,3 +491,39 @@ export function hitTestSegment(
   }
   return nearest;
 }
+
+// ============================================
+// Tap on empty time (p13: "Press and Release anywhere to add a new Activity")
+// ============================================
+
+/** Minutes from midnight at `fraction` (clamped to 0–1) of the window. */
+export function minutesAtFraction(fraction: number, window?: RibbonWindow): number {
+  const visible = normalizeRibbonWindow(window);
+  const clamped = Number.isFinite(fraction) ? Math.min(1, Math.max(0, fraction)) : 0;
+  return visible.startMinutes + clamped * (visible.endMinutes - visible.startMinutes);
+}
+
+/**
+ * Horizontal press position in pixels from the pressed element's left edge. Native press events
+ * carry `locationX`; on react-native-web `onPress` fires from the DOM click, which has `offsetX`.
+ */
+export function pressLocationX(nativeEvent: { locationX?: unknown; offsetX?: unknown }): number | null {
+  for (const value of [nativeEvent.locationX, nativeEvent.offsetX]) {
+    if (typeof value === 'number' && Number.isFinite(value)) return value;
+  }
+  return null;
+}
+
+/** Screen-reader label for an editable segment: "Work, 9am to 12pm, Monday". */
+export function ribbonSegmentAccessibilityLabel(
+  typeName: string,
+  block: Pick<RoutineBlock, 'startMinutes' | 'endMinutes'>,
+  dayName?: string
+): string {
+  const parts = [
+    typeName,
+    `${formatRibbonEdgeLabel(block.startMinutes)} to ${formatRibbonEdgeLabel(block.endMinutes)}`,
+  ];
+  if (dayName) parts.push(dayName);
+  return parts.join(', ');
+}

@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
@@ -14,16 +14,22 @@ import {
   useAppStore,
 } from '../store';
 import { isFirstRunEmpty } from '../store/sampleData';
-import {
-  formatDuration,
-  formatGoalTimeLabel,
-  getDayName,
-  getTrackingEntryDurationMinutes,
-  minutesToTimeString,
-} from '../core/utils/time';
+import { formatDuration, formatGoalTimeLabel, getTrackingEntryDurationMinutes } from '../core/utils/time';
 import { goalProgressPercent } from '../core/engine/goalList';
-import { ActiveTimer, QuickStart } from '../components/tracking';
-import { TodayRibbon } from '../components/ribbon';
+import {
+  getDayOverview,
+  getScheduledStart,
+  getScheduleFocus,
+  type DayOverviewRow,
+} from '../core/engine/dayOverview';
+import { ActiveTimer } from '../components/tracking';
+import { TodayRibbon, useNow } from '../components/ribbon';
+import {
+  DayOverviewList,
+  HomeClock,
+  ScheduleFocusCard,
+  TrackSomethingElse,
+} from '../components/home';
 import type { TabScreenProps } from '../navigation/types';
 
 export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
@@ -39,26 +45,13 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const addSampleData = useAppStore((state) => state._addSampleData);
   const [trackingStatus, setTrackingStatus] = useState('');
   const showExampleDataOffer = isFirstRunEmpty({ goals, routines, trackingEntries });
+  const now = useNow(60_000);
 
-  const today = new Date();
-  const dayOfWeek = today.getDay();
-  const currentMinutes = today.getHours() * 60 + today.getMinutes();
-  const previousDay = (dayOfWeek + 6) % 7;
-  const todayBlocks = activeRoutine?.blocks.filter((block) =>
-    block.dayOfWeek === dayOfWeek ||
-    (
-      block.dayOfWeek === previousDay &&
-      block.endMinutes <= block.startMinutes &&
-      currentMinutes < block.endMinutes
-    )
-  ) || [];
-
-  // Sort blocks by start time
-  const sortedBlocks = [...todayBlocks].sort((left, right) => {
-    const leftStart = left.dayOfWeek === previousDay ? left.startMinutes - 1440 : left.startMinutes;
-    const rightStart = right.dayOfWeek === previousDay ? right.startMinutes - 1440 : right.startMinutes;
-    return leftStart - rightStart;
-  });
+  const overviewRows = useMemo(
+    () => getDayOverview({ routine: activeRoutine, goals, trackingEntries, now }),
+    [activeRoutine, goals, trackingEntries, now]
+  );
+  const focus = getScheduleFocus(overviewRows);
   const recentEntry = trackingEntries
     .filter((entry) => entry.endTime)
     .sort((left, right) => right.endTime!.localeCompare(left.endTime!))[0];
@@ -69,16 +62,12 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
     ? goals.find((goal) => goal.id === recentEntry.goalId)
     : undefined;
 
-  const startScheduledBlock = (block: NonNullable<typeof activeRoutine>['blocks'][number]) => {
-    const activity = activityTypes.find((candidate) => candidate.id === block.activityTypeId);
-    const entryId = startTracking({
-      activityTypeId: block.activityTypeId,
-      routineBlockId: block.id,
-      source: 'scheduled',
-    });
+  const startScheduledRow = (row: DayOverviewRow) => {
+    const activity = activityTypes.find((candidate) => candidate.id === row.activityTypeId);
+    const entryId = startTracking(getScheduledStart(row));
     setTrackingStatus(
       entryId
-        ? `Started tracking ${activity?.name ?? 'scheduled activity'}.`
+        ? `Started tracking ${row.goalName ?? activity?.name ?? 'scheduled activity'}.`
         : 'Unable to start tracking. Check that no other timer is running.'
     );
   };
@@ -86,12 +75,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
-        <View style={styles.header}>
-          <Text style={[styles.greeting, { color: colors.text }]}>Good {getTimeOfDay()}</Text>
-          <Text style={[styles.date, { color: colors.textSecondary }]}>
-            {getDayName(dayOfWeek)}, {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
-          </Text>
-        </View>
+        <HomeClock now={now} />
 
         <TodayRibbon />
 
@@ -125,87 +109,28 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             />
           </View>
         ) : (
-          <QuickStart maxActivities={6} />
+          <>
+            {overviewRows.length > 0 && (
+              <ScheduleFocusCard focus={focus} activityTypes={activityTypes} onStart={startScheduledRow} />
+            )}
+            <TrackSomethingElse />
+          </>
         )}
 
         <Text accessibilityLiveRegion="polite" style={styles.srStatus}>
           {trackingStatus}
         </Text>
 
-        {/* Today's Schedule */}
+        {/* Day Overview (#55) */}
         <View style={styles.section}>
-          <Text style={[styles.sectionTitle, { color: colors.text }]}>Today's Schedule</Text>
-          {sortedBlocks.length > 0 ? (
-            <View style={styles.scheduleList}>
-              {sortedBlocks.map((block) => {
-                const activity = activityTypes.find((a) => a.id === block.activityTypeId);
-                const duration = block.endMinutes - block.startMinutes;
-                const adjustedDuration = duration > 0 ? duration : duration + 1440;
-
-                // Determine if this occurrence is past, current, or upcoming.
-                const isCarryover = block.dayOfWeek === previousDay;
-                const isOvernight = block.endMinutes <= block.startMinutes;
-                const isPast = !isCarryover && !isOvernight && block.endMinutes <= currentMinutes;
-                const isCurrent = isCarryover || (
-                  block.startMinutes <= currentMinutes &&
-                  (isOvernight || currentMinutes < block.endMinutes)
-                );
-                const isNext = !isPast && !isCurrent &&
-                  sortedBlocks.find((candidate) =>
-                    candidate.dayOfWeek === dayOfWeek && candidate.startMinutes > currentMinutes
-                  )?.id === block.id;
-
-                return (
-                  <View
-                    key={block.id}
-                    style={[
-                      styles.scheduleItem,
-                      { backgroundColor: colors.surface, borderColor: colors.border },
-                      isPast ? styles.scheduleItemPast : undefined,
-                      isCurrent ? { borderColor: colors.primary, backgroundColor: colors.primary + '08' } : undefined,
-                      isNext ? { borderColor: colors.success + '60' } : undefined,
-                    ]}
-                  >
-                    <View style={[styles.scheduleColor, { backgroundColor: activity?.color || '#666' }]} />
-                    <View style={styles.scheduleContent}>
-                      <View style={styles.scheduleTimeRow}>
-                        <Text style={[styles.scheduleTime, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
-                          {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
-                        </Text>
-                        {isCurrent && (
-                          <View style={[styles.nowBadge, { backgroundColor: colors.primary }]}>
-                            <Text style={styles.nowBadgeText}>NOW</Text>
-                          </View>
-                        )}
-                        {isNext && (
-                          <View style={[styles.nextBadge, { backgroundColor: colors.success + '20' }]}>
-                            <Text style={[styles.nextBadgeText, { color: colors.success }]}>NEXT</Text>
-                          </View>
-                        )}
-                      </View>
-                      <Text style={[styles.scheduleActivity, { color: isPast ? colors.textMuted : colors.text }]}>
-                        {activity?.icon} {activity?.name || 'Unknown'}
-                      </Text>
-                    </View>
-                    <View style={styles.scheduleActions}>
-                      <Text style={[styles.scheduleDuration, { color: isPast ? colors.textMuted : colors.textSecondary }]}>
-                        {formatDuration(adjustedDuration)}
-                      </Text>
-                      {!activeTracking && !isPast && (
-                        <TouchableOpacity
-                          style={[styles.startBlockButton, { backgroundColor: colors.primary }]}
-                          onPress={() => startScheduledBlock(block)}
-                          accessibilityRole="button"
-                          accessibilityLabel={`Start ${activity?.name ?? 'scheduled activity'} from ${minutesToTimeString(block.startMinutes)} to ${minutesToTimeString(block.endMinutes)}`}
-                        >
-                          <Text style={styles.startBlockButtonText}>Start</Text>
-                        </TouchableOpacity>
-                      )}
-                    </View>
-                  </View>
-                );
-              })}
-            </View>
+          <Text style={[styles.sectionTitle, { color: colors.text }]}>Today</Text>
+          {overviewRows.length > 0 ? (
+            <DayOverviewList
+              rows={overviewRows}
+              activityTypes={activityTypes}
+              canStart={!activeTracking}
+              onStart={startScheduledRow}
+            />
           ) : (
             <View style={styles.emptyState}>
               <Text style={styles.emptyIcon}>📅</Text>
@@ -350,31 +275,12 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   );
 }
 
-function getTimeOfDay(): string {
-  const hour = new Date().getHours();
-  if (hour < 12) return 'morning';
-  if (hour < 17) return 'afternoon';
-  return 'evening';
-}
-
 const styles = StyleSheet.create({
   container: {
     flex: 1,
   },
   scrollView: {
     flex: 1,
-  },
-  header: {
-    padding: spacing.lg,
-    paddingBottom: spacing.md,
-  },
-  greeting: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  date: {
-    fontSize: 16,
-    marginTop: spacing.xs,
   },
   exampleCard: {
     marginHorizontal: spacing.lg,
@@ -441,86 +347,10 @@ const styles = StyleSheet.create({
     fontSize: 14,
     fontWeight: '500',
   },
-  scheduleList: {
-    paddingHorizontal: spacing.lg,
-  },
-  scheduleItem: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    padding: spacing.md,
-    borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
-    borderWidth: 1,
-  },
-  scheduleItemPast: {
-    opacity: 0.5,
-  },
-  scheduleColor: {
-    width: 4,
-    height: 44,
-    borderRadius: 2,
-    marginRight: spacing.md,
-  },
-  scheduleContent: {
-    flex: 1,
-  },
-  scheduleTimeRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-  },
-  scheduleTime: {
-    fontSize: 12,
-  },
-  nowBadge: {
-    marginLeft: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-  },
-  nowBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-    color: '#fff',
-  },
-  nextBadge: {
-    marginLeft: spacing.sm,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-  },
-  nextBadgeText: {
-    fontSize: 10,
-    fontWeight: '700',
-  },
-  scheduleActivity: {
-    fontSize: 16,
-    fontWeight: '500',
-    marginTop: 2,
-  },
-  scheduleDuration: {
-    fontSize: 14,
-  },
   seeAllButton: {
     minHeight: 44,
     justifyContent: 'center',
     paddingHorizontal: spacing.xs,
-  },
-  scheduleActions: {
-    alignItems: 'flex-end',
-    gap: spacing.xs,
-  },
-  startBlockButton: {
-    minHeight: 44,
-    minWidth: 64,
-    paddingHorizontal: spacing.md,
-    borderRadius: borderRadius.md,
-    alignItems: 'center',
-    justifyContent: 'center',
-  },
-  startBlockButtonText: {
-    color: '#fff',
-    fontSize: 14,
-    fontWeight: '700',
   },
   recentCard: {
     marginHorizontal: spacing.lg,

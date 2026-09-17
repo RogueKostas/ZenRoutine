@@ -2,7 +2,7 @@ import React, { useState, useEffect, useCallback } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
-import { useCurrentTracking, useActivityTypes, useAppStore } from '../../store';
+import { useCurrentTracking, useActivityTypes, useAppStore, useGoals } from '../../store';
 import { formatElapsed, getElapsedSeconds } from '../../core/utils/time';
 
 // Elapsed seconds are held in state so every tick changes it and re-renders; each tick
@@ -34,6 +34,7 @@ interface ActiveTimerProps {
 export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimerProps) {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
+  const goals = useGoals();
   const { stopTracking } = useAppStore();
   const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
   const [pulseAnim] = useState(() => new Animated.Value(1));
@@ -108,7 +109,9 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
           <View style={styles.activityDetails}>
             <Text style={styles.activityName}>{activity?.name || 'Unknown Activity'}</Text>
             {activeTracking.goalId && (
-              <Text style={styles.goalLinked}>Goal progress tracking</Text>
+              <Text style={styles.goalLinked}>
+                {goals.find((goal) => goal.id === activeTracking.goalId)?.name ?? 'Goal progress tracking'}
+              </Text>
             )}
           </View>
         </View>

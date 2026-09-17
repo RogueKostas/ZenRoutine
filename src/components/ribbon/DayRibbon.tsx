@@ -1,6 +1,15 @@
 import React, { useMemo, useState } from 'react';
-import { LayoutChangeEvent, Pressable, StyleSheet, Text, View, ViewStyle } from 'react-native';
+import {
+  GestureResponderEvent,
+  LayoutChangeEvent,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+  ViewStyle,
+} from 'react-native';
 import { useTheme } from '../../theme';
+import { getDayName } from '../../core/utils/time';
 import type { ActivityType, DayOfWeek, RoutineBlock } from '../../core/types';
 import {
   LABEL_TIER_HEIGHT,
@@ -18,8 +27,11 @@ import {
   layoutRibbonOverlays,
   layoutRibbonSegments,
   layoutRibbonTicks,
+  minutesAtFraction,
   normalizeRibbonWindow,
   nowMarkerFraction,
+  pressLocationX,
+  ribbonSegmentAccessibilityLabel,
 } from './ribbonLayout';
 
 export interface DayRibbonProps {
@@ -39,6 +51,11 @@ export interface DayRibbonProps {
   compact?: boolean;
   /** Tap to edit (p36). Without it the segments are not pressable. */
   onSegmentPress?: (block: RoutineBlock) => void;
+  /**
+   * Tap on time with no segment (p13), with the tapped time in (unrounded) minutes from midnight.
+   * Pointer only: keyboard users need a separate "add" control.
+   */
+  onEmptyPress?: (minutes: number) => void;
   /** Spans drawn over the segments, e.g. grey untracked time (#54). */
   overlays?: readonly RibbonOverlay[];
   /** Bar thickness in pixels. */
@@ -64,6 +81,7 @@ export function DayRibbon({
   labelFor,
   compact = false,
   onSegmentPress,
+  onEmptyPress,
   overlays,
   height,
   style,
@@ -111,6 +129,13 @@ export function DayRibbon({
 
   const pct = (fraction: number) => `${fraction * 100}%` as const;
 
+  const handleEmptyPress = (event: GestureResponderEvent) => {
+    if (!onEmptyPress || width === 0) return;
+    const x = pressLocationX(event.nativeEvent as { locationX?: unknown; offsetX?: unknown });
+    if (x === null) return;
+    onEmptyPress(minutesAtFraction(x / width, visibleWindow));
+  };
+
   return (
     <View
       style={[{ height: geometry.total }, styles.container, style]}
@@ -122,45 +147,60 @@ export function DayRibbon({
         `Day ribbon, ${formatRibbonEdgeLabel(visibleWindow.startMinutes)} to ${formatRibbonEdgeLabel(visibleWindow.endMinutes)}, ${segments.length} ${segments.length === 1 ? 'activity' : 'activities'}`
       }
     >
-      {/* Labels and leader lines (p24) */}
-      {placedLabels.map((label) => {
-        const labelTop =
-          geometry.markerHeadroom + (LABEL_TIERS - 1 - label.tier) * LABEL_TIER_HEIGHT;
-        const leaderTop = labelTop + LABEL_TIER_HEIGHT - 1;
-        return (
-          <React.Fragment key={label.key}>
-            <View
-              style={[
-                styles.leader,
-                {
-                  left: label.anchorPx,
-                  top: leaderTop,
-                  height: geometry.barTop - leaderTop,
-                  backgroundColor: colors.textMuted,
-                },
-              ]}
-            />
-            <Text
-              numberOfLines={1}
-              ellipsizeMode="tail"
-              style={[
-                styles.label,
-                {
-                  left: label.leftPx,
-                  width: label.widthPx,
-                  top: labelTop,
-                  color: colors.textSecondary,
-                },
-              ]}
-            >
-              {label.text}
-            </Text>
-          </React.Fragment>
-        );
-      })}
+      {/* Empty time: the whole ribbon's height is the target; segments sit above it. Childless, so
+          on web the click's offsetX is measured from this element's own left edge. */}
+      {onEmptyPress && (
+        <Pressable
+          testID="ribbon-empty-time"
+          focusable={false}
+          accessible={false}
+          onPress={handleEmptyPress}
+          style={StyleSheet.absoluteFill}
+        />
+      )}
+
+      {/* Labels and leader lines (p24). Taps pass through to the empty-time target. */}
+      <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+        {placedLabels.map((label) => {
+          const labelTop =
+            geometry.markerHeadroom + (LABEL_TIERS - 1 - label.tier) * LABEL_TIER_HEIGHT;
+          const leaderTop = labelTop + LABEL_TIER_HEIGHT - 1;
+          return (
+            <React.Fragment key={label.key}>
+              <View
+                style={[
+                  styles.leader,
+                  {
+                    left: label.anchorPx,
+                    top: leaderTop,
+                    height: geometry.barTop - leaderTop,
+                    backgroundColor: colors.textMuted,
+                  },
+                ]}
+              />
+              <Text
+                numberOfLines={1}
+                ellipsizeMode="tail"
+                style={[
+                  styles.label,
+                  {
+                    left: label.leftPx,
+                    width: label.widthPx,
+                    top: labelTop,
+                    color: colors.textSecondary,
+                  },
+                ]}
+              >
+                {label.text}
+              </Text>
+            </React.Fragment>
+          );
+        })}
+      </View>
 
       {/* The bar: dotted track for empty time (p13), then segments, then overlays */}
       <View
+        pointerEvents="box-none"
         style={[
           styles.bar,
           {
@@ -171,6 +211,7 @@ export function DayRibbon({
         ]}
       >
         <View
+          pointerEvents="none"
           style={[
             styles.track,
             { top: geometry.bar / 2 - 1, borderColor: colors.textMuted },
@@ -194,7 +235,12 @@ export function DayRibbon({
               style={segmentStyle}
               onPress={() => onSegmentPress(segment.block)}
               accessibilityRole="button"
-              accessibilityLabel={`Edit ${nameFor(segment)}, ${formatRibbonEdgeLabel(segment.block.startMinutes)} to ${formatRibbonEdgeLabel(segment.block.endMinutes)}`}
+              accessibilityLabel={ribbonSegmentAccessibilityLabel(
+                nameFor(segment),
+                segment.block,
+                day === undefined ? undefined : getDayName(day)
+              )}
+              accessibilityHint="Opens the edit box for this activity"
             />
           );
         })}
@@ -216,7 +262,7 @@ export function DayRibbon({
 
       {/* Hour ticks and the window's end labels (p24) */}
       {!compact && (
-        <>
+        <View pointerEvents="none" style={StyleSheet.absoluteFill}>
           {ticks.map((tick) => (
             <React.Fragment key={tick.minutes}>
               <View
@@ -263,7 +309,7 @@ export function DayRibbon({
           >
             {formatRibbonEdgeLabel(visibleWindow.endMinutes)}
           </Text>
-        </>
+        </View>
       )}
 
       {/* "You are here (in time)": green lollipop (p73–p77) */}
