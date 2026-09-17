@@ -9,9 +9,11 @@ import {
   useActiveGoals,
   useActivityTypes,
   useGoals,
+  useRoutines,
   useTrackingEntries,
   useAppStore,
 } from '../store';
+import { isFirstRunEmpty } from '../store/sampleData';
 import {
   formatDuration,
   getDayName,
@@ -29,8 +31,11 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const goals = useGoals();
   const activityTypes = useActivityTypes();
   const trackingEntries = useTrackingEntries();
+  const routines = useRoutines();
   const startTracking = useAppStore((state) => state.startTracking);
+  const addSampleData = useAppStore((state) => state._addSampleData);
   const [trackingStatus, setTrackingStatus] = useState('');
+  const showExampleDataOffer = isFirstRunEmpty({ goals, routines, trackingEntries });
 
   const today = new Date();
   const dayOfWeek = today.getDay();
@@ -85,6 +90,28 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             {getDayName(dayOfWeek)}, {today.toLocaleDateString('en-US', { month: 'long', day: 'numeric' })}
           </Text>
         </View>
+
+        {showExampleDataOffer && (
+          <View style={[styles.exampleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.exampleTitle, { color: colors.text }]}>Nothing here yet</Text>
+            <Text style={[styles.exampleText, { color: colors.textSecondary }]}>
+              Load an example week with goals and a few weeks of tracking to see how ZenRoutine works.
+            </Text>
+            <TouchableOpacity
+              style={[styles.exampleButton, { backgroundColor: colors.primary }]}
+              onPress={() => {
+                addSampleData();
+              }}
+              accessibilityRole="button"
+              accessibilityLabel="Try it with example data"
+            >
+              <Text style={styles.exampleButtonText}>Try it with example data</Text>
+            </TouchableOpacity>
+            <Text style={[styles.exampleHint, { color: colors.textMuted }]}>
+              Settings → Reset All Data removes it again.
+            </Text>
+          </View>
+        )}
 
         {/* Active Tracking Display */}
         {activeTracking ? (
@@ -344,6 +371,37 @@ const styles = StyleSheet.create({
   date: {
     fontSize: 16,
     marginTop: spacing.xs,
+  },
+  exampleCard: {
+    marginHorizontal: spacing.lg,
+    marginBottom: spacing.lg,
+    padding: spacing.md,
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    gap: spacing.sm,
+  },
+  exampleTitle: {
+    fontSize: 16,
+    fontWeight: '600',
+  },
+  exampleText: {
+    fontSize: 14,
+    lineHeight: 20,
+  },
+  exampleButton: {
+    alignSelf: 'flex-start',
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+  },
+  exampleButtonText: {
+    fontSize: 15,
+    color: '#fff',
+    fontWeight: '600',
+  },
+  exampleHint: {
+    fontSize: 12,
   },
   trackingSection: {
     paddingHorizontal: spacing.lg,
