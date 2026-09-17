@@ -86,6 +86,65 @@ export function formatGoalTimeLabel(loggedMinutes: number, estimatedMinutes?: nu
   return `${logged} / ${formatDuration(estimatedMinutes)}`;
 }
 
+export type ParsedDuration = { minutes: number } | { error: string };
+
+export const MAX_DURATION_HOURS = 10000;
+
+const DURATION_NUMBER = String.raw`(\d+(?:\.\d+)?|\.\d+)`;
+const HOUR_UNIT = '(?:hours|hour|hrs|hr|h)';
+const MINUTE_UNIT = '(?:minutes|minute|mins|min|m)';
+const MINUTES_ONLY = new RegExp(`^${DURATION_NUMBER}\\s*${MINUTE_UNIT}$`);
+const HOURS_AND_MINUTES = new RegExp(
+  `^${DURATION_NUMBER}\\s*${HOUR_UNIT}(?:\\s*(\\d+)\\s*${MINUTE_UNIT}?)?$`
+);
+const BARE_HOURS = new RegExp(`^${DURATION_NUMBER}$`);
+const CLOCK = /^(\d+):(\d{2})$/;
+
+/**
+ * Parse a typed duration such as "12h", "90 min", "1h 30m" or "1:30" into minutes.
+ * A bare number means hours, as in the 2019 design ("10" reads back as "10hrs").
+ */
+export function parseDuration(input: string): ParsedDuration {
+  const text = input.trim().toLowerCase();
+  if (!text) return { error: 'Enter a duration, e.g. 12h or 90m.' };
+  if (text.startsWith('-')) return { error: 'Duration must be greater than zero.' };
+
+  let hours = 0;
+  let minutes = 0;
+  let match: RegExpExecArray | null;
+  if ((match = CLOCK.exec(text))) {
+    hours = Number(match[1]);
+    minutes = Number(match[2]);
+  } else if ((match = MINUTES_ONLY.exec(text))) {
+    minutes = Number(match[1]);
+  } else if ((match = HOURS_AND_MINUTES.exec(text))) {
+    hours = Number(match[1]);
+    if (match[2] !== undefined) {
+      if (!Number.isInteger(hours)) {
+        return { error: 'Use whole hours when adding minutes, e.g. 1h30m.' };
+      }
+      minutes = Number(match[2]);
+    }
+  } else if ((match = BARE_HOURS.exec(text))) {
+    hours = Number(match[1]);
+  } else {
+    return { error: `Couldn't read "${input.trim()}". Try 12h, 90m or 1h30.` };
+  }
+
+  // Group 2 is the minutes that follow hours, in both "1h30" and "1:30".
+  if (match[2] !== undefined && minutes >= 60) {
+    return { error: 'Minutes after the hours must be under 60.' };
+  }
+  // Fractional input ("1.01h", "90.5m") rounds to the nearest whole minute, because goals
+  // store whole minutes. Anything that rounds to zero is rejected below.
+  const total = Math.round(hours * 60 + minutes);
+  if (total <= 0) return { error: 'Duration must be greater than zero.' };
+  if (total > MAX_DURATION_HOURS * 60) {
+    return { error: `Duration can't be more than ${MAX_DURATION_HOURS.toLocaleString('en-US')} hours.` };
+  }
+  return { minutes: total };
+}
+
 /**
  * Get day name from day of week number
  */
@@ -203,4 +262,39 @@ export function getMonthGridDates(year: number, month: number, weekStartsOn: Wee
   return Array.from({ length: 42 }, (_, index) =>
     new Date(first.getFullYear(), first.getMonth(), first.getDate() + index, 12)
   );
+}
+
+// --- Typed time-of-day input (#45) ---
+
+export type ParsedTimeOfDay = { minutes: number } | { error: string };
+
+const TIME_OF_DAY_PATTERN = /^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a|p)?$/;
+const TIME_OF_DAY_HINT = 'Enter a time like 7:15am or 19:30';
+
+/**
+ * Parse a typed time of day into minutes from midnight (0–1439).
+ * Accepts `7`, `7am`, `7.15am`, `7:15`, `07:15`, `19:30`, `7:30pm`, `12am` (midnight),
+ * `12pm` / `noon` (noon) and `midnight`. Any minute is allowed, not only 15-minute steps.
+ */
+export function parseTimeOfDay(input: string): ParsedTimeOfDay {
+  const text = input.trim().toLowerCase();
+  if (text === 'noon') return { minutes: 720 };
+  if (text === 'midnight') return { minutes: 0 };
+  const match = TIME_OF_DAY_PATTERN.exec(text);
+  if (!match) return { error: TIME_OF_DAY_HINT };
+
+  let hours = Number(match[1]);
+  const minutes = match[2] === undefined ? 0 : Number(match[2]);
+  const meridiem = match[3];
+  if (minutes > 59) return { error: 'Minutes must be 00–59' };
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return { error: 'With am/pm, the hour must be 1–12' };
+    const isPm = meridiem.startsWith('p');
+    if (hours === 12) hours = isPm ? 12 : 0;
+    else if (isPm) hours += 12;
+  } else if (hours > 23) {
+    return { error: 'Hours must be 0–23' };
+  }
+  return { minutes: hours * 60 + minutes };
 }
