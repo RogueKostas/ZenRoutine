@@ -164,3 +164,38 @@ export function getTrackingEntryDurationMinutes(
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
   return Math.max(0, Math.round((end - start) / 60000));
 }
+
+// --- Typed time-of-day input (#45) ---
+
+export type ParsedTimeOfDay = { minutes: number } | { error: string };
+
+const TIME_OF_DAY_PATTERN = /^(\d{1,2})(?:[:.](\d{2}))?\s*(am|pm|a|p)?$/;
+const TIME_OF_DAY_HINT = 'Enter a time like 7:15am or 19:30';
+
+/**
+ * Parse a typed time of day into minutes from midnight (0–1439).
+ * Accepts `7`, `7am`, `7.15am`, `7:15`, `07:15`, `19:30`, `7:30pm`, `12am` (midnight),
+ * `12pm` / `noon` (noon) and `midnight`. Any minute is allowed, not only 15-minute steps.
+ */
+export function parseTimeOfDay(input: string): ParsedTimeOfDay {
+  const text = input.trim().toLowerCase();
+  if (text === 'noon') return { minutes: 720 };
+  if (text === 'midnight') return { minutes: 0 };
+  const match = TIME_OF_DAY_PATTERN.exec(text);
+  if (!match) return { error: TIME_OF_DAY_HINT };
+
+  let hours = Number(match[1]);
+  const minutes = match[2] === undefined ? 0 : Number(match[2]);
+  const meridiem = match[3];
+  if (minutes > 59) return { error: 'Minutes must be 00–59' };
+
+  if (meridiem) {
+    if (hours < 1 || hours > 12) return { error: 'With am/pm, the hour must be 1–12' };
+    const isPm = meridiem.startsWith('p');
+    if (hours === 12) hours = isPm ? 12 : 0;
+    else if (isPm) hours += 12;
+  } else if (hours > 23) {
+    return { error: 'Hours must be 0–23' };
+  }
+  return { minutes: hours * 60 + minutes };
+}

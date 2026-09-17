@@ -14,6 +14,7 @@ import { getDayName, formatDuration } from '../../core/utils/time';
 import { useActivityTypes, useGoals, useAppStore } from '../../store';
 import { validateRoutineBlock, findOverlappingBlocks } from '../../core/engine/validation';
 import { TimeRangePicker } from './TimePicker';
+import { findNextAvailableSlot, timeDraftMessage, type TimeDrafts } from './timeFields';
 import { ActivityPicker } from '../activity/ActivityPicker';
 import { Button } from '../common/Button';
 import { useDialog } from '../common/Dialog';
@@ -49,6 +50,7 @@ export function BlockEditor({
   const [endTime, setEndTime] = useState(600); // 10:00 AM
   const [showGoalPicker, setShowGoalPicker] = useState(false);
   const [errors, setErrors] = useState<BlockEditorErrors>({});
+  const [timeDrafts, setTimeDrafts] = useState<TimeDrafts>({});
   const dialog = useDialog();
 
   const isEditing = !!block;
@@ -57,6 +59,7 @@ export function BlockEditor({
   useEffect(() => {
     if (visible) {
       setErrors({});
+      setTimeDrafts({});
       if (block) {
         setSelectedActivityId(block.activityTypeId);
         setSelectedGoalId(block.goalId);
@@ -77,6 +80,7 @@ export function BlockEditor({
   const duration = endTime >= startTime
     ? endTime - startTime
     : (1440 - startTime) + endTime;
+  const timeError = timeDraftMessage(timeDrafts) ?? errors.time;
 
   // Filter goals by selected activity type
   const availableGoals = selectedActivityId
@@ -84,6 +88,11 @@ export function BlockEditor({
     : [];
 
   const handleSave = () => {
+    const unparsedTime = timeDraftMessage(timeDrafts, true);
+    if (unparsedTime) {
+      setErrors({ time: unparsedTime });
+      return;
+    }
     if (!selectedActivityId) {
       setErrors({ activity: 'Please select an activity type' });
       return;
@@ -210,15 +219,18 @@ export function BlockEditor({
           <View style={styles.section}>
             <Text style={styles.sectionTitle}>Time</Text>
             <TimeRangePicker
+              key={visible ? 'open' : 'closed'}
               startTime={startTime}
               endTime={endTime}
               onStartTimeChange={handleStartTimeChange}
               onEndTimeChange={handleEndTimeChange}
+              onStartDraftChange={(start) => setTimeDrafts((prev) => ({ ...prev, start }))}
+              onEndDraftChange={(end) => setTimeDrafts((prev) => ({ ...prev, end }))}
               minuteInterval={15}
             />
-            {errors.time && (
+            {timeError && (
               <Text accessibilityLiveRegion="polite" style={styles.fieldError}>
-                {errors.time}
+                {timeError}
               </Text>
             )}
           </View>
@@ -348,38 +360,6 @@ export function BlockEditor({
       </SafeAreaView>
     </Modal>
   );
-}
-
-// Helper function to find next available time slot
-function findNextAvailableSlot(
-  blocks: RoutineBlock[],
-  dayOfWeek: DayOfWeek
-): { start: number; end: number } {
-  const dayBlocks = blocks
-    .filter((b) => b.dayOfWeek === dayOfWeek)
-    .sort((a, b) => a.startMinutes - b.startMinutes);
-
-  if (dayBlocks.length === 0) {
-    return { start: 540, end: 600 }; // Default 9:00 - 10:00
-  }
-
-  // Try to find a gap
-  let lastEnd = 0;
-  for (const block of dayBlocks) {
-    if (block.startMinutes - lastEnd >= 60) {
-      // Found a gap of at least 1 hour
-      return { start: lastEnd, end: Math.min(lastEnd + 60, block.startMinutes) };
-    }
-    lastEnd = block.endMinutes;
-  }
-
-  // No gap found, add after the last block
-  if (lastEnd < 1380) {
-    return { start: lastEnd, end: Math.min(lastEnd + 60, 1440) };
-  }
-
-  // Day is full, default to morning
-  return { start: 540, end: 600 };
 }
 
 const styles = StyleSheet.create({
