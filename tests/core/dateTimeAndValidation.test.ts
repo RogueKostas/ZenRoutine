@@ -7,9 +7,15 @@ import {
 } from '../../src/core/engine/validation';
 import type { RoutineBlock } from '../../src/core/types';
 import {
+  DEFAULT_WEEK_STARTS_ON,
   addDaysToDateKey,
   differenceInCalendarDays,
+  getDayName,
   getLocalWeekStartDateKey,
+  getMonthGridDates,
+  getWeekStart,
+  getWeekdayColumn,
+  orderedWeekDays,
   parseLocalDateKey,
   toLocalDateKey,
 } from '../../src/core/utils/time';
@@ -54,8 +60,86 @@ describe('local calendar utilities', () => {
     }
   });
 
-  it('returns the local Sunday week key without a UTC conversion', () => {
-    expect(getLocalWeekStartDateKey(new Date(2026, 2, 4, 0, 30))).toBe('2026-03-01');
+  it('returns the local week key without a UTC conversion', () => {
+    // Wednesday 4 March 2026, half past midnight.
+    expect(getLocalWeekStartDateKey(new Date(2026, 2, 4, 0, 30), 0)).toBe('2026-03-01');
+    expect(getLocalWeekStartDateKey(new Date(2026, 2, 4, 0, 30), 1)).toBe('2026-03-02');
+  });
+});
+
+describe('week start preference (#44)', () => {
+  // Built inside each test, not at module load: the file's beforeAll switches TZ to
+  // Europe/London, and a Date constructed before that would be read an hour later on a UTC host.
+  const lateSunday = () => new Date(2026, 8, 20, 23, 30); // Sunday 20 September 2026, late evening
+  const earlyMonday = () => new Date(2026, 8, 21, 0, 15); // the next morning
+
+  it('defaults to Monday, as the 2019 design draws the week', () => {
+    expect(DEFAULT_WEEK_STARTS_ON).toBe(1);
+    expect(getLocalWeekStartDateKey(lateSunday())).toBe('2026-09-14');
+  });
+
+  it('puts a Sunday at the end of the Monday week and the start of its own Sunday week', () => {
+    const sunday = lateSunday();
+    const monday = earlyMonday();
+    expect(getLocalWeekStartDateKey(sunday, 1)).toBe('2026-09-14');
+    expect(getLocalWeekStartDateKey(sunday, 0)).toBe('2026-09-20');
+    // Crossing Sunday -> Monday opens a new week only under Monday-first.
+    expect(getLocalWeekStartDateKey(monday, 1)).toBe('2026-09-21');
+    expect(getLocalWeekStartDateKey(monday, 0)).toBe('2026-09-20');
+  });
+
+  it('returns local noon on the first day, across a DST change', () => {
+    // UK clocks go back on Sunday 25 October 2026.
+    const start = getWeekStart(new Date(2026, 9, 25, 1, 30), 1);
+    expect(toLocalDateKey(start)).toBe('2026-10-19');
+    expect(start.getHours()).toBe(12);
+    expect(toLocalDateKey(getWeekStart(new Date(2026, 9, 25, 1, 30), 0))).toBe('2026-10-25');
+  });
+
+  it('orders the week days for display without renumbering them', () => {
+    expect(orderedWeekDays(1)).toEqual([1, 2, 3, 4, 5, 6, 0]);
+    expect(orderedWeekDays(0)).toEqual([0, 1, 2, 3, 4, 5, 6]);
+    expect(orderedWeekDays(1).map((day) => getDayName(day, true))).toEqual(
+      ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun']
+    );
+  });
+
+  it('places a stored day in its display column', () => {
+    expect(getWeekdayColumn(0, 1)).toBe(6);
+    expect(getWeekdayColumn(1, 1)).toBe(0);
+    expect(getWeekdayColumn(0, 0)).toBe(0);
+    expect(getWeekdayColumn(6, 0)).toBe(6);
+  });
+
+  it('lays out a month grid whose columns follow the preference', () => {
+    // 1 September 2026 is a Tuesday.
+    const mondayGrid = getMonthGridDates(2026, 8, 1).map((date) => toLocalDateKey(date));
+    expect(mondayGrid).toHaveLength(42);
+    expect(mondayGrid[0]).toBe('2026-08-31');
+    expect(mondayGrid[1]).toBe('2026-09-01');
+    expect(mondayGrid[41]).toBe('2026-10-11');
+
+    const sundayGrid = getMonthGridDates(2026, 8, 0).map((date) => toLocalDateKey(date));
+    expect(sundayGrid[0]).toBe('2026-08-30');
+    expect(sundayGrid[2]).toBe('2026-09-01');
+
+    // Today (Thursday 17 September 2026) sits in the Thursday column under both settings.
+    const today = '2026-09-17';
+    expect(mondayGrid.indexOf(today) % 7).toBe(3);
+    expect(sundayGrid.indexOf(today) % 7).toBe(4);
+    // And every column holds one weekday only.
+    for (const [weekStartsOn, grid] of [[1, mondayGrid], [0, sundayGrid]] as const) {
+      grid.forEach((key, index) => {
+        expect(getWeekdayColumn(parseLocalDateKey(key).getDay(), weekStartsOn)).toBe(index % 7);
+      });
+    }
+  });
+
+  it('starts the grid on the 1st when the month begins on the first weekday', () => {
+    // 1 June 2026 is a Monday; 1 November 2026 is a Sunday.
+    expect(toLocalDateKey(getMonthGridDates(2026, 5, 1)[0])).toBe('2026-06-01');
+    expect(toLocalDateKey(getMonthGridDates(2026, 10, 0)[0])).toBe('2026-11-01');
+    expect(toLocalDateKey(getMonthGridDates(2026, 10, 1)[0])).toBe('2026-10-26');
   });
 });
 

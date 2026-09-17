@@ -8,6 +8,7 @@ export {
   useTrackingEntries,
   useCurrentTracking,
   useHasCompletedOnboarding,
+  useWeekStartsOn,
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
   getRepairedTrackingEntries,

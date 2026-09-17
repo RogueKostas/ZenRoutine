@@ -12,10 +12,11 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useAppStore, useActivityTypes } from '../store';
+import { useAppStore, useActivityTypes, useWeekStartsOn } from '../store';
 import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { ThemeMode } from '../theme';
+import type { WeekStartsOn } from '../core/types';
 
 interface SettingItemProps {
   title: string;
@@ -73,6 +74,12 @@ const THEME_OPTIONS: { label: string; value: ThemeMode }[] = [
   { label: 'Dark', value: 'dark' },
 ];
 
+// The dialog chooses among strings, so each option carries a string key beside its stored value.
+const WEEK_START_OPTIONS: { key: 'monday' | 'sunday'; label: string; value: WeekStartsOn }[] = [
+  { key: 'monday', label: 'Monday', value: 1 },
+  { key: 'sunday', label: 'Sunday', value: 0 },
+];
+
 export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   const [backupMode, setBackupMode] = useState<'export' | 'import' | null>(null);
   const [backupText, setBackupText] = useState('');
@@ -81,7 +88,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
 
   const { colors, mode, setMode, isDark } = useTheme();
   const activityTypes = useActivityTypes();
-  const { resetState, exportData, importData, _addSampleData } = useAppStore();
+  const { resetState, exportData, importData, _addSampleData, setWeekStartsOn } = useAppStore();
+  const weekStartsOn = useWeekStartsOn();
   const dialog = useDialog();
 
   const handleThemeChange = async () => {
@@ -96,6 +104,23 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
     });
     if (choice) setMode(choice);
   };
+
+  const handleWeekStartChange = async () => {
+    const choice = await dialog.choose({
+      title: 'Week starts on',
+      message: 'Choose the first day of your week',
+      options: WEEK_START_OPTIONS.map((option) => ({
+        label: option.label,
+        value: option.key,
+        selected: weekStartsOn === option.value,
+      })),
+    });
+    const chosen = WEEK_START_OPTIONS.find((option) => option.key === choice);
+    if (chosen) setWeekStartsOn(chosen.value);
+  };
+
+  const weekStartLabel =
+    WEEK_START_OPTIONS.find((option) => option.value === weekStartsOn)?.label ?? 'Monday';
 
   const getThemeLabel = () => {
     return THEME_OPTIONS.find((o) => o.value === mode)?.label || 'System';
@@ -216,6 +241,14 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
               type="select"
               rightText={getThemeLabel()}
               onPress={handleThemeChange}
+            />
+            <View style={[styles.separator, { backgroundColor: colors.border }]} />
+            <SettingItem
+              title="Week starts on"
+              subtitle="First day of the Routine week and the calendar"
+              type="select"
+              rightText={weekStartLabel}
+              onPress={handleWeekStartChange}
             />
           </View>
         </View>

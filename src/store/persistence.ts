@@ -5,12 +5,14 @@ import type {
   Goal,
   GoalPriority,
   GoalStatus,
+  Preferences,
   Routine,
   RoutineBlock,
   TrackingEntry,
   TrackingSource,
 } from '../core/types';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
+import { DEFAULT_WEEK_STARTS_ON } from '../core/utils/time';
 
 export const APP_STORAGE_KEY = 'zenroutine-storage';
 /**
@@ -19,7 +21,19 @@ export const APP_STORAGE_KEY = 'zenroutine-storage';
  * anything quarantined has to be copied somewhere the store does not own before that happens.
  */
 export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
-export const CURRENT_SCHEMA_VERSION = 4;
+/**
+ * v5 (#44) added `preferences`. v4 was the first version written under the strict invariants
+ * below; see STRICT_SCHEMA_VERSION.
+ */
+export const CURRENT_SCHEMA_VERSION = 5;
+/**
+ * The first schema version whose blobs were written by the strict store, and so the version the
+ * lenient legacy repairs stop at. Deliberately NOT `CURRENT_SCHEMA_VERSION`: bumping the schema
+ * for an additive field must not start silently rewriting records in a v4 blob that was already
+ * valid. Every `version < STRICT_SCHEMA_VERSION` gate below is a repair gate; additive migrations
+ * compare against their own version.
+ */
+export const STRICT_SCHEMA_VERSION = 4;
 export const BACKUP_FORMAT = 'zenroutine-backup';
 export const BACKUP_FORMAT_VERSION = 1;
 
@@ -204,6 +218,10 @@ export interface MigrationOptions {
   repairs?: RepairedTrackingEntry[];
 }
 
+export function createDefaultPreferences(): Preferences {
+  return { weekStartsOn: DEFAULT_WEEK_STARTS_ON };
+}
+
 export function createInitialState(): AppState {
   return {
     activityTypes: createDefaultActivityTypes(),
@@ -213,6 +231,7 @@ export function createInitialState(): AppState {
     activeRoutineId: null,
     currentTrackingEntryId: null,
     hasCompletedOnboarding: false,
+    preferences: createDefaultPreferences(),
     lastSyncedAt: undefined,
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
@@ -227,6 +246,7 @@ export function selectPersistedAppState(state: AppState): AppState {
     activeRoutineId: state.activeRoutineId,
     currentTrackingEntryId: state.currentTrackingEntryId,
     hasCompletedOnboarding: state.hasCompletedOnboarding,
+    preferences: state.preferences,
     lastSyncedAt: state.lastSyncedAt,
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
@@ -452,6 +472,25 @@ function readCapacityChangedAt(
   return Object.keys(capacityChangedAt).length > 0 ? capacityChangedAt : undefined;
 }
 
+/**
+ * Preferences arrived in v5 (#44). A blob or backup written before that has none and gets the
+ * defaults, which is the whole v4 -> v5 migration. At v5 a missing or unreadable preference also
+ * falls back to its default, field by field, rather than failing hydration: like
+ * `capacityChangedAt`, a preference has a defined fallback and is never worth locking the user
+ * out of their own data. Unknown keys are dropped, so a future field is opted in here deliberately.
+ */
+function readPreferences(record: UnknownRecord): Preferences {
+  const defaults = createDefaultPreferences();
+  const value = record.preferences;
+  if (!isRecord(value)) return defaults;
+  return {
+    weekStartsOn:
+      value.weekStartsOn === 0 || value.weekStartsOn === 1
+        ? value.weekStartsOn
+        : defaults.weekStartsOn,
+  };
+}
+
 function parseRoutine(value: unknown): Routine {
   const record = readRecord(value, 'routine');
   return {
@@ -584,7 +623,7 @@ export function migratePersistedState(
     (value) => parseActivityType(value, version < 2)
   );
   const goals = readArray(record, 'goals').map(
-    (value) => parseGoal(value, version < 3, version < CURRENT_SCHEMA_VERSION)
+    (value) => parseGoal(value, version < 3, version < STRICT_SCHEMA_VERSION)
   );
   let routines = readArray(record, 'routines').map(parseRoutine);
   // A single unreadable tracking entry must not be able to take the whole store down with it.
@@ -601,7 +640,7 @@ export function migratePersistedState(
   let trackingEntries: TrackingEntry[] = readArray(record, 'trackingEntries')
     .flatMap<TrackingEntry>((value, index) => {
       try {
-        const entry = parseTrackingEntry(value, version < CURRENT_SCHEMA_VERSION);
+        const entry = parseTrackingEntry(value, version < STRICT_SCHEMA_VERSION);
         entryOrigins.set(entry.id, { index, record: value });
         return [entry];
       } catch (error) {
@@ -700,7 +739,7 @@ export function migratePersistedState(
     return !goal || goal.activityTypeId !== entry.activityTypeId;
   };
   const hasInvalidBlockGoal = routines.some((routine) => routine.blocks.some(blockGoalIsInvalid));
-  if (version < CURRENT_SCHEMA_VERSION) {
+  if (version < STRICT_SCHEMA_VERSION) {
     if (hasInvalidBlockGoal) {
       routines = routines.map((routine) => ({
         ...routine,
@@ -739,7 +778,7 @@ export function migratePersistedState(
       block.activityTypeId !== entry.activityTypeId ||
       Boolean(block.goalId && block.goalId !== entry.goalId);
   };
-  if (version < CURRENT_SCHEMA_VERSION) {
+  if (version < STRICT_SCHEMA_VERSION) {
     if (trackingEntries.some(entryRoutineBlockIsInvalid)) {
       trackingEntries = trackingEntries.map((entry) =>
         entryRoutineBlockIsInvalid(entry)
@@ -796,7 +835,7 @@ export function migratePersistedState(
   }
   const hasInvalidActiveRoutine = activeRoutineId !== null && !routineIds.has(activeRoutineId);
   const openEntries = trackingEntries.filter((entry) => entry.endTime === undefined);
-  if (version < CURRENT_SCHEMA_VERSION) {
+  if (version < STRICT_SCHEMA_VERSION) {
     if (hasInvalidActiveRoutine) activeRoutineId = null;
     const selectedOpenEntry = openEntries.find(
       (entry) => entry.id === currentTrackingEntryId
@@ -858,7 +897,7 @@ export function migratePersistedState(
 
   const hasCompletedOnboarding = typeof record.hasCompletedOnboarding === 'boolean'
     ? record.hasCompletedOnboarding
-    : version < CURRENT_SCHEMA_VERSION
+    : version < STRICT_SCHEMA_VERSION
       ? false
       : (() => {
           throw new Error('Invalid hasCompletedOnboarding: expected a boolean');
@@ -872,6 +911,7 @@ export function migratePersistedState(
     activeRoutineId,
     currentTrackingEntryId,
     hasCompletedOnboarding,
+    preferences: readPreferences(record),
     lastSyncedAt: readOptionalIsoDateTime(record, 'lastSyncedAt'),
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };

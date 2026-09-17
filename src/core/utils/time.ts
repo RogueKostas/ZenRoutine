@@ -1,4 +1,4 @@
-import type { RoutineBlock, TrackingEntry } from '../types';
+import type { DayOfWeek, RoutineBlock, TrackingEntry, WeekStartsOn } from '../types';
 
 const DATE_KEY_PATTERN = /^(\d{4})-(\d{2})-(\d{2})$/;
 
@@ -201,10 +201,12 @@ export function differenceInCalendarDays(fromDateKey: string, toDateKey: string)
   return Math.round((readUtcDay(toDateKey) - readUtcDay(fromDateKey)) / 86400000);
 }
 
-export function getLocalWeekStartDateKey(date: Date = new Date()): string {
-  const localDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
-  localDate.setDate(localDate.getDate() - localDate.getDay());
-  return toLocalDateKey(localDate);
+/** The first day of the local week containing `date`, as a YYYY-MM-DD key. */
+export function getLocalWeekStartDateKey(
+  date: Date = new Date(),
+  weekStartsOn: WeekStartsOn = DEFAULT_WEEK_STARTS_ON
+): string {
+  return toLocalDateKey(getWeekStart(date, weekStartsOn));
 }
 
 export function getRoutineBlockDurationMinutes(
@@ -222,6 +224,44 @@ export function getTrackingEntryDurationMinutes(
   const end = new Date(entry.endTime).getTime();
   if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
   return Math.max(0, Math.round((end - start) / 60000));
+}
+
+// ============================================
+// Week start (#44)
+//
+// Stored `DayOfWeek` keeps 0 = Sunday. These helpers are the only place the display order and
+// the week boundary are derived from the user's `weekStartsOn` preference.
+// ============================================
+
+/** Monday, per the 2019 design's `M T W T F S S` week strip (decision 5). */
+export const DEFAULT_WEEK_STARTS_ON: WeekStartsOn = 1;
+
+/** The seven stored day numbers in the order the week is displayed. */
+export function orderedWeekDays(weekStartsOn: WeekStartsOn): DayOfWeek[] {
+  return Array.from({ length: 7 }, (_, index) => ((weekStartsOn + index) % 7) as DayOfWeek);
+}
+
+/** Zero-based display column of a stored day number (0 = first day of the displayed week). */
+export function getWeekdayColumn(dayOfWeek: number, weekStartsOn: WeekStartsOn): number {
+  return (dayOfWeek - weekStartsOn + 7) % 7;
+}
+
+/** Local noon on the first day of the week containing `date`. Noon avoids DST edges. */
+export function getWeekStart(date: Date, weekStartsOn: WeekStartsOn): Date {
+  const start = new Date(date.getFullYear(), date.getMonth(), date.getDate(), 12);
+  start.setDate(start.getDate() - getWeekdayColumn(start.getDay(), weekStartsOn));
+  return start;
+}
+
+/**
+ * The 42 dates (six rows of seven) of a month grid whose columns follow `weekStartsOn`.
+ * Dates are local noon, so a date's column is always `getWeekdayColumn(date.getDay(), ...)`.
+ */
+export function getMonthGridDates(year: number, month: number, weekStartsOn: WeekStartsOn): Date[] {
+  const first = getWeekStart(new Date(year, month, 1, 12), weekStartsOn);
+  return Array.from({ length: 42 }, (_, index) =>
+    new Date(first.getFullYear(), first.getMonth(), first.getDate() + index, 12)
+  );
 }
 
 // --- Typed time-of-day input (#45) ---
