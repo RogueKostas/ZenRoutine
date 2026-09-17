@@ -1,3 +1,5 @@
+import { expect } from 'vitest';
+
 import type {
   ActivityType,
   AppState,
@@ -35,10 +37,35 @@ export function makeGoal(overrides: Partial<Goal> = {}): Goal {
     loggedMinutes: 0,
     activityTypeId: 'activity-focus',
     status: 'active',
-    priority: 3,
+    order: 0,
     createdAt: TEST_TIMESTAMP,
     updatedAt: TEST_TIMESTAMP,
     ...overrides,
+  };
+}
+
+/** A goal as a store before v7 (#49) held it: a 1–5 `priority` and no `order`. */
+export function makeLegacyGoal(
+  overrides: Partial<Omit<Goal, 'order'>> & { priority?: number } = {}
+): Omit<Goal, 'order'> & { priority: number } {
+  const { order: _order, ...goal } = makeGoal();
+  return { ...goal, priority: 3, ...overrides };
+}
+
+/**
+ * A stored pre-v7 state as the v7 store holds it (#49): goals rearranged into the list order
+ * `ids` gives, each with `order` in place of `priority`, and nothing else changed.
+ */
+export function withListOrder<S extends Record<string, unknown>>(
+  state: S,
+  ids: readonly string[]
+): S {
+  const goals = (state.goals as Record<string, unknown>[])
+    .map(({ priority: _priority, ...goal }) => goal);
+  expect(goals.map((goal) => goal.id).sort()).toEqual([...ids].sort());
+  return {
+    ...state,
+    goals: ids.map((id, order) => ({ ...goals.find((goal) => goal.id === id), order })),
   };
 }
 

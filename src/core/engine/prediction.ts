@@ -3,17 +3,26 @@ import {
   addDaysToDateKey,
   getRoutineBlockDurationMinutes,
   getTrackingEntryDurationMinutes,
+  parseLocalDateKey,
   toLocalDateKey,
 } from '../utils/time';
+import { forecastGoals, type ForecastPoint } from './forecast';
+import { sortGoalsByOrder } from './goalOrder';
 
 export interface PredictionResult {
   goalId: string;
+  /** The local day the goal's estimate runs out (an overnight block's start day). */
   predictedCompletionDate: string | null;
+  /** Minutes the forecast gives this goal in the seven days from now. */
   weeklyMinutesAllocated: number;
-  /** Every block of the goal's activity type: the pool that type's goals share. */
+  /** Every block of the goal's activity type: the pool that type's goals are worked from. */
   activityWeeklyCapacity: number;
+  /** `weeklyMinutesAllocated` as a fraction of `activityWeeklyCapacity`. */
   allocationShare: number;
+  /** The other active goals of this activity type, above or below this one. */
   competingGoalCount: number;
+  /** Active goals of this activity type above this one in the list: they are worked first. */
+  goalsAhead: number;
   remainingMinutes: number;
   weeksRemaining: number | null;
   confidenceLevel: 'low' | 'medium' | 'high';
@@ -27,11 +36,9 @@ interface ForecastEvidence {
   confidenceReason: string;
 }
 
-interface PendingGoal {
-  goal: Goal;
-  remainingMinutes: number;
-  weight: number;
-}
+const MINUTES_PER_WEEK = 7 * 24 * 60;
+/** The furthest the forecast walks, so an enormous estimate cannot stall a render. */
+const MAX_PREDICTION_HORIZON_DAYS = 100 * 366;
 
 /** Calculate the recurring weekly capacity for one activity type. */
 export function getWeeklyMinutesForActivityType(
@@ -41,10 +48,6 @@ export function getWeeklyMinutesForActivityType(
   return routine.blocks
     .filter((block) => block.activityTypeId === activityTypeId)
     .reduce((sum, block) => sum + getRoutineBlockDurationMinutes(block), 0);
-}
-
-function priorityWeight(goal: Goal): number {
-  return 6 - goal.priority;
 }
 
 /**
@@ -71,7 +74,7 @@ export function getCapacityChangedAt(routine: Routine, activityTypeId: string): 
  *
  * An entry with no `goalId` counts for every goal of the activity type. That is
  * a deliberate choice, not an oversight: every block of the type feeds the pool
- * the model divides among these goals by priority, so time tracked against the
+ * the model spends on these goals in list order, so time tracked against the
  * type without a goal is observing the pool the forecast spends. Unlinked
  * tracking is also the ordinary path, not an edge case — starting a scheduled
  * block starts an entry with no goal, since blocks never name one (#60), and the
@@ -138,27 +141,149 @@ function getForecastEvidence(
   };
 }
 
-function dateAfterWeeks(weeks: number): string {
-  return addDaysToDateKey(toLocalDateKey(), Math.ceil(weeks * 7));
+function remainingMinutesOf(goal: Goal): number {
+  return Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
 }
 
-/** Predict one goal in isolation. Product surfaces should use predictAllGoals. */
+/** Local wall-clock instant of a forecast point. `minutes` may pass 1440 in an overnight block. */
+function pointToDate(point: ForecastPoint): Date {
+  const at = parseLocalDateKey(point.date);
+  at.setHours(0, point.minutes, 0, 0);
+  return at;
+}
+
+/**
+ * Days the forecast has to walk for every goal to finish. Each whole week of the routine gives a
+ * type exactly its weekly capacity, so the whole queue of a type is done within
+ * `ceil(remaining / capacity)` weeks after the first, partly elapsed, one.
+ */
+function horizonDaysFor(goals: readonly Goal[], routine: Routine): number {
+  const remainingByType = new Map<string, number>();
+  for (const goal of goals) {
+    remainingByType.set(
+      goal.activityTypeId,
+      (remainingByType.get(goal.activityTypeId) ?? 0) + Math.ceil(remainingMinutesOf(goal))
+    );
+  }
+  let days = 0;
+  for (const [activityTypeId, remaining] of remainingByType) {
+    const capacity = getWeeklyMinutesForActivityType(routine, activityTypeId);
+    if (capacity <= 0) continue;
+    days = Math.max(days, (Math.ceil(remaining / capacity) + 1) * 7 + 1);
+  }
+  return Math.min(days, MAX_PREDICTION_HORIZON_DAYS);
+}
+
+/**
+ * Forecast active goals by walking the routine forward (`forecastGoals`, #52): each block's
+ * minutes go to the goals of its activity type in list order (#49), so the top goal of a type
+ * gets all of that type's time until it is done, then the next one does. The dates come from
+ * that walk; confidence and its evidence are this module's own and do not depend on the order.
+ *
+ * `goals` are put in list order by `Goal.order` before the walk. Results come back in the order
+ * the caller gave, active goals only.
+ */
+export function predictAllGoals(
+  goals: Goal[],
+  routine: Routine,
+  trackingHistory?: TrackingEntry[],
+  now: Date = new Date()
+): PredictionResult[] {
+  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const listOrder = sortGoalsByOrder(activeGoals);
+  const forecast = forecastGoals({
+    routine,
+    goals: listOrder,
+    from: now,
+    horizonDays: horizonDaysFor(listOrder, routine),
+  });
+
+  const weekEnd = addDaysToDateKey(toLocalDateKey(now), 7);
+  const minutesThisWeek = new Map<string, number>();
+  for (const allocation of forecast.allocations) {
+    if (allocation.date >= weekEnd) continue;
+    minutesThisWeek.set(
+      allocation.goalId,
+      (minutesThisWeek.get(allocation.goalId) ?? 0) +
+        allocation.endMinutes - allocation.startMinutes
+    );
+  }
+
+  const aheadCount = new Map<string, number>();
+  const typeCount = new Map<string, number>();
+  for (const goal of listOrder) {
+    const seen = typeCount.get(goal.activityTypeId) ?? 0;
+    aheadCount.set(goal.id, seen);
+    typeCount.set(goal.activityTypeId, seen + 1);
+  }
+
+  return activeGoals.map((goal) => {
+    const weeklyCapacity = getWeeklyMinutesForActivityType(routine, goal.activityTypeId);
+    const completion = forecast.completions[goal.id];
+    const weeklyMinutesAllocated = minutesThisWeek.get(goal.id) ?? 0;
+    return {
+      goalId: goal.id,
+      predictedCompletionDate: completion?.date ?? null,
+      weeklyMinutesAllocated,
+      activityWeeklyCapacity: weeklyCapacity,
+      allocationShare: weeklyCapacity > 0 ? weeklyMinutesAllocated / weeklyCapacity : 0,
+      competingGoalCount: (typeCount.get(goal.activityTypeId) ?? 1) - 1,
+      goalsAhead: aheadCount.get(goal.id) ?? 0,
+      remainingMinutes: remainingMinutesOf(goal),
+      weeksRemaining: completion
+        ? Math.max(0, (pointToDate(completion).getTime() - now.getTime()) / 60000) / MINUTES_PER_WEEK
+        : null,
+      ...getForecastEvidence(
+        trackingHistory,
+        goal.id,
+        goal.activityTypeId,
+        weeklyCapacity,
+        getCapacityChangedAt(routine, goal.activityTypeId)
+      ),
+    };
+  });
+}
+
+/** The Goals screen's "How forecasts work" text. */
+export const GOAL_FORECAST_EXPLAINER =
+  "All of an activity type's routine blocks form one pool of time. That type's active goals " +
+  'are worked in list order: the top one gets all of the time first, and the next one starts ' +
+  'when it is done. Dates assume this routine and this order continue.';
+
+/** Where a goal stands in its type's queue, for the line under its forecast. */
+export function describeGoalQueue(
+  prediction: Pick<PredictionResult, 'goalsAhead' | 'competingGoalCount'>
+): string {
+  const { goalsAhead, competingGoalCount } = prediction;
+  if (goalsAhead > 0) {
+    return `Next in line after ${goalsAhead} goal${goalsAhead === 1 ? '' : 's'} of this type.`;
+  }
+  if (competingGoalCount > 0) {
+    return 'First in line: this type\'s time goes here first.';
+  }
+  return 'The only active goal of this type.';
+}
+
+/**
+ * Predict one goal as if it were the only goal of its type, whatever its status. Product surfaces
+ * should use predictAllGoals, which knows what is ahead of it in the list.
+ */
 export function predictGoalCompletion(
   goal: Goal,
   routine: Routine,
-  trackingHistory?: TrackingEntry[]
+  trackingHistory?: TrackingEntry[],
+  now: Date = new Date()
 ): PredictionResult {
-  const weeklyCapacity = getWeeklyMinutesForActivityType(routine, goal.activityTypeId);
-  const remainingMinutes = Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
-
-  if (remainingMinutes === 0) {
+  if (remainingMinutesOf(goal) === 0) {
+    const weeklyCapacity = getWeeklyMinutesForActivityType(routine, goal.activityTypeId);
     return {
       goalId: goal.id,
-      predictedCompletionDate: toLocalDateKey(),
-      weeklyMinutesAllocated: weeklyCapacity,
+      predictedCompletionDate: toLocalDateKey(now),
+      weeklyMinutesAllocated: 0,
       activityWeeklyCapacity: weeklyCapacity,
-      allocationShare: weeklyCapacity > 0 ? 1 : 0,
+      allocationShare: 0,
       competingGoalCount: 0,
+      goalsAhead: 0,
       remainingMinutes: 0,
       weeksRemaining: 0,
       confidenceLevel: 'low',
@@ -166,148 +291,5 @@ export function predictGoalCompletion(
       confidenceReason: 'Already complete; no forecast is needed.',
     };
   }
-
-  const evidence = getForecastEvidence(
-    trackingHistory,
-    goal.id,
-    goal.activityTypeId,
-    weeklyCapacity,
-    getCapacityChangedAt(routine, goal.activityTypeId)
-  );
-  const weeksRemaining = weeklyCapacity > 0
-    ? remainingMinutes / weeklyCapacity
-    : null;
-  return {
-    goalId: goal.id,
-    predictedCompletionDate: weeksRemaining === null ? null : dateAfterWeeks(weeksRemaining),
-    weeklyMinutesAllocated: weeklyCapacity,
-    activityWeeklyCapacity: weeklyCapacity,
-    allocationShare: weeklyCapacity > 0 ? 1 : 0,
-    competingGoalCount: 0,
-    remainingMinutes,
-    weeksRemaining,
-    ...evidence,
-  };
-}
-
-/**
- * Forecast every active goal of one activity type from that type's pool.
- *
- * The pool is every block of the type. The routine is made of activity types only (#60), so no
- * block is reserved for one goal: the whole pool is shared by priority weight and reallocated as
- * goals finish.
- */
-function predictActivityGoals(
-  goals: Goal[],
-  routine: Routine,
-  trackingHistory?: TrackingEntry[]
-): PredictionResult[] {
-  const activityTypeId = goals[0].activityTypeId;
-  const weeklyCapacity = getWeeklyMinutesForActivityType(routine, activityTypeId);
-  const totalWeight = goals.reduce((sum, goal) => sum + priorityWeight(goal), 0);
-  const initialAllocations = new Map(
-    goals.map((goal) => [goal.id, weeklyCapacity * priorityWeight(goal) / totalWeight])
-  );
-
-  if (weeklyCapacity <= 0) {
-    return goals.map((goal) => ({
-      goalId: goal.id,
-      predictedCompletionDate: null,
-      weeklyMinutesAllocated: 0,
-      activityWeeklyCapacity: weeklyCapacity,
-      allocationShare: 0,
-      competingGoalCount: goals.length - 1,
-      remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
-      weeksRemaining: null,
-      ...getForecastEvidence(
-        trackingHistory,
-        goal.id,
-        activityTypeId,
-        0,
-        getCapacityChangedAt(routine, activityTypeId)
-      ),
-    }));
-  }
-
-  let elapsedWeeks = 0;
-  let pending: PendingGoal[] = goals.map((goal) => ({
-    goal,
-    remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
-    weight: priorityWeight(goal),
-  }));
-  const completionWeeks = new Map<string, number>();
-
-  while (pending.length > 0) {
-    const pendingWeight = pending.reduce((sum, item) => sum + item.weight, 0);
-    const rates = new Map(pending.map((item) => [
-      item.goal.id,
-      weeklyCapacity * item.weight / pendingWeight,
-    ]));
-    const completable = pending.filter((item) => (rates.get(item.goal.id) ?? 0) > 0);
-    if (completable.length === 0) break;
-    const phaseWeeks = Math.min(...completable.map((item) =>
-      item.remainingMinutes / rates.get(item.goal.id)!
-    ));
-    elapsedWeeks += phaseWeeks;
-
-    const nextPending: PendingGoal[] = [];
-    for (const item of pending) {
-      const rate = rates.get(item.goal.id) ?? 0;
-      const remainingMinutes = Math.max(0, item.remainingMinutes - rate * phaseWeeks);
-      if (remainingMinutes <= 1e-7) {
-        completionWeeks.set(item.goal.id, elapsedWeeks);
-      } else {
-        nextPending.push({ ...item, remainingMinutes });
-      }
-    }
-    pending = nextPending;
-  }
-
-  return goals.map((goal) => {
-    const weeksRemaining = completionWeeks.get(goal.id) ?? null;
-    const weeklyMinutesAllocated = initialAllocations.get(goal.id) ?? 0;
-    return {
-      goalId: goal.id,
-      predictedCompletionDate: weeksRemaining === null ? null : dateAfterWeeks(weeksRemaining),
-      weeklyMinutesAllocated,
-      activityWeeklyCapacity: weeklyCapacity,
-      allocationShare: weeklyMinutesAllocated / weeklyCapacity,
-      competingGoalCount: goals.length - 1,
-      remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
-      weeksRemaining,
-      ...getForecastEvidence(
-        trackingHistory,
-        goal.id,
-        activityTypeId,
-        weeklyMinutesAllocated,
-        getCapacityChangedAt(routine, activityTypeId)
-      ),
-    };
-  });
-}
-
-/**
- * Forecast active goals with each activity's capacity shared by priority weight
- * (Very High 5 … Very Low 1) and reallocated as goals finish.
- */
-export function predictAllGoals(
-  goals: Goal[],
-  routine: Routine,
-  trackingHistory?: TrackingEntry[]
-): PredictionResult[] {
-  const activeGoals = goals.filter((goal) => goal.status === 'active');
-  const byActivity = new Map<string, Goal[]>();
-  for (const goal of activeGoals) {
-    const group = byActivity.get(goal.activityTypeId) ?? [];
-    group.push(goal);
-    byActivity.set(goal.activityTypeId, group);
-  }
-
-  const predictionsByGoal = new Map<string, PredictionResult>();
-  for (const activityGoals of byActivity.values()) {
-    for (const prediction of predictActivityGoals(activityGoals, routine, trackingHistory)) {
-      predictionsByGoal.set(prediction.goalId, prediction);
-    }
-  }
-  return activeGoals.map((goal) => predictionsByGoal.get(goal.id)!);
+  return predictAllGoals([{ ...goal, status: 'active' }], routine, trackingHistory, now)[0];
 }

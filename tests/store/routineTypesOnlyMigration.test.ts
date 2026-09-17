@@ -26,6 +26,7 @@ import type {
   RepairedTrackingEntry,
 } from '../../src/store/persistence';
 import type { AppState } from '../../src/core/types';
+import { withListOrder } from '../helpers/builders';
 
 /**
  * A schema-5 backup with goal-linked routine blocks, exactly as `main` @ 2266069 (before #60)
@@ -48,11 +49,14 @@ function v5State(): StoredState {
   return (JSON.parse(V5_BACKUP) as { state: StoredState }).state;
 }
 
-/** The fixture as the v6 store should hold it: identical, less every block's goalId. */
+/**
+ * The fixture as the current store should hold it: identical, less every block's goalId — and,
+ * since v7 (#49), with goals in the list order their priorities give (1, 2, 3).
+ */
 function expectedV6(stored: StoredState) {
   const { schemaVersion: _stamp, ...rest } = stored;
   return {
-    ...rest,
+    ...withListOrder(rest, ['goal-app', 'goal-10k', 'goal-blog']),
     routines: stored.routines.map((routine) => ({
       ...routine,
       blocks: routine.blocks.map(({ goalId: _goal, ...block }) => block),
@@ -96,13 +100,14 @@ describe('the fixture really is a pre-change store', () => {
 
 describe('schema 6: routine blocks name activity types only (#60)', () => {
   it('bumps the schema without moving the repair gate', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(6);
+    // v7 (#49) followed; this step's own gate stays at 6.
+    expect(CURRENT_SCHEMA_VERSION).toBeGreaterThan(BLOCK_GOAL_REMOVED_SCHEMA_VERSION);
     expect(BLOCK_GOAL_REMOVED_SCHEMA_VERSION).toBe(6);
     // v5's own subtlety, kept: only the legacy repairs are gated on 4.
     expect(STRICT_SCHEMA_VERSION).toBe(4);
   });
 
-  it('drops every block goalId and leaves goals and tracking entries untouched', () => {
+  it('drops every block goalId and leaves goals (bar v7\'s order) and tracking entries untouched', () => {
     const stored = v5State();
     const original = structuredClone(stored);
     const quarantine: QuarantinedTrackingEntry[] = [];

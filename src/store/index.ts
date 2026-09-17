@@ -18,6 +18,7 @@ export {
 } from './useAppStore';
 
 export type { AppStore, HydrationSnapshot, ImportResult } from './useAppStore';
+export type { GoalMoveTarget } from '../core/engine/goalOrder';
 export type {
   QuarantinedTrackingEntry,
   RepairEvidence,

@@ -6,7 +6,6 @@ import {
   ActivityType,
   Goal,
   GoalStatus,
-  GoalPriority,
   Routine,
   RoutineBlock,
   TrackingEntry,
@@ -17,6 +16,13 @@ import {
 } from '../core/types';
 import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
+import {
+  moveGoalInList,
+  nextGoalOrder,
+  removeGoalFromList,
+  renumberGoals,
+} from '../core/engine/goalOrder';
+import type { GoalMoveTarget } from '../core/engine/goalOrder';
 import {
   getTrackingEntryDurationMinutes,
   parseLocalDateKey,
@@ -482,9 +488,19 @@ interface AppActions {
   reorderActivityTypes: (ids: string[]) => void;
 
   // Goal Actions
-  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'priority'> & { priority?: GoalPriority }) => string | null;
-  updateGoal: (id: string, data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt'>>) => void;
+  /** Adds the goal at the bottom of the list. */
+  addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'order'>) => string | null;
+  /** Cannot move a goal: list position changes only through `moveGoal`. */
+  updateGoal: (id: string, data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'order'>>) => void;
+  /** The other goals keep their relative order. */
   deleteGoal: (id: string) => void;
+  /**
+   * Reprioritise: move a goal to just before or after another goal in the one goals list (#49).
+   * Named by neighbour, not index, so a drag in a list filtered to one activity type can say where
+   * the row landed without knowing where the hidden goals are. Hidden goals keep their places
+   * relative to each other.
+   */
+  moveGoal: (goalId: string, target: GoalMoveTarget) => void;
   logMinutesToGoal: (id: string, minutes: number) => void;
   setGoalStatus: (id: string, status: GoalStatus) => void;
 
@@ -620,25 +636,28 @@ export const useAppStore = create<AppStore>()(
           !data.name.trim() ||
           !Number.isInteger(data.estimatedMinutes) ||
           data.estimatedMinutes <= 0 ||
-          !state.activityTypes.some((activity) => activity.id === data.activityTypeId) ||
-          (data.priority !== undefined && ![1, 2, 3, 4, 5].includes(data.priority))
+          !state.activityTypes.some((activity) => activity.id === data.activityTypeId)
         ) {
           return null;
         }
         const id = generateId();
         const now = new Date().toISOString();
-        const newGoal: Goal = {
-          ...data,
-          id,
-          loggedMinutes: 0,
-          status: 'active',
-          priority: data.priority ?? 3, // Default to Medium priority
-          createdAt: now,
-          updatedAt: now,
-        };
-        set((state) => ({
-          goals: [...state.goals, newGoal],
-        }));
+        set((state) => {
+          // Built field by field so a stray key (a caller still passing `priority`) is not stored.
+          const newGoal: Goal = {
+            id,
+            name: data.name,
+            description: data.description,
+            estimatedMinutes: data.estimatedMinutes,
+            loggedMinutes: 0,
+            activityTypeId: data.activityTypeId,
+            status: 'active',
+            order: nextGoalOrder(state.goals),
+            createdAt: now,
+            updatedAt: now,
+          };
+          return { goals: [...state.goals, newGoal] };
+        });
         return id;
       },
 
@@ -650,7 +669,6 @@ export const useAppStore = create<AppStore>()(
             const estimatedMinutes = data.estimatedMinutes ?? goal.estimatedMinutes;
             const loggedMinutes = data.loggedMinutes ?? goal.loggedMinutes;
             const activityTypeId = data.activityTypeId ?? goal.activityTypeId;
-            const priority = data.priority ?? goal.priority;
             const changesLinkedActivity = activityTypeId !== goal.activityTypeId &&
               state.trackingEntries.some((entry) => entry.goalId === goal.id);
             if (
@@ -659,7 +677,6 @@ export const useAppStore = create<AppStore>()(
               estimatedMinutes <= 0 ||
               !Number.isInteger(loggedMinutes) ||
               !Number.isFinite(loggedMinutes) ||
-              ![1, 2, 3, 4, 5].includes(priority) ||
               !state.activityTypes.some((activity) => activity.id === activityTypeId) ||
               changesLinkedActivity
             ) {
@@ -669,6 +686,8 @@ export const useAppStore = create<AppStore>()(
             const merged = {
               ...goal,
               ...data,
+              // Position is the list's, not the goal's to edit: only `moveGoal` changes it.
+              order: goal.order,
               completedAt: goal.completedAt,
               updatedAt: now,
             };
@@ -697,7 +716,6 @@ export const useAppStore = create<AppStore>()(
               name: data.name ?? goal.name,
               description: data.description ?? goal.description,
               activityTypeId,
-              priority,
               createdAt: goal.createdAt,
             };
           }),
@@ -707,13 +725,26 @@ export const useAppStore = create<AppStore>()(
       deleteGoal: (id) => {
         const now = new Date().toISOString();
         set((state) => ({
-          goals: state.goals.filter((g) => g.id !== id),
+          goals: removeGoalFromList(state.goals, id),
           trackingEntries: state.trackingEntries.map((entry) =>
             entry.goalId === id
               ? { ...entry, goalId: undefined, updatedAt: now }
               : entry
           ),
         }));
+      },
+
+      /**
+       * A reorder moves forecast dates but not capacity, so it stamps nothing on the routine.
+       * Confidence evidence is scoped by `getCapacityChangedAt`, which only block edits and
+       * activation move; priority edits never stamped it either (#6, #23, #24). A goal's evidence
+       * is its own and the unlinked tracking on its type, and neither depends on where it sits.
+       */
+      moveGoal: (goalId, target) => {
+        set((state) => {
+          const goals = moveGoalInList(state.goals, goalId, target, new Date().toISOString());
+          return goals === state.goals ? state : { goals: [...goals] };
+        });
       },
 
       logMinutesToGoal: (id, minutes) => {
@@ -1383,7 +1414,8 @@ export const useAppStore = create<AppStore>()(
           activityTypes,
           routines,
           activeRoutineId,
-          goals: [...state.goals, ...sample.goals],
+          // The example goals go to the bottom of the list, in their own order.
+          goals: renumberGoals([...state.goals, ...sample.goals]),
         };
         const entries: TrackingEntry[] = [];
         let goals = next.goals;
@@ -1554,6 +1586,11 @@ export async function resetAppStoreAfterHydrationError(): Promise<void> {
 // to avoid creating new object references that cause infinite re-renders
 
 export const useActivityTypes = () => useAppStore((s) => s.activityTypes);
+/**
+ * Every goal, in list order (#49): the top goal first. The store keeps `goals` sorted — hydration
+ * sorts by `order`, `addGoal` appends, `moveGoal` and `deleteGoal` renumber — so this is the
+ * stored array itself, with a stable reference, and needs no sorted copy.
+ */
 export const useGoals = () => useAppStore((s) => s.goals);
 export const useRoutines = () => useAppStore((s) => s.routines);
 export const useTrackingEntries = () => useAppStore((s) => s.trackingEntries);

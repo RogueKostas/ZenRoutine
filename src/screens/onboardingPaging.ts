@@ -29,14 +29,14 @@ export const ONBOARDING_SLIDES: readonly OnboardingSlide[] = [
     id: '2',
     emoji: '🎯',
     title: 'Set Meaningful Goals',
-    description: 'Create goals with time estimates and priorities. Track your progress as you work toward them.',
+    description: 'List your goals with time estimates, most important first. The top of the list is worked on first.',
     color: '#E53935',
   },
   {
     id: '3',
     emoji: '📅',
     title: 'Plan Your Week',
-    description: 'Build a weekly routine from activity types. Your goals share that time in priority order.',
+    description: 'Build a weekly routine from activity types. Your goals take that time in list order.',
     color: '#1E88E5',
   },
   {

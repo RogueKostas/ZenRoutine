@@ -421,7 +421,7 @@ export function DebugPanel() {
                 </View>
                 <View style={styles.predictionDetails}>
                   <View style={styles.predictionRow}>
-                    <Text style={styles.predictionLabel}>Weekly allocation:</Text>
+                    <Text style={styles.predictionLabel}>Next 7 days:</Text>
                     <Text style={styles.predictionValue}>
                       {formatDuration(pred.weeklyMinutesAllocated)}
                     </Text>
