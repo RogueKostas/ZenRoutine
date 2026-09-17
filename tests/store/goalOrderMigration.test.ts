@@ -103,7 +103,7 @@ describe('the fixture really is a pre-change v6 store', () => {
 
 describe('schema 7: goal priority becomes list order (#49)', () => {
   it('bumps the schema without moving the repair gate', () => {
-    expect(CURRENT_SCHEMA_VERSION).toBe(7);
+    expect(CURRENT_SCHEMA_VERSION).toBeGreaterThanOrEqual(GOAL_ORDER_SCHEMA_VERSION);
     expect(GOAL_ORDER_SCHEMA_VERSION).toBe(7);
     expect(STRICT_SCHEMA_VERSION).toBe(4);
   });
@@ -178,7 +178,7 @@ describe('schema 7: goal priority becomes list order (#49)', () => {
       version: number;
       state: StoredState;
     };
-    expect(rewritten.version).toBe(7);
+    expect(rewritten.version).toBe(CURRENT_SCHEMA_VERSION);
     expect(rewritten.state).toEqual(expectedV7(stored));
 
     // And the next launch's strict read gives it back unchanged.
@@ -209,7 +209,7 @@ describe('schema 7: goal priority becomes list order (#49)', () => {
     expect(reordered[0]).toBe('goal-read');
 
     const exported = useAppStore.getState().exportData();
-    expect((JSON.parse(exported) as { schemaVersion: number }).schemaVersion).toBe(7);
+    expect((JSON.parse(exported) as { schemaVersion: number }).schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
     useAppStore.setState(createInitialState());
     expect(await useAppStore.getState().importData(exported)).toEqual({ ok: true });
 

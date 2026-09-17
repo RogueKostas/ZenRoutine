@@ -237,7 +237,8 @@ describe('store: goal order (#49)', () => {
       'Finish the TypeScript course',
       'Write the Q4 planning doc',
       "Read 'Deep Work'",
+      'Renew passport',
     ]);
-    expect(goals.map((goal) => goal.order)).toEqual([0, 1, 2, 3, 4, 5]);
+    expect(goals.map((goal) => goal.order)).toEqual([0, 1, 2, 3, 4, 5, 6]);
   });
 });

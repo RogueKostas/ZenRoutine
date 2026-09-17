@@ -76,10 +76,15 @@ describe('example data (#62)', () => {
       'Finish the TypeScript course': 'low/3',
       "Read 'Deep Work'": 'low/0',
     });
-    // Every goal is forecastable and none was completed by its own history.
+    // Every scheduled goal is forecastable and none was completed by its own history. The plain
+    // to-do item (#50) has no type or estimate, so it is listed but has no forecast.
     for (const prediction of predictions) {
       expect(prediction.predictedCompletionDate).not.toBeNull();
     }
+    const todo = state.goals.find((goal) => goal.name === 'Renew passport')!;
+    expect(todo).not.toHaveProperty('activityTypeId');
+    expect(todo).not.toHaveProperty('estimatedMinutes');
+    expect(predictions.map((prediction) => prediction.goalId)).not.toContain(todo.id);
     expect(state.goals.every((goal) => goal.status === 'active')).toBe(true);
     expect(state.goals.some((goal) => goal.loggedMinutes > 0)).toBe(true);
   });

@@ -17,7 +17,8 @@ import {
   useCurrentTracking,
 } from '../../store';
 import { predictAllGoals, PredictionResult } from '../../core/engine/prediction';
-import { formatDuration, minutesToTimeString, getDayName } from '../../core/utils/time';
+import { formatDuration, formatGoalTimeLabel, minutesToTimeString, getDayName } from '../../core/utils/time';
+import { goalProgressPercent } from '../../core/engine/goalList';
 import { colors } from '../../theme/colors';
 import { DayOfWeek } from '../../core/types';
 
@@ -251,7 +252,7 @@ export function DebugPanel() {
       <ScrollView style={styles.list}>
         {goals.map((goal) => {
           const activity = activityTypes.find((a) => a.id === goal.activityTypeId);
-          const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
+          const progress = goalProgressPercent(goal) ?? 0;
           return (
             <View key={goal.id} style={styles.goalCard}>
               <View style={styles.goalHeader}>
@@ -265,7 +266,7 @@ export function DebugPanel() {
                 <View style={[styles.progressBar, { width: `${progress}%` }]} />
               </View>
               <Text style={styles.goalProgress}>
-                {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)} ({progress.toFixed(0)}%)
+                {formatGoalTimeLabel(goal.loggedMinutes, goal.estimatedMinutes)} ({progress.toFixed(0)}%)
               </Text>
               <Text style={styles.goalStatus}>Status: {goal.status}</Text>
             </View>

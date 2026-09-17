@@ -74,13 +74,14 @@ interface SampleGoal {
   key: string;
   name: string;
   description: string;
-  estimatedMinutes: number;
-  activity: SampleActivity;
+  estimatedMinutes?: number;
+  activity?: SampleActivity;
 }
 
 /**
  * In list order (#49), most important first. The two Work goals show the queue: the dashboard
- * takes Work's time first and the planning doc waits for it.
+ * takes Work's time first and the planning doc waits for it. The last one is a plain to-do item,
+ * with no type and no estimate (#50): listed, never scheduled.
  */
 const SAMPLE_GOALS: readonly SampleGoal[] = [
   {
@@ -117,6 +118,11 @@ const SAMPLE_GOALS: readonly SampleGoal[] = [
     description: 'Scheduled but never tracked yet.',
     estimatedMinutes: 8 * 60,
     activity: 'Personal Development',
+  },
+  {
+    key: 'passport',
+    name: 'Renew passport',
+    description: '',
   },
 ];
 
@@ -233,9 +239,9 @@ export function buildSampleData(activityTypes: readonly ActivityType[], now: Dat
     id: goalIds.get(goal.key)!,
     name: goal.name,
     description: goal.description,
-    estimatedMinutes: goal.estimatedMinutes,
+    ...(goal.estimatedMinutes !== undefined ? { estimatedMinutes: goal.estimatedMinutes } : {}),
     loggedMinutes: 0,
-    activityTypeId: idFor(goal.activity),
+    ...(goal.activity !== undefined ? { activityTypeId: idFor(goal.activity) } : {}),
     status: 'active',
     order,
     createdAt: scheduledSince,

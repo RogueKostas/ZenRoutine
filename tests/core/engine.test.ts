@@ -330,6 +330,8 @@ describe('validation and time utilities', () => {
       'activityTypeId',
     ]);
     expect(validateGoal(makeGoal())).toEqual({ isValid: true, errors: [] });
+    // #50: a name is enough.
+    expect(validateGoal({ name: 'Buy milk' })).toEqual({ isValid: true, errors: [] });
   });
 
   it('round-trips clock values and formats durations and day names', () => {

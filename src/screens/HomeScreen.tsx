@@ -14,7 +14,8 @@ import {
   useAppStore,
 } from '../store';
 import { isFirstRunEmpty } from '../store/sampleData';
-import { formatDuration, getTrackingEntryDurationMinutes } from '../core/utils/time';
+import { formatDuration, formatGoalTimeLabel, getTrackingEntryDurationMinutes } from '../core/utils/time';
+import { goalProgressPercent } from '../core/engine/goalList';
 import {
   getDayOverview,
   getScheduledStart,
@@ -191,7 +192,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
             <View style={styles.goalsList}>
               {activeGoals.slice(0, 3).map((goal) => {
                 const activity = activityTypes.find((a) => a.id === goal.activityTypeId);
-                const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
+                const progress = goalProgressPercent(goal) ?? 0;
                 return (
                   <View key={goal.id} style={[styles.goalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
                     <View style={styles.goalHeader}>
@@ -199,7 +200,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                       <View style={styles.goalInfo}>
                         <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>{goal.name}</Text>
                         <Text style={[styles.goalMeta, { color: colors.textSecondary }]}>
-                          {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)}
+                          {formatGoalTimeLabel(goal.loggedMinutes, goal.estimatedMinutes)}
                         </Text>
                       </View>
                     </View>

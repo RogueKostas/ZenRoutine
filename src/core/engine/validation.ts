@@ -85,21 +85,22 @@ export function findOverlappingBlocks(
 }
 
 /**
- * Validate a goal
+ * Validate a goal. Only the name is required; the type and estimate are optional (#50), but must
+ * be real values when present.
  */
 export function validateGoal(goal: Partial<Goal>): ValidationResult {
   const errors: ValidationError[] = [];
-  
+
   if (!goal.name || goal.name.trim().length === 0) {
     errors.push({ field: 'name', message: 'Goal name is required' });
   }
-  
-  if (goal.estimatedMinutes === undefined || goal.estimatedMinutes <= 0) {
+
+  if (goal.estimatedMinutes !== undefined && !(goal.estimatedMinutes > 0)) {
     errors.push({ field: 'estimatedMinutes', message: 'Estimated time must be greater than 0' });
   }
-  
-  if (!goal.activityTypeId) {
-    errors.push({ field: 'activityTypeId', message: 'Activity type is required' });
+
+  if (goal.activityTypeId !== undefined && !goal.activityTypeId) {
+    errors.push({ field: 'activityTypeId', message: 'Choose an activity type or leave it unset' });
   }
   
   return { isValid: errors.length === 0, errors };

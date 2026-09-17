@@ -8,6 +8,7 @@ import {
 } from '../utils/time';
 import { forecastGoals, type ForecastPoint } from './forecast';
 import { sortGoalsByOrder } from './goalOrder';
+import { isSchedulableGoal, type SchedulableGoal } from './goalList';
 
 export interface PredictionResult {
   goalId: string;
@@ -141,7 +142,7 @@ function getForecastEvidence(
   };
 }
 
-function remainingMinutesOf(goal: Goal): number {
+function remainingMinutesOf(goal: SchedulableGoal): number {
   return Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
 }
 
@@ -157,7 +158,7 @@ function pointToDate(point: ForecastPoint): Date {
  * type exactly its weekly capacity, so the whole queue of a type is done within
  * `ceil(remaining / capacity)` weeks after the first, partly elapsed, one.
  */
-function horizonDaysFor(goals: readonly Goal[], routine: Routine): number {
+function horizonDaysFor(goals: readonly SchedulableGoal[], routine: Routine): number {
   const remainingByType = new Map<string, number>();
   for (const goal of goals) {
     remainingByType.set(
@@ -181,15 +182,18 @@ function horizonDaysFor(goals: readonly Goal[], routine: Routine): number {
  * that walk; confidence and its evidence are this module's own and do not depend on the order.
  *
  * `goals` are put in list order by `Goal.order` before the walk. Results come back in the order
- * the caller gave, active goals only.
+ * the caller gave, for active goals that have both an activity type and an estimate. A goal
+ * missing either (#50) is a to-do item, not scheduled work: it gets no result, and no error.
  */
 export function predictAllGoals(
-  goals: Goal[],
+  goals: readonly Goal[],
   routine: Routine,
   trackingHistory?: TrackingEntry[],
   now: Date = new Date()
 ): PredictionResult[] {
-  const activeGoals = goals.filter((goal) => goal.status === 'active');
+  const activeGoals = goals.filter(
+    (goal): goal is SchedulableGoal => goal.status === 'active' && isSchedulableGoal(goal)
+  );
   const listOrder = sortGoalsByOrder(activeGoals);
   const forecast = forecastGoals({
     routine,
@@ -274,6 +278,27 @@ export function predictGoalCompletion(
   trackingHistory?: TrackingEntry[],
   now: Date = new Date()
 ): PredictionResult {
+  if (!isSchedulableGoal(goal)) {
+    const activityTypeId = goal.activityTypeId;
+    return {
+      goalId: goal.id,
+      predictedCompletionDate: null,
+      weeklyMinutesAllocated: 0,
+      activityWeeklyCapacity: activityTypeId
+        ? getWeeklyMinutesForActivityType(routine, activityTypeId)
+        : 0,
+      allocationShare: 0,
+      competingGoalCount: 0,
+      goalsAhead: 0,
+      remainingMinutes: 0,
+      weeksRemaining: null,
+      confidenceLevel: 'low',
+      evidenceDays: 0,
+      confidenceReason: activityTypeId
+        ? 'No estimate, so no forecast.'
+        : 'No activity type, so no routine time and no forecast.',
+    };
+  }
   if (remainingMinutesOf(goal) === 0) {
     const weeklyCapacity = getWeeklyMinutesForActivityType(routine, goal.activityTypeId);
     return {
