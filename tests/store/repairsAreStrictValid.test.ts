@@ -377,7 +377,11 @@ const REPAIR_CASES: RepairCase[] = [
         pauses: [{ start: '2026-03-02T09:30:00.000Z', end: '2026-03-02T09:10:00.000Z' }],
       }],
     }),
-    expectRepaired: ({ state }) => {
+    expectRepaired: ({ state, quarantine }) => {
+      // The entry has to survive the versioned read at all: with the version gate gone it is the
+      // *pauses* that make it unreadable, so it would be quarantined here instead.
+      expect(quarantine).toEqual([]);
+      expect(state.trackingEntries.map((entry) => entry.id)).toEqual(['entry-focus']);
       expect('pauses' in state.trackingEntries[0]).toBe(false);
       // Anti-vacuity, and the point of the version gate: the identical record stamped v9 is
       // refused. If `readTrackingPauses` ever stopped gating on the version, the strict read
@@ -591,8 +595,11 @@ describe('hydratePersistedState puts both reads behind one sink (#38)', () => {
   });
 
   it('propagates a read that throws rather than swallowing it', () => {
-    // A failure with no sink to fall into has to come back out of `migrate` as a rejection: that
-    // is what aborts zustand's chain at middleware.mjs:431, before the blob is rewritten.
+    // Duplicate routine ids are blob-level corruption: no sink to fall into, so the versioned
+    // read throws. Composing a second read must not turn that into a recovery — the throw has to
+    // come back out of `migrate` as a rejection, which is what aborts zustand's chain at
+    // middleware.mjs:431 before the blob is rewritten. (Only the versioned read can be made to
+    // throw here; by the invariant above the strict read has nothing to throw over.)
     const quarantine: QuarantinedTrackingEntry[] = [];
     expect(() => hydratePersistedState(
       storedState({ routines: [makeRoutine({ id: 'routine-a' }), makeRoutine({ id: 'routine-a' })] }),
