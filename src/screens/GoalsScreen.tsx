@@ -12,7 +12,8 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useGoals, useActivityTypes, useActiveRoutine, useAppStore } from '../store';
 import { predictAllGoals } from '../core/engine/prediction';
-import { formatDuration } from '../core/utils/time';
+import { formatDuration, parseDuration } from '../core/utils/time';
+import { chipRowContentStyle, chipRowStyle } from '../components/common/chipRow';
 import type { TabScreenProps } from '../navigation/types';
 import type { GoalStatus, GoalPriority } from '../core/types';
 import { PRIORITY_LABELS, PRIORITY_COLORS } from '../core/types';
@@ -25,7 +26,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const [activityFilter, setActivityFilter] = useState<string | null>(null);
   const [showAddModal, setShowAddModal] = useState(false);
   const [newGoalName, setNewGoalName] = useState('');
-  const [newGoalMinutes, setNewGoalMinutes] = useState('');
+  const [newGoalEstimate, setNewGoalEstimate] = useState('');
   const [newGoalDescription, setNewGoalDescription] = useState('');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [selectedPriority, setSelectedPriority] = useState<GoalPriority>(3); // Default to Medium
@@ -53,8 +54,10 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
     ? predictAllGoals(goals, activeRoutine, trackingEntries)
     : [];
 
+  const estimate = newGoalEstimate.trim() ? parseDuration(newGoalEstimate) : null;
+  const canSaveGoal = Boolean(newGoalName.trim() && selectedActivityId && estimate && 'minutes' in estimate);
+
   const handleAddGoal = () => {
-    const estimatedMinutes = Number(newGoalMinutes);
     if (!newGoalName.trim()) {
       setGoalError('Enter a name for the goal.');
       return;
@@ -63,15 +66,13 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
       setGoalError('Choose an activity type.');
       return;
     }
-    if (!Number.isInteger(estimatedMinutes) || estimatedMinutes <= 0) {
-      setGoalError('Estimated time must be a whole number greater than zero.');
-      return;
-    }
+    // The parse error is already shown under the estimate field.
+    if (!estimate || !('minutes' in estimate)) return;
 
     const goalId = addGoal({
       name: newGoalName.trim(),
       description: newGoalDescription.trim(),
-      estimatedMinutes,
+      estimatedMinutes: estimate.minutes,
       activityTypeId: selectedActivityId,
       priority: selectedPriority,
     });
@@ -81,7 +82,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
     }
 
     setNewGoalName('');
-    setNewGoalMinutes('');
+    setNewGoalEstimate('');
     setNewGoalDescription('');
     setSelectedActivityId(null);
     setSelectedPriority(3);
@@ -392,17 +393,16 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
             <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
             <TouchableOpacity
               onPress={handleAddGoal}
-              disabled={!newGoalName.trim() || !selectedActivityId || !newGoalMinutes}
+              disabled={!canSaveGoal}
               accessibilityRole="button"
               accessibilityLabel="Save goal"
-              accessibilityState={{ disabled: !newGoalName.trim() || !selectedActivityId || !newGoalMinutes }}
+              accessibilityState={{ disabled: !canSaveGoal }}
             >
               <Text
                 style={[
                   styles.modalSave,
                   { color: colors.primary },
-                  (!newGoalName.trim() || !selectedActivityId || !newGoalMinutes) &&
-                    { color: colors.textMuted },
+                  !canSaveGoal && { color: colors.textMuted },
                 ]}
               >
                 Save
@@ -437,22 +437,31 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               accessibilityLabel="Goal description"
             />
 
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Estimated Time (minutes)</Text>
+            <Text style={[styles.inputLabel, { color: colors.text }]}>Estimated Time</Text>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholder="e.g., 1200"
-              value={newGoalMinutes}
+              style={[
+                styles.input,
+                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
+                estimate && 'error' in estimate && { borderColor: colors.error },
+              ]}
+              placeholder="e.g., 12h, 90m or 1h30 (a plain number is hours)"
+              value={newGoalEstimate}
               onChangeText={(value) => {
-                setNewGoalMinutes(value);
+                setNewGoalEstimate(value);
                 setGoalError(null);
               }}
-              keyboardType="numeric"
+              onSubmitEditing={handleAddGoal}
+              autoCapitalize="none"
+              autoCorrect={false}
               placeholderTextColor={colors.textMuted}
-              accessibilityLabel="Estimated time in minutes"
+              accessibilityLabel="Estimated time, for example 12h or 90m"
             />
-            {Boolean(newGoalMinutes) && (
-              <Text style={[styles.inputHint, { color: colors.primary }]}>
-                = {formatDuration(parseInt(newGoalMinutes, 10) || 0)}
+            {estimate && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.inputHint, { color: 'minutes' in estimate ? colors.primary : colors.error }]}
+              >
+                {'minutes' in estimate ? `= ${formatDuration(estimate.minutes)}` : estimate.error}
               </Text>
             )}
 
@@ -559,10 +568,12 @@ const styles = StyleSheet.create({
     fontSize: 14,
   },
   filterRow: {
+    ...chipRowStyle,
     paddingHorizontal: 16,
     paddingVertical: 8,
   },
   filterRowContent: {
+    ...chipRowContentStyle,
     paddingRight: 16,
   },
   activityFilterRow: {
