@@ -17,8 +17,10 @@ import { TimeRangePicker } from './TimePicker';
 import { findNextAvailableSlot, timeDraftMessage, type TimeDrafts } from './timeFields';
 import { ActivityPicker } from '../activity/ActivityPicker';
 import { Button } from '../common/Button';
+import { Input } from '../common/Input';
 import { useDialog } from '../common/Dialog';
 import { blockEditorErrors, type BlockEditorErrors } from './blockEditorErrors';
+import { activeGoalsForActivityType, quickAddGoal } from './blockGoals';
 import type { RoutineBlock, DayOfWeek, ActivityType } from '../../core/types';
 
 interface BlockEditorProps {
@@ -42,13 +44,13 @@ export function BlockEditor({
 }: BlockEditorProps) {
   const activityTypes = useActivityTypes();
   const goals = useGoals();
-  const { addRoutineBlock, updateRoutineBlock, deleteRoutineBlock } = useAppStore();
+  const { addRoutineBlock, updateRoutineBlock, deleteRoutineBlock, addGoal } = useAppStore();
 
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
-  const [selectedGoalId, setSelectedGoalId] = useState<string | undefined>(undefined);
   const [startTime, setStartTime] = useState(540); // 9:00 AM
   const [endTime, setEndTime] = useState(600); // 10:00 AM
-  const [showGoalPicker, setShowGoalPicker] = useState(false);
+  const [newGoalName, setNewGoalName] = useState('');
+  const [newGoalError, setNewGoalError] = useState<string | null>(null);
   const [errors, setErrors] = useState<BlockEditorErrors>({});
   const [timeDrafts, setTimeDrafts] = useState<TimeDrafts>({});
   const dialog = useDialog();
@@ -60,15 +62,15 @@ export function BlockEditor({
     if (visible) {
       setErrors({});
       setTimeDrafts({});
+      setNewGoalName('');
+      setNewGoalError(null);
       if (block) {
         setSelectedActivityId(block.activityTypeId);
-        setSelectedGoalId(block.goalId);
         setStartTime(block.startMinutes);
         setEndTime(block.endMinutes);
       } else {
         // Default to first activity type
         setSelectedActivityId(activityTypes[0]?.id || null);
-        setSelectedGoalId(undefined);
         // Find next available time slot
         const nextSlot = findNextAvailableSlot(existingBlocks, dayOfWeek);
         setStartTime(nextSlot.start);
@@ -82,10 +84,23 @@ export function BlockEditor({
     : (1440 - startTime) + endTime;
   const timeError = timeDraftMessage(timeDrafts) ?? errors.time;
 
-  // Filter goals by selected activity type
-  const availableGoals = selectedActivityId
-    ? goals.filter((g) => g.activityTypeId === selectedActivityId && g.status === 'active')
-    : [];
+  // Where this block's time goes. Read-only: a block never names a goal (#60).
+  const typeGoals = activeGoalsForActivityType(goals, selectedActivityId);
+
+  // Creates the goal straight away and leaves the block being edited exactly as it is (#48).
+  const handleQuickAddGoal = () => {
+    const request = quickAddGoal(newGoalName, selectedActivityId);
+    if (!request.ok) {
+      setNewGoalError(request.error);
+      return;
+    }
+    if (!addGoal(request.goal)) {
+      setNewGoalError('The goal could not be saved. Try again.');
+      return;
+    }
+    setNewGoalName('');
+    setNewGoalError(null);
+  };
 
   const handleSave = () => {
     const unparsedTime = timeDraftMessage(timeDrafts, true);
@@ -105,7 +120,6 @@ export function BlockEditor({
       startMinutes: startTime,
       endMinutes: endTime,
       activityTypeId: selectedActivityId,
-      goalId: selectedGoalId,
     };
 
     const validation = validateRoutineBlock(newBlock);
@@ -132,7 +146,6 @@ export function BlockEditor({
         startMinutes: startTime,
         endMinutes: endTime,
         activityTypeId: selectedActivityId,
-        goalId: selectedGoalId,
       });
     } else {
       addRoutineBlock(routineId, {
@@ -140,7 +153,6 @@ export function BlockEditor({
         startMinutes: startTime,
         endMinutes: endTime,
         activityTypeId: selectedActivityId,
-        goalId: selectedGoalId,
       });
     }
 
@@ -175,13 +187,7 @@ export function BlockEditor({
   const handleActivitySelect = (activity: ActivityType) => {
     setErrors((prev) => ({ ...prev, activity: undefined }));
     setSelectedActivityId(activity.id);
-    // Clear goal if it doesn't match the new activity type
-    if (selectedGoalId) {
-      const goal = goals.find((g) => g.id === selectedGoalId);
-      if (goal && goal.activityTypeId !== activity.id) {
-        setSelectedGoalId(undefined);
-      }
-    }
+    setNewGoalError(null);
   };
 
   return (
@@ -250,60 +256,21 @@ export function BlockEditor({
             )}
           </View>
 
-          {/* Goal (optional) */}
+          {/* Goals this block's time feeds (read-only), plus a quick add (#48, #60) */}
           <View style={styles.section}>
-            <View style={styles.sectionHeader}>
-              <Text style={styles.sectionTitle}>Link to Goal</Text>
-              <Text style={styles.optionalBadge}>Optional</Text>
-            </View>
+            <Text style={styles.sectionTitle}>Goals for this activity type</Text>
 
-            {availableGoals.length > 0 ? (
-              <View style={styles.goalList}>
-                <TouchableOpacity
-                  style={[
-                    styles.goalOption,
-                    !selectedGoalId && styles.goalOptionSelected,
-                  ]}
-                  onPress={() => setSelectedGoalId(undefined)}
-                >
-                  <Text
-                    style={[
-                      styles.goalOptionText,
-                      !selectedGoalId && styles.goalOptionTextSelected,
-                    ]}
-                  >
-                    No goal
-                  </Text>
-                </TouchableOpacity>
-                {availableGoals.map((goal) => {
-                  const progress = (goal.loggedMinutes / goal.estimatedMinutes) * 100;
+            {typeGoals.length > 0 ? (
+              <View accessibilityRole="list">
+                {typeGoals.map((goal) => {
+                  const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
                   return (
-                    <TouchableOpacity
-                      key={goal.id}
-                      style={[
-                        styles.goalOption,
-                        selectedGoalId === goal.id && styles.goalOptionSelected,
-                      ]}
-                      onPress={() => setSelectedGoalId(goal.id)}
-                    >
-                      <View style={styles.goalInfo}>
-                        <Text
-                          style={[
-                            styles.goalOptionText,
-                            selectedGoalId === goal.id && styles.goalOptionTextSelected,
-                          ]}
-                          numberOfLines={1}
-                        >
-                          {goal.name}
-                        </Text>
-                        <Text style={styles.goalProgress}>
-                          {progress.toFixed(0)}% complete
-                        </Text>
-                      </View>
-                      {selectedGoalId === goal.id && (
-                        <Text style={styles.checkmark}>✓</Text>
-                      )}
-                    </TouchableOpacity>
+                    <View key={goal.id} style={styles.goalRow}>
+                      <Text style={styles.goalRowText} numberOfLines={1}>
+                        {goal.name}
+                      </Text>
+                      <Text style={styles.goalProgress}>{progress.toFixed(0)}%</Text>
+                    </View>
                   );
                 })}
               </View>
@@ -311,10 +278,35 @@ export function BlockEditor({
               <View style={styles.noGoalsContainer}>
                 <Text style={styles.noGoalsText}>
                   {selectedActivityId
-                    ? 'No active goals for this activity type'
+                    ? 'No active goals for this activity type yet'
                     : 'Select an activity type first'}
                 </Text>
               </View>
+            )}
+
+            {selectedActivityId && (
+              <Input
+                containerStyle={styles.quickAdd}
+                value={newGoalName}
+                onChangeText={(text) => {
+                  setNewGoalName(text);
+                  setNewGoalError(null);
+                }}
+                onSubmitEditing={handleQuickAddGoal}
+                placeholder="New goal name"
+                accessibilityLabel="New goal name"
+                returnKeyType="done"
+                error={newGoalError ?? undefined}
+                rightIcon={
+                  <TouchableOpacity
+                    onPress={handleQuickAddGoal}
+                    accessibilityRole="button"
+                    accessibilityLabel="Add goal"
+                  >
+                    <Text style={styles.quickAddButton}>Add</Text>
+                  </TouchableOpacity>
+                }
+              />
             )}
           </View>
 
@@ -332,14 +324,6 @@ export function BlockEditor({
                   {activityTypes.find((a) => a.id === selectedActivityId)?.name || 'Not selected'}
                 </Text>
               </View>
-              {selectedGoalId && (
-                <View style={styles.summaryRow}>
-                  <Text style={styles.summaryLabel}>Goal</Text>
-                  <Text style={styles.summaryValue}>
-                    {goals.find((g) => g.id === selectedGoalId)?.name || 'None'}
-                  </Text>
-                </View>
-              )}
             </View>
           </View>
 
@@ -415,59 +399,40 @@ const styles = StyleSheet.create({
     color: colors.error,
     marginTop: spacing.sm,
   },
-  sectionHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: spacing.sm,
-  },
   sectionTitle: {
     fontSize: 16,
     fontWeight: '600',
     color: colors.text,
     marginBottom: spacing.sm,
   },
-  optionalBadge: {
-    fontSize: 12,
-    color: colors.textMuted,
-    marginLeft: spacing.sm,
-    marginBottom: spacing.sm,
-  },
-  goalList: {},
-  goalOption: {
+  goalRow: {
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'space-between',
     backgroundColor: colors.surface,
-    padding: spacing.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
-    marginBottom: spacing.sm,
-    borderWidth: 2,
-    borderColor: 'transparent',
+    marginBottom: spacing.xs,
   },
-  goalOptionSelected: {
-    borderColor: colors.primary,
-    backgroundColor: colors.primary + '10',
-  },
-  goalInfo: {
+  goalRowText: {
     flex: 1,
-  },
-  goalOptionText: {
     fontSize: 15,
     color: colors.text,
-  },
-  goalOptionTextSelected: {
-    fontWeight: '600',
   },
   goalProgress: {
     fontSize: 12,
     color: colors.textSecondary,
-    marginTop: 2,
-  },
-  checkmark: {
-    fontSize: 18,
-    color: colors.primary,
-    fontWeight: '600',
     marginLeft: spacing.sm,
+  },
+  quickAdd: {
+    marginTop: spacing.sm,
+    marginBottom: 0,
+  },
+  quickAddButton: {
+    fontSize: 15,
+    fontWeight: '600',
+    color: colors.primary,
   },
   noGoalsContainer: {
     backgroundColor: colors.backgroundSecondary,
