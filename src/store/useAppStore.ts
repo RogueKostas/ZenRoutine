@@ -36,6 +36,11 @@ import {
   parseQuarantineArchive,
   selectPersistedAppState,
 } from './persistence';
+import {
+  SAMPLE_ROUTINE_NAME,
+  buildSampleData,
+  missingSampleActivityTypes,
+} from './sampleData';
 import type {
   QuarantineArchive,
   QuarantinedTrackingEntry,
@@ -526,7 +531,7 @@ interface AppActions {
   importData: (serialized: string) => Promise<ImportResult>;
 
   // Debug helpers
-  _addSampleData: () => void;
+  _addSampleData: () => boolean;
 }
 
 export type AppStore = AppState & AppActions;
@@ -1331,98 +1336,84 @@ export const useAppStore = create<AppStore>()(
       // ============================================
       // Debug Helpers
       // ============================================
+      /**
+       * Load the example set (src/store/sampleData.ts). Purely additive: nothing
+       * the user already has is removed, renamed or edited, with one exception
+       * that holds nothing -- an active routine with no blocks is filled in
+       * place rather than left behind as an empty duplicate.
+       *
+       * - Missing sample activity types are added; existing ones are reused.
+       * - If the active routine already has blocks, it stays active and the
+       *   example routine is added inactive. The app has no routine switcher,
+       *   so activating it would hide the user's own schedule.
+       * - Loading a second time does nothing (detected by the routine name), so
+       *   a double tap cannot double the tracking history.
+       *
+       * Returns whether anything was loaded.
+       */
       _addSampleData: () => {
         const state = get();
-        const workActivity = state.activityTypes.find((at) => at.name === 'Work');
-        const fitnessActivity = state.activityTypes.find((at) => at.name === 'Fitness');
-        const sideProjectActivity = state.activityTypes.find((at) => at.name === 'Side Project');
-
-        if (!workActivity || !fitnessActivity || !sideProjectActivity) return;
-
-        // Add sample goals
-        const goal1Id = get().addGoal({
-          name: 'Complete TypeScript Course',
-          description: 'Finish the advanced TypeScript patterns course',
-          estimatedMinutes: 1200,
-          activityTypeId: sideProjectActivity.id,
-          priority: 2, // High priority
-        });
-
-        const goal2Id = get().addGoal({
-          name: 'Run 100 miles',
-          description: 'Cumulative running goal for the month',
-          estimatedMinutes: 600,
-          activityTypeId: fitnessActivity.id,
-          priority: 1, // Very High priority
-        });
-        if (!goal1Id || !goal2Id) return;
-
-        // Add sample routine
-        const routineId = get().addRoutine('Work Week');
-
-        // Add blocks to routine
-        const blocks: Omit<RoutineBlock, 'id'>[] = [
-          // Monday - Friday work blocks
-          ...[1, 2, 3, 4, 5].flatMap((day) => [
-            {
-              dayOfWeek: day as DayOfWeek,
-              startMinutes: 540, // 9:00 AM
-              endMinutes: 720,   // 12:00 PM
-              activityTypeId: workActivity.id,
-            },
-            {
-              dayOfWeek: day as DayOfWeek,
-              startMinutes: 780, // 1:00 PM
-              endMinutes: 1020,  // 5:00 PM
-              activityTypeId: workActivity.id,
-            },
-          ]),
-          // Morning workout Monday, Wednesday, Friday
-          ...[1, 3, 5].map((day) => ({
-            dayOfWeek: day as DayOfWeek,
-            startMinutes: 420, // 7:00 AM
-            endMinutes: 480,   // 8:00 AM
-            activityTypeId: fitnessActivity.id,
-            goalId: goal2Id,
-          })),
-          // Side project evenings
-          ...[1, 2, 3, 4].map((day) => ({
-            dayOfWeek: day as DayOfWeek,
-            startMinutes: 1140, // 7:00 PM
-            endMinutes: 1260,   // 9:00 PM
-            activityTypeId: sideProjectActivity.id,
-            goalId: goal1Id,
-          })),
+        if (state.routines.some((routine) => routine.name === SAMPLE_ROUTINE_NAME)) {
+          return false;
+        }
+        const now = new Date();
+        const activityTypes = [
+          ...state.activityTypes,
+          ...missingSampleActivityTypes(state.activityTypes, now),
         ];
+        const sample = buildSampleData(activityTypes, now);
 
-        blocks.forEach((block) => {
-          get().addRoutineBlock(routineId, block);
-        });
+        const activeRoutine = state.routines.find(
+          (routine) => routine.id === state.activeRoutineId
+        );
+        let routines: Routine[];
+        let activeRoutineId = state.activeRoutineId;
+        if (activeRoutine && activeRoutine.blocks.length === 0) {
+          routines = state.routines.map((routine) =>
+            routine.id === activeRoutine.id
+              ? { ...sample.routine, id: routine.id, createdAt: routine.createdAt }
+              : routine
+          );
+        } else if (activeRoutine) {
+          routines = [...state.routines, { ...sample.routine, isActive: false }];
+        } else {
+          routines = [
+            ...state.routines.map((routine) =>
+              routine.isActive ? { ...routine, isActive: false } : routine
+            ),
+            sample.routine,
+          ];
+          activeRoutineId = sample.routine.id;
+        }
 
-        // Set as active routine
-        get().setActiveRoutine(routineId);
-
-        // Add some sample tracking entries
-        const today = new Date();
-        const yesterday = new Date(today);
-        yesterday.setDate(yesterday.getDate() - 1);
-
-        get().addCompletedEntry({
-          date: toLocalDateKey(yesterday),
-          startTime: new Date(yesterday.setHours(9, 0, 0, 0)).toISOString(),
-          endTime: new Date(yesterday.setHours(12, 0, 0, 0)).toISOString(),
-          activityTypeId: workActivity.id,
-          source: 'scheduled',
-        });
-
-        get().addCompletedEntry({
-          date: toLocalDateKey(yesterday),
-          startTime: new Date(yesterday.setHours(7, 0, 0, 0)).toISOString(),
-          endTime: new Date(yesterday.setHours(8, 0, 0, 0)).toISOString(),
-          activityTypeId: fitnessActivity.id,
-          goalId: goal2Id,
-          source: 'manual',
-        });
+        const timestamp = now.toISOString();
+        let next: AppState = {
+          ...selectPersistedAppState(state),
+          activityTypes,
+          routines,
+          activeRoutineId,
+          goals: [...state.goals, ...sample.goals],
+        };
+        const entries: TrackingEntry[] = [];
+        let goals = next.goals;
+        for (const data of sample.trackingEntries) {
+          const entry: TrackingEntry = {
+            ...data,
+            id: generateId(),
+            createdAt: timestamp,
+            updatedAt: timestamp,
+          };
+          if (!trackingEntryIsValid(next, entry)) continue;
+          entries.push(entry);
+          goals = applyGoalDeltas(goals, contributionDelta(undefined, entry), timestamp);
+        }
+        next = {
+          ...next,
+          goals,
+          trackingEntries: [...state.trackingEntries, ...entries],
+        };
+        set(next);
+        return true;
       },
     }),
     {
