@@ -1,64 +1,25 @@
-import React, { useState, useRef } from 'react';
+import React, { useState } from 'react';
 import {
   View,
   Text,
   StyleSheet,
   TouchableOpacity,
-  Dimensions,
-  FlatList,
-  Animated,
+  type LayoutChangeEvent,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-
-const { width: SCREEN_WIDTH } = Dimensions.get('window');
-
-interface OnboardingSlide {
-  id: string;
-  emoji: string;
-  title: string;
-  description: string;
-  color: string;
-}
-
-const SLIDES: OnboardingSlide[] = [
-  {
-    id: '1',
-    emoji: '👋',
-    title: 'Welcome to ZenRoutine',
-    description: 'Take control of your time and achieve your goals with intelligent routine planning.',
-    color: '#5E35B1',
-  },
-  {
-    id: '2',
-    emoji: '🎯',
-    title: 'Set Meaningful Goals',
-    description: 'Create goals with time estimates and priorities. Track your progress as you work toward them.',
-    color: '#E53935',
-  },
-  {
-    id: '3',
-    emoji: '📅',
-    title: 'Plan Your Week',
-    description: 'Build a weekly routine with time blocks. Link activities to goals to make consistent progress.',
-    color: '#1E88E5',
-  },
-  {
-    id: '4',
-    emoji: '⏱️',
-    title: 'Track Your Time',
-    description: 'Log time manually or start timers to track what you actually do versus what you planned.',
-    color: '#43A047',
-  },
-  {
-    id: '5',
-    emoji: '📊',
-    title: 'See Your Progress',
-    description: 'Analyze your time with detailed breakdowns and predictions for when you\'ll reach your goals.',
-    color: '#FB8C00',
-  },
-];
+import { useAppStore } from '../store';
+import {
+  canGoBack,
+  isLastSlide,
+  nextOnboardingStep,
+  paginationDots,
+  previousSlideIndex,
+  primaryButtonLabel,
+  slideWidthFromLayout,
+  visibleSlide,
+} from './onboardingPaging';
 
 interface OnboardingScreenProps {
   onComplete: () => void;
@@ -66,116 +27,113 @@ interface OnboardingScreenProps {
 
 export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
   const { colors } = useTheme();
+  const addSampleData = useAppStore((state) => state._addSampleData);
   const [currentIndex, setCurrentIndex] = useState(0);
-  const flatListRef = useRef<FlatList>(null);
-  const scrollX = useRef(new Animated.Value(0)).current;
+  // Measured from the viewport rather than read from the window once at load,
+  // so a slide is always exactly one container wide, including after a resize.
+  const [slideWidth, setSlideWidth] = useState<number | null>(null);
+
+  const slide = visibleSlide(currentIndex);
+  const lastSlide = isLastSlide(currentIndex);
 
   const handleNext = () => {
-    if (currentIndex < SLIDES.length - 1) {
-      flatListRef.current?.scrollToIndex({ index: currentIndex + 1 });
-      setCurrentIndex(currentIndex + 1);
-    } else {
+    const step = nextOnboardingStep(currentIndex);
+    if (step.finished) {
       onComplete();
+    } else {
+      setCurrentIndex(step.index);
     }
   };
 
-  const handleSkip = () => {
+  const handleBack = () => {
+    setCurrentIndex(previousSlideIndex(currentIndex));
+  };
+
+  const handleTryExampleData = () => {
+    addSampleData();
     onComplete();
   };
 
-  const renderSlide = ({ item }: { item: OnboardingSlide }) => {
-    return (
-      <View style={[styles.slide, { width: SCREEN_WIDTH }]}>
-        <View style={[styles.emojiContainer, { backgroundColor: item.color + '20' }]}>
-          <Text style={styles.emoji}>{item.emoji}</Text>
-        </View>
-        <Text style={[styles.title, { color: colors.text }]}>{item.title}</Text>
-        <Text style={[styles.description, { color: colors.textSecondary }]}>{item.description}</Text>
-      </View>
-    );
+  const handleViewportLayout = (event: LayoutChangeEvent) => {
+    setSlideWidth(slideWidthFromLayout(event.nativeEvent.layout.width));
   };
-
-  const renderPagination = () => {
-    return (
-      <View style={styles.pagination}>
-        {SLIDES.map((_, index) => {
-          const inputRange = [
-            (index - 1) * SCREEN_WIDTH,
-            index * SCREEN_WIDTH,
-            (index + 1) * SCREEN_WIDTH,
-          ];
-
-          const dotWidth = scrollX.interpolate({
-            inputRange,
-            outputRange: [8, 20, 8],
-            extrapolate: 'clamp',
-          });
-
-          const opacity = scrollX.interpolate({
-            inputRange,
-            outputRange: [0.3, 1, 0.3],
-            extrapolate: 'clamp',
-          });
-
-          return (
-            <Animated.View
-              key={index}
-              style={[
-                styles.dot,
-                { backgroundColor: colors.primary, width: dotWidth, opacity },
-              ]}
-            />
-          );
-        })}
-      </View>
-    );
-  };
-
-  const isLastSlide = currentIndex === SLIDES.length - 1;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]}>
-      {/* Skip button */}
       <View style={styles.header}>
-        {!isLastSlide && (
-          <TouchableOpacity onPress={handleSkip}>
-            <Text style={[styles.skipText, { color: colors.textSecondary }]}>Skip</Text>
+        {canGoBack(currentIndex) ? (
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={handleBack}
+            accessibilityRole="button"
+            accessibilityLabel="Previous slide"
+          >
+            <Text style={[styles.headerText, { color: colors.textSecondary }]}>Back</Text>
+          </TouchableOpacity>
+        ) : (
+          <View />
+        )}
+        {!lastSlide && (
+          <TouchableOpacity
+            style={styles.headerButton}
+            onPress={onComplete}
+            accessibilityRole="button"
+            accessibilityLabel="Skip onboarding"
+          >
+            <Text style={[styles.headerText, { color: colors.textSecondary }]}>Skip</Text>
           </TouchableOpacity>
         )}
       </View>
 
-      {/* Slides */}
-      <FlatList
-        ref={flatListRef}
-        data={SLIDES}
-        renderItem={renderSlide}
-        keyExtractor={(item) => item.id}
-        horizontal
-        pagingEnabled
-        showsHorizontalScrollIndicator={false}
-        scrollEventThrottle={16}
-        onScroll={Animated.event(
-          [{ nativeEvent: { contentOffset: { x: scrollX } } }],
-          { useNativeDriver: false }
-        )}
-        onMomentumScrollEnd={(event) => {
-          const index = Math.round(event.nativeEvent.contentOffset.x / SCREEN_WIDTH);
-          setCurrentIndex(index);
-        }}
-      />
+      <View style={styles.viewport} onLayout={handleViewportLayout}>
+        <View
+          key={slide.id}
+          style={[styles.slide, slideWidth === null ? styles.slideStretch : { width: slideWidth }]}
+        >
+          <View style={[styles.emojiContainer, { backgroundColor: slide.color + '20' }]}>
+            <Text style={styles.emoji}>{slide.emoji}</Text>
+          </View>
+          <Text style={[styles.title, { color: colors.text }]} accessibilityRole="header">
+            {slide.title}
+          </Text>
+          <Text style={[styles.description, { color: colors.textSecondary }]}>
+            {slide.description}
+          </Text>
+        </View>
+      </View>
 
-      {/* Pagination */}
-      {renderPagination()}
+      <View style={styles.pagination} accessibilityLabel={`Slide ${currentIndex + 1} of ${paginationDots(currentIndex).length}`}>
+        {paginationDots(currentIndex).map((active, index) => (
+          <View
+            key={index}
+            style={[
+              styles.dot,
+              active ? styles.dotActive : styles.dotInactive,
+              { backgroundColor: colors.primary },
+            ]}
+          />
+        ))}
+      </View>
 
-      {/* Button */}
       <View style={styles.footer}>
+        {lastSlide && (
+          <TouchableOpacity
+            style={[styles.button, styles.secondaryButton, { borderColor: colors.primary }]}
+            onPress={handleTryExampleData}
+            accessibilityRole="button"
+            accessibilityLabel="Try it with example data"
+          >
+            <Text style={[styles.secondaryButtonText, { color: colors.primary }]}>
+              Try it with example data
+            </Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={[styles.button, { backgroundColor: colors.primary }]}
           onPress={handleNext}
+          accessibilityRole="button"
         >
-          <Text style={styles.buttonText}>
-            {isLastSlide ? 'Get Started' : 'Next'}
-          </Text>
+          <Text style={styles.buttonText}>{primaryButtonLabel(currentIndex)}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -188,19 +146,32 @@ const styles = StyleSheet.create({
   },
   header: {
     height: 50,
-    justifyContent: 'center',
-    alignItems: 'flex-end',
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
     paddingHorizontal: spacing.lg,
   },
-  skipText: {
+  headerButton: {
+    minHeight: 44,
+    justifyContent: 'center',
+    paddingHorizontal: spacing.xs,
+  },
+  headerText: {
     fontSize: 16,
     fontWeight: '500',
   },
-  slide: {
+  viewport: {
     flex: 1,
+    overflow: 'hidden',
+  },
+  slide: {
+    flexGrow: 1,
     justifyContent: 'center',
     alignItems: 'center',
     paddingHorizontal: spacing.xl,
+  },
+  slideStretch: {
+    alignSelf: 'stretch',
   },
   emojiContainer: {
     width: 120,
@@ -218,12 +189,14 @@ const styles = StyleSheet.create({
     fontWeight: 'bold',
     textAlign: 'center',
     marginBottom: spacing.md,
+    maxWidth: 560,
   },
   description: {
     fontSize: 16,
     textAlign: 'center',
     lineHeight: 24,
     paddingHorizontal: spacing.md,
+    maxWidth: 560,
   },
   pagination: {
     flexDirection: 'row',
@@ -236,18 +209,43 @@ const styles = StyleSheet.create({
     borderRadius: 4,
     marginHorizontal: 4,
   },
+  dotActive: {
+    width: 20,
+    opacity: 1,
+  },
+  dotInactive: {
+    width: 8,
+    opacity: 0.3,
+  },
   footer: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: spacing.sm,
+    width: '100%',
+    maxWidth: 560,
+    alignSelf: 'center',
     paddingHorizontal: spacing.xl,
     paddingBottom: spacing.xl,
   },
   button: {
+    flexGrow: 1,
+    flexBasis: 200,
     paddingVertical: 16,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
     alignItems: 'center',
+  },
+  secondaryButton: {
+    borderWidth: 2,
+    paddingVertical: 14,
   },
   buttonText: {
     color: '#fff',
     fontSize: 18,
+    fontWeight: '600',
+  },
+  secondaryButtonText: {
+    fontSize: 16,
     fontWeight: '600',
   },
 });
