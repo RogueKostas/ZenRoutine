@@ -22,12 +22,21 @@ export const APP_STORAGE_KEY = 'zenroutine-storage';
  */
 export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
 /**
+ * v8 (#50) made a goal's activity type and estimate optional; see OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION.
  * v7 (#49) replaced `Goal.priority` with `Goal.order`; see GOAL_ORDER_SCHEMA_VERSION. v6 (#60)
  * removed `RoutineBlock.goalId`; see BLOCK_GOAL_REMOVED_SCHEMA_VERSION. v5 (#44) added
  * `preferences`. v4 was the first version written under the strict invariants below; see
  * STRICT_SCHEMA_VERSION.
  */
-export const CURRENT_SCHEMA_VERSION = 7;
+export const CURRENT_SCHEMA_VERSION = 8;
+/**
+ * The first schema version whose goals may leave out `activityTypeId` and `estimatedMinutes`
+ * (#50: the goals list works as a plain to-do list). Every blob below it has both on every goal,
+ * so the v7 -> v8 step changes no data: it is a validation gate. Below v8 a goal missing either is
+ * still refused, exactly as before, so a blob that did not open before still does not. Like v5–v7
+ * it gates only itself and leaves the repair gate where it was.
+ */
+export const OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION = 8;
 /**
  * The first schema version whose goals carry `order` instead of `priority` (#49: priority is list
  * order). Every blob below it has a 1–5 `priority` on each goal, and the v6 -> v7 step turns those
@@ -384,8 +393,39 @@ function parseActivityType(value: unknown, migrateLegacyIcon: boolean): Activity
 const GOAL_STATUSES: GoalStatus[] = ['active', 'completed', 'paused', 'archived'];
 const TRACKING_SOURCES: TrackingSource[] = ['scheduled', 'manual', 'notification'];
 
+/**
+ * A goal's estimate. From v8 (#50) it may be absent (or `null`, from a hand-edited backup), which
+ * means "not estimated"; a present value is held to the same rule at every version.
+ */
+function readGoalEstimate(
+  record: UnknownRecord,
+  version: number,
+  repairLegacyValues: boolean
+): number | undefined {
+  const value = record.estimatedMinutes;
+  if (version >= OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION && (value === undefined || value === null)) {
+    return undefined;
+  }
+  const minutes = readInteger(record, 'estimatedMinutes');
+  if (minutes > 0) return minutes;
+  if (repairLegacyValues) return 1;
+  throw new Error('Invalid estimatedMinutes: expected a positive integer');
+}
+
+/** A goal's activity type: required below v8, optional from v8 (#50). */
+function readGoalActivityType(record: UnknownRecord, version: number): string | undefined {
+  if (version < OPTIONAL_GOAL_FIELDS_SCHEMA_VERSION) return readString(record, 'activityTypeId');
+  const value = readOptionalString(record, 'activityTypeId');
+  if (value === '') throw new Error('Invalid activityTypeId: expected a non-empty string');
+  return value;
+}
+
 /** Every goal field except `order`, which depends on the schema version (see `readGoals`). */
-function parseGoalFields(record: UnknownRecord, repairLegacyValues: boolean): Omit<Goal, 'order'> {
+function parseGoalFields(
+  record: UnknownRecord,
+  version: number,
+  repairLegacyValues: boolean
+): Omit<Goal, 'order'> {
   const status = readString(record, 'status');
   if (!GOAL_STATUSES.includes(status as GoalStatus)) {
     throw new Error(`Invalid goal status: ${status}`);
@@ -406,23 +446,21 @@ function parseGoalFields(record: UnknownRecord, repairLegacyValues: boolean): Om
     completedAt = undefined;
   }
 
+  const estimatedMinutes = readGoalEstimate(record, version, repairLegacyValues);
+  const activityTypeId = readGoalActivityType(record, version);
+  // An unset type or estimate is left off the goal, not stored as `undefined` (see useAppStore).
   return {
     id: readString(record, 'id'),
     name: readString(record, 'name'),
     description: readOptionalString(record, 'description') ?? '',
-    estimatedMinutes: (() => {
-      const minutes = readInteger(record, 'estimatedMinutes');
-      if (minutes > 0) return minutes;
-      if (repairLegacyValues) return 1;
-      throw new Error('Invalid estimatedMinutes: expected a positive integer');
-    })(),
+    ...(estimatedMinutes !== undefined ? { estimatedMinutes } : {}),
     loggedMinutes: (() => {
       const minutes = readInteger(record, 'loggedMinutes');
       if (minutes >= 0) return minutes;
       if (repairLegacyValues) return 0;
       throw new Error('Invalid loggedMinutes: expected a non-negative integer');
     })(),
-    activityTypeId: readString(record, 'activityTypeId'),
+    ...(activityTypeId !== undefined ? { activityTypeId } : {}),
     status: status as GoalStatus,
     createdAt: readIsoDateTime(record, 'createdAt'),
     updatedAt,
@@ -480,7 +518,7 @@ function readGoals(record: UnknownRecord, version: number): Goal[] {
   const repairLegacyValues = version < STRICT_SCHEMA_VERSION;
   if (version < GOAL_ORDER_SCHEMA_VERSION) {
     return orderGoalsByLegacyPriority(values.map((goal) => ({
-      goal: parseGoalFields(goal, repairLegacyValues),
+      goal: parseGoalFields(goal, version, repairLegacyValues),
       priority: readLegacyPriority(goal, version),
     })));
   }
@@ -488,7 +526,7 @@ function readGoals(record: UnknownRecord, version: number): Goal[] {
   const goals = values.map((goal) => {
     const order = readInteger(goal, 'order');
     if (order < 0) throw new Error('Invalid order: expected a non-negative integer');
-    return { ...parseGoalFields(goal, repairLegacyValues), order };
+    return { ...parseGoalFields(goal, version, repairLegacyValues), order };
   });
   if (new Set(goals.map((goal) => goal.order)).size !== goals.length) {
     throw new Error('Invalid goals: two goals share a list position');
@@ -797,7 +835,8 @@ export function migratePersistedState(
     trackingEntries = trackingEntries.filter((entry) => !staleIds.has(entry.id));
   };
 
-  if (goals.some((goal) => !activityIds.has(goal.activityTypeId))) {
+  // A goal with no type (#50, v8 on) references nothing; one with a type must name a real one.
+  if (goals.some((goal) => goal.activityTypeId !== undefined && !activityIds.has(goal.activityTypeId))) {
     throw new Error('Invalid goals: referenced activity type does not exist');
   }
   if (routines.some((routine) => routine.blocks.some(

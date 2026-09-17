@@ -27,7 +27,7 @@ export type ForecastBlock = Pick<
   'dayOfWeek' | 'startMinutes' | 'endMinutes' | 'activityTypeId'
 > & { id?: string };
 
-/** Wave B makes type and estimate optional, so the forecast accepts goals without them. */
+/** Type and estimate are optional (#50); a goal without either is reported as unscheduled. */
 export type ForecastGoal = Pick<Goal, 'id' | 'status' | 'loggedMinutes'> & {
   activityTypeId?: string;
   estimatedMinutes?: number;

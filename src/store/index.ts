@@ -14,10 +14,11 @@ export {
   getRepairedTrackingEntries,
   initializeAppStore,
   resetAppStoreAfterHydrationError,
+  selectActiveGoals,
   subscribeHydration,
 } from './useAppStore';
 
-export type { AppStore, HydrationSnapshot, ImportResult } from './useAppStore';
+export type { AppStore, GoalUpdate, HydrationSnapshot, ImportResult } from './useAppStore';
 export type { GoalMoveTarget } from '../core/engine/goalOrder';
 export type {
   QuarantinedTrackingEntry,

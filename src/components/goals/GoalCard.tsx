@@ -2,7 +2,8 @@ import React from 'react';
 import { View, Text, TouchableOpacity, StyleSheet, ViewStyle } from 'react-native';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
-import { formatDuration } from '../../core/utils/time';
+import { formatDuration, formatGoalTimeLabel } from '../../core/utils/time';
+import { goalProgressPercent } from '../../core/engine/goalList';
 import { ProgressBar } from '../common/ProgressBar';
 import { Badge, ColorDot } from '../common/Badge';
 import type { Goal, ActivityType } from '../../core/types';
@@ -32,8 +33,8 @@ export function GoalCard({
   showActions = true,
   style,
 }: GoalCardProps) {
-  const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
-  const remaining = Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
+  const progress = goalProgressPercent(goal) ?? 0;
+  const remaining = Math.max(0, (goal.estimatedMinutes ?? 0) - goal.loggedMinutes);
 
   const getStatusVariant = (): 'success' | 'warning' | 'muted' | 'default' => {
     switch (goal.status) {
@@ -93,7 +94,7 @@ export function GoalCard({
         />
         <View style={styles.progressStats}>
           <Text style={styles.progressText}>
-            {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)}
+            {formatGoalTimeLabel(goal.loggedMinutes, goal.estimatedMinutes)}
           </Text>
           <Text style={styles.progressPercent}>{progress.toFixed(0)}%</Text>
         </View>
@@ -171,7 +172,7 @@ interface GoalProgressMiniProps {
 }
 
 export function GoalProgressMini({ goal, activityType, style }: GoalProgressMiniProps) {
-  const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
+  const progress = goalProgressPercent(goal) ?? 0;
 
   return (
     <View style={[styles.miniContainer, style]}>

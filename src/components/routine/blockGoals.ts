@@ -2,9 +2,9 @@ import { sortGoalsByOrder } from '../../core/engine/goalOrder';
 import type { Goal } from '../../core/types';
 
 /**
- * The estimate a goal quick-added from the Block Editor starts with (#48). The store has no default
- * of its own and `addGoal` refuses a goal without a positive estimate, so this is the 60 minutes
- * the brief allows until Wave B makes the estimate optional (#50). It can be changed on Goals.
+ * The estimate a goal quick-added from the Block Editor starts with (#48). Since #50 the store
+ * accepts a goal with no estimate, but one added here is added *to be scheduled* by this block's
+ * type, so it keeps a real hour and gets a forecast straight away. It can be changed on Goals.
  */
 export const QUICK_ADD_GOAL_ESTIMATE_MINUTES = 60;
 
@@ -12,6 +12,7 @@ export const QUICK_ADD_GOAL_ESTIMATE_MINUTES = 60;
  * The goals the Block Editor lists under "Goals for this activity type": the type's active goals,
  * in list order (#49), which is the order the block's time goes to them. Read-only — a block
  * never names a goal (#60), so this is information about where the block's time goes, not a picker.
+ * A goal with no type (#50) belongs to no block; one with no estimate is listed but takes no time.
  */
 export function activeGoalsForActivityType(
   goals: readonly Goal[],
