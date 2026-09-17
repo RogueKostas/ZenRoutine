@@ -5,4 +5,5 @@ export { AnalyticsScreen } from './AnalyticsScreen';
 export { SettingsScreen } from './SettingsScreen';
 export { DebugScreen } from './DebugScreen';
 export { ActivityTypesScreen } from './ActivityTypesScreen';
+export { CurrentActivityScreen } from './CurrentActivityScreen';
 export { OnboardingScreen } from './OnboardingScreen';

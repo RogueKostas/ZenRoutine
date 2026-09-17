@@ -11,6 +11,7 @@ import {
   TrackingEntry,
   TrackingSource,
   DayOfWeek,
+  Preferences,
   WeekStartsOn,
   toRoutineBlock,
 } from '../core/types';
@@ -25,6 +26,7 @@ import {
 import type { GoalMoveTarget } from '../core/engine/goalOrder';
 import {
   getTrackingEntryDurationMinutes,
+  isTrackingEntryPaused,
   parseLocalDateKey,
   toLocalDateKey,
 } from '../core/utils/time';
@@ -39,6 +41,7 @@ import {
   appendQuarantineGeneration,
   createInitialState,
   decodeBackup,
+  describeInvalidPauses,
   encodeBackup,
   migratePersistedState,
   parseQuarantineArchive,
@@ -492,6 +495,15 @@ function changedRoutineFields(routine: Routine, data: RoutineUpdate): (keyof Rou
   );
 }
 
+/** The latest of some ISO date-times, as written. Unparseable values are ignored. */
+function latestMoment(moments: readonly string[]): string {
+  let latest = moments[moments.length - 1];
+  for (const moment of moments) {
+    if (Date.parse(moment) > Date.parse(latest)) latest = moment;
+  }
+  return latest;
+}
+
 function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   try {
     parseLocalDateKey(entry.date);
@@ -503,6 +515,7 @@ function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
   if (!Number.isFinite(start) || (end !== undefined && (!Number.isFinite(end) || end <= start))) {
     return false;
   }
+  if (describeInvalidPauses(entry) !== null) return false;
   const activityExists = state.activityTypes.some(
     (activity) => activity.id === entry.activityTypeId
   );
@@ -580,7 +593,18 @@ interface AppActions {
     source: TrackingSource;
     notes?: string;
   }) => string | null;
+  /**
+   * Stops the entry. A pause that is still open closes at the stop time, so paused time is never
+   * counted (#54).
+   */
   stopTracking: (id?: string) => void;
+  /**
+   * Pauses the running entry (#54, p77). Does nothing when it is already paused or has ended: at
+   * most one pause is ever open. A pomodoro break is not a pause and never calls this.
+   */
+  pauseTracking: (id?: string) => void;
+  /** Closes the running entry's open pause. Does nothing when it is not paused. */
+  resumeTracking: (id?: string) => void;
   addCompletedEntry: (
     data: Omit<TrackingEntry, 'id' | 'createdAt' | 'updatedAt' | 'endTime'> & {
       endTime: string;
@@ -594,6 +618,8 @@ interface AppActions {
   initializeDefaults: () => void;
   completeOnboarding: () => void;
   setWeekStartsOn: (weekStartsOn: WeekStartsOn) => void;
+  /** Settings → Pomodoro timer (#53). Off leaves a plain running timer. */
+  setPomodoroEnabled: (enabled: boolean) => void;
   exportData: () => string;
   importData: (serialized: string) => Promise<ImportResult>;
 
@@ -1333,13 +1359,21 @@ export const useAppStore = create<AppStore>()(
         // therefore the one record shape stopTracking may produce that its siblings would reject,
         // and it is deliberate. It is still readable by the parser, and it contributes nothing:
         // getTrackingEntryDurationMinutes returns 0 for end <= start.
-        const startedAt = Date.parse(entry.startTime);
-        const endTime = Number.isFinite(startedAt) && Date.parse(now) < startedAt
-          ? entry.startTime
-          : now;
+        //
+        // Pauses (#54) extend the same rule: the entry cannot end before a pause it records began
+        // or ended, so the clamp is to the latest recorded moment, not only to startTime. An open
+        // pause then closes at the stop time, which leaves the paused stretch out of the duration.
+        const endTime = latestMoment([
+          entry.startTime,
+          ...(entry.pauses ?? []).flatMap((pause) => (pause.end ? [pause.start, pause.end] : [pause.start])),
+          now,
+        ]);
         const completedEntry: TrackingEntry = {
           ...entry,
           endTime,
+          ...(entry.pauses
+            ? { pauses: entry.pauses.map((pause) => (pause.end ? pause : { ...pause, end: endTime })) }
+            : {}),
           updatedAt: now,
         };
 
@@ -1357,6 +1391,49 @@ export const useAppStore = create<AppStore>()(
               ? null
               : state.currentTrackingEntryId,
         }));
+      },
+
+      pauseTracking: (id) => {
+        set((state) => {
+          const entryId = id || state.currentTrackingEntryId;
+          const entry = state.trackingEntries.find((candidate) => candidate.id === entryId);
+          if (!entry || entry.endTime || isTrackingEntryPaused(entry)) return state;
+          const now = new Date().toISOString();
+          const pauses = entry.pauses ?? [];
+          // As in stopTracking, a clock that moved backwards must not write a pause that starts
+          // before the entry or the last pause ended.
+          const start = latestMoment([
+            entry.startTime,
+            ...pauses.flatMap((pause) => (pause.end ? [pause.end] : [])),
+            now,
+          ]);
+          const paused: TrackingEntry = { ...entry, pauses: [...pauses, { start }], updatedAt: now };
+          return {
+            trackingEntries: state.trackingEntries.map((candidate) =>
+              candidate.id === entry.id ? paused : candidate
+            ),
+          };
+        });
+      },
+
+      resumeTracking: (id) => {
+        set((state) => {
+          const entryId = id || state.currentTrackingEntryId;
+          const entry = state.trackingEntries.find((candidate) => candidate.id === entryId);
+          if (!entry?.pauses || !isTrackingEntryPaused(entry)) return state;
+          const now = new Date().toISOString();
+          const pauses = entry.pauses.map((pause, index) =>
+            index === entry.pauses!.length - 1
+              ? { ...pause, end: latestMoment([pause.start, now]) }
+              : pause
+          );
+          const resumed: TrackingEntry = { ...entry, pauses, updatedAt: now };
+          return {
+            trackingEntries: state.trackingEntries.map((candidate) =>
+              candidate.id === entry.id ? resumed : candidate
+            ),
+          };
+        });
       },
 
       addCompletedEntry: (data) => {
@@ -1463,6 +1540,11 @@ export const useAppStore = create<AppStore>()(
       setWeekStartsOn: (weekStartsOn) => {
         if (weekStartsOn !== 0 && weekStartsOn !== 1) return;
         set((state) => ({ preferences: { ...state.preferences, weekStartsOn } }));
+      },
+
+      setPomodoroEnabled: (enabled) => {
+        if (typeof enabled !== 'boolean') return;
+        set((state) => ({ preferences: { ...state.preferences, pomodoro: { enabled } } }));
       },
 
       exportData: () => encodeBackup(selectPersistedAppState(get())),
@@ -1754,3 +1836,9 @@ export const useCurrentTracking = () => {
 
 export const useHasCompletedOnboarding = () => useAppStore((s) => s.hasCompletedOnboarding);
 export const useWeekStartsOn = () => useAppStore((s) => s.preferences.weekStartsOn);
+
+/** Whether the Pomodoro timer is on (#53). A store that never chose has it on. */
+export function isPomodoroEnabled(preferences: Pick<Preferences, 'pomodoro'>): boolean {
+  return preferences.pomodoro?.enabled ?? true;
+}
+export const usePomodoroEnabled = () => useAppStore((s) => isPomodoroEnabled(s.preferences));

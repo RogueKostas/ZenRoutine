@@ -2,6 +2,7 @@ import { Routine, TrackingEntry, ActivityType } from '../types';
 import {
   addDaysToDateKey,
   getRoutineBlockDurationMinutes,
+  getTrackedSpans,
   parseLocalDateKey,
 } from '../utils/time';
 
@@ -72,12 +73,13 @@ export function getTrackedBreakdown(
   
   for (const entry of trackingEntries) {
     if (!entry.endTime) continue;
-    const entryStart = new Date(entry.startTime).getTime();
-    const entryEnd = new Date(entry.endTime).getTime();
-    if (!Number.isFinite(entryStart) || !Number.isFinite(entryEnd) || entryEnd <= entryStart) continue;
-    const clippedStart = Math.max(entryStart, weekStart.getTime());
-    const clippedEnd = Math.min(entryEnd, weekEnd.getTime());
-    const durationMinutes = (clippedEnd - clippedStart) / 60000;
+    // Tracked spans already leave out paused time (#54); each is clipped to the week.
+    let durationMinutes = 0;
+    for (const span of getTrackedSpans(entry)) {
+      const clippedStart = Math.max(span.start, weekStart.getTime());
+      const clippedEnd = Math.min(span.end, weekEnd.getTime());
+      if (clippedEnd > clippedStart) durationMinutes += (clippedEnd - clippedStart) / 60000;
+    }
     if (durationMinutes <= 0) continue;
     
     const current = minutesByType.get(entry.activityTypeId) || 0;

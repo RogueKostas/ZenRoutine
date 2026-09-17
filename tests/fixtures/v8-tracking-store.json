@@ -1,0 +1,244 @@
+{
+  "state": {
+    "activityTypes": [
+      {
+        "name": "Work",
+        "color": "#E53935",
+        "icon": "💼",
+        "isDefault": true,
+        "sortOrder": 0,
+        "id": "generated-1",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Side Project",
+        "color": "#FF9800",
+        "icon": "🚀",
+        "isDefault": true,
+        "sortOrder": 1,
+        "id": "generated-2",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Family Time",
+        "color": "#E91E63",
+        "icon": "❤️",
+        "isDefault": true,
+        "sortOrder": 2,
+        "id": "generated-3",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Fitness",
+        "color": "#4CAF50",
+        "icon": "💪",
+        "isDefault": true,
+        "sortOrder": 3,
+        "id": "generated-4",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Personal Development",
+        "color": "#FFEB3B",
+        "icon": "📚",
+        "isDefault": true,
+        "sortOrder": 4,
+        "id": "generated-5",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Entertainment",
+        "color": "#2196F3",
+        "icon": "📺",
+        "isDefault": true,
+        "sortOrder": 5,
+        "id": "generated-6",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Social",
+        "color": "#9C27B0",
+        "icon": "👥",
+        "isDefault": true,
+        "sortOrder": 6,
+        "id": "generated-7",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Commute",
+        "color": "#607D8B",
+        "icon": "🚗",
+        "isDefault": true,
+        "sortOrder": 7,
+        "id": "generated-8",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Food",
+        "color": "#795548",
+        "icon": "🍴",
+        "isDefault": true,
+        "sortOrder": 8,
+        "id": "generated-9",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Hygiene",
+        "color": "#00BCD4",
+        "icon": "💧",
+        "isDefault": true,
+        "sortOrder": 9,
+        "id": "generated-10",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      },
+      {
+        "name": "Sleep",
+        "color": "#3F51B5",
+        "icon": "🌙",
+        "isDefault": true,
+        "sortOrder": 10,
+        "id": "generated-11",
+        "createdAt": "2026-09-17T17:17:47.568Z",
+        "updatedAt": "2026-09-17T17:17:47.568Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "goal-run",
+        "name": "Run 5k",
+        "description": "Couch to 5k",
+        "loggedMinutes": 45,
+        "status": "active",
+        "order": 0,
+        "createdAt": "2026-09-14T06:03:00.000Z",
+        "updatedAt": "2026-09-14T19:00:00.000Z",
+        "activityTypeId": "generated-4",
+        "estimatedMinutes": 120
+      },
+      {
+        "id": "goal-report",
+        "name": "Write the report",
+        "description": "",
+        "loggedMinutes": 91,
+        "status": "active",
+        "order": 1,
+        "createdAt": "2026-09-14T06:03:00.000Z",
+        "updatedAt": "2026-09-14T10:35:30.000Z",
+        "activityTypeId": "generated-1",
+        "estimatedMinutes": 600
+      },
+      {
+        "id": "goal-todo",
+        "name": "Buy milk",
+        "description": "",
+        "loggedMinutes": 0,
+        "status": "active",
+        "order": 2,
+        "createdAt": "2026-09-14T06:03:00.000Z",
+        "updatedAt": "2026-09-14T06:03:00.000Z"
+      },
+      {
+        "id": "goal-read",
+        "name": "Read more",
+        "description": "",
+        "loggedMinutes": 0,
+        "status": "active",
+        "order": 3,
+        "createdAt": "2026-09-14T06:03:00.000Z",
+        "updatedAt": "2026-09-14T06:03:00.000Z",
+        "activityTypeId": "generated-5"
+      }
+    ],
+    "routines": [
+      {
+        "id": "generated-12",
+        "name": "My Week",
+        "isActive": true,
+        "blocks": [
+          {
+            "id": "block-work-am",
+            "dayOfWeek": 1,
+            "startMinutes": 540,
+            "endMinutes": 720,
+            "activityTypeId": "generated-1"
+          },
+          {
+            "id": "block-gym",
+            "dayOfWeek": 1,
+            "startMinutes": 1080,
+            "endMinutes": 1140,
+            "activityTypeId": "generated-4"
+          },
+          {
+            "id": "block-night",
+            "dayOfWeek": 0,
+            "startMinutes": 1380,
+            "endMinutes": 60,
+            "activityTypeId": "generated-5"
+          }
+        ],
+        "createdAt": "2026-09-14T06:00:00.000Z",
+        "updatedAt": "2026-09-14T06:02:00.000Z",
+        "capacityChangedAt": {
+          "generated-1": "2026-09-14T06:02:00.000Z",
+          "generated-4": "2026-09-14T06:02:00.000Z",
+          "generated-5": "2026-09-14T06:02:00.000Z"
+        }
+      }
+    ],
+    "trackingEntries": [
+      {
+        "id": "entry-scheduled",
+        "date": "2026-09-14",
+        "startTime": "2026-09-14T09:05:00.000Z",
+        "endTime": "2026-09-14T10:35:30.000Z",
+        "activityTypeId": "generated-1",
+        "goalId": "goal-report",
+        "routineBlockId": "block-work-am",
+        "source": "scheduled",
+        "notes": "Draft outline",
+        "createdAt": "2026-09-14T09:05:00.000Z",
+        "updatedAt": "2026-09-14T10:36:00.000Z"
+      },
+      {
+        "date": "2026-09-14",
+        "startTime": "2026-09-14T18:00:00.000Z",
+        "endTime": "2026-09-14T18:45:00.000Z",
+        "activityTypeId": "generated-4",
+        "goalId": "goal-run",
+        "source": "manual",
+        "id": "entry-manual",
+        "createdAt": "2026-09-14T19:00:00.000Z",
+        "updatedAt": "2026-09-14T19:00:00.000Z"
+      },
+      {
+        "id": "entry-running",
+        "date": "2026-09-15",
+        "startTime": "2026-09-15T09:00:00.000Z",
+        "activityTypeId": "generated-1",
+        "goalId": "goal-report",
+        "source": "manual",
+        "createdAt": "2026-09-15T09:00:00.000Z",
+        "updatedAt": "2026-09-15T09:00:00.000Z"
+      }
+    ],
+    "activeRoutineId": "generated-12",
+    "currentTrackingEntryId": "entry-running",
+    "hasCompletedOnboarding": true,
+    "preferences": {
+      "weekStartsOn": 0
+    },
+    "schemaVersion": 8
+  },
+  "version": 8
+}

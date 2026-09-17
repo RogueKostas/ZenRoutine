@@ -15,13 +15,15 @@ interface DayOverviewListProps {
   /** Hides the per-row Start while a timer runs. */
   canStart: boolean;
   onStart: (row: DayOverviewRow) => void;
+  /** A short note under a row's name, e.g. "Not tracked" on a past row (#54). */
+  rowNote?: (row: DayOverviewRow) => string;
 }
 
 /**
  * Day Overview rows (#55, design p73–p74): time range · goal name · tracked/estimated hours.
  * Past rows are greyed out and the current row stands out.
  */
-export function DayOverviewList({ rows, activityTypes, canStart, onStart }: DayOverviewListProps) {
+export function DayOverviewList({ rows, activityTypes, canStart, onStart, rowNote }: DayOverviewListProps) {
   const { colors } = useTheme();
   const nextIndex = rows.findIndex((row) => row.state === 'upcoming');
 
@@ -35,6 +37,7 @@ export function DayOverviewList({ rows, activityTypes, canStart, onStart }: DayO
         const name = row.goalName ?? activity?.name ?? 'Unknown';
         const progress = formatRowProgress(row);
         const timeRange = formatRowTimeRange(row);
+        const note = rowNote?.(row) ?? '';
         return (
           <View
             key={`${row.blockId ?? row.blockStart}-${row.startMinutes}`}
@@ -46,7 +49,7 @@ export function DayOverviewList({ rows, activityTypes, canStart, onStart }: DayO
                 ? [styles.rowCurrent, { borderColor: colors.primary, backgroundColor: colors.primary + '0D' }]
                 : undefined,
             ]}
-            accessibilityLabel={`${timeRange}, ${name}${progress ? `, ${progress}` : ''}, ${row.state}`}
+            accessibilityLabel={`${timeRange}, ${name}${progress ? `, ${progress}` : ''}, ${row.state}${note ? `, ${note}` : ''}`}
           >
             <View style={[styles.typeBadge, { backgroundColor: (activity?.color ?? '#666') + '26' }]}>
               <Text style={styles.typeIcon}>{activity?.icon ?? '•'}</Text>
@@ -82,6 +85,11 @@ export function DayOverviewList({ rows, activityTypes, canStart, onStart }: DayO
                   </Text>
                 ) : null}
               </Text>
+              {note ? (
+                <Text style={[styles.note, { color: colors.textSecondary }]} testID="row-untracked-note">
+                  {note}
+                </Text>
+              ) : null}
             </View>
             {canStart && !isPast && (
               <TouchableOpacity
@@ -167,6 +175,11 @@ const styles = StyleSheet.create({
   progress: {
     fontSize: 14,
     fontWeight: '500',
+  },
+  note: {
+    fontSize: 12,
+    fontStyle: 'italic',
+    marginTop: 2,
   },
   startButton: {
     minHeight: 44,

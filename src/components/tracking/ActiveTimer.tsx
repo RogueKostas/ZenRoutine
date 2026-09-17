@@ -3,24 +3,30 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useCurrentTracking, useActivityTypes, useAppStore, useGoals } from '../../store';
-import { formatElapsed, getElapsedSeconds } from '../../core/utils/time';
+import {
+  formatElapsed,
+  getTrackedSeconds,
+  isTrackingEntryPaused,
+  type TrackedTimeEntry,
+} from '../../core/utils/time';
 
 // Elapsed seconds are held in state so every tick changes it and re-renders; each tick
 // recomputes from the start time rather than counting, so throttled background tabs catch up.
-function useElapsedSeconds(startTime: string | undefined): number {
+// Paused time is left out (#54), so the count stands still while the entry is paused.
+function useElapsedSeconds(entry: TrackedTimeEntry | null | undefined): number {
   const [elapsedSeconds, setElapsedSeconds] = useState(0);
 
   useEffect(() => {
-    if (!startTime) {
+    if (!entry) {
       setElapsedSeconds(0);
       return;
     }
 
-    const update = () => setElapsedSeconds(getElapsedSeconds(startTime, Date.now()));
+    const update = () => setElapsedSeconds(getTrackedSeconds(entry, Date.now()));
     update();
     const interval = setInterval(update, 1000);
     return () => clearInterval(interval);
-  }, [startTime]);
+  }, [entry]);
 
   return elapsedSeconds;
 }
@@ -29,19 +35,22 @@ interface ActiveTimerProps {
   onPress?: () => void;
   compact?: boolean;
   onStopped?: (entryId: string) => void;
+  /** Shows an "Open timer" button that opens the Current Activity view (#53). */
+  onOpen?: () => void;
 }
 
-export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimerProps) {
+export function ActiveTimer({ onPress, compact = false, onStopped, onOpen }: ActiveTimerProps) {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const goals = useGoals();
   const { stopTracking } = useAppStore();
-  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
+  const elapsedSeconds = useElapsedSeconds(activeTracking);
   const [pulseAnim] = useState(() => new Animated.Value(1));
+  const paused = activeTracking ? isTrackingEntryPaused(activeTracking) : false;
 
   // Pulse animation for the recording indicator
   useEffect(() => {
-    if (!activeTracking) return;
+    if (!activeTracking || paused) return;
 
     const pulse = Animated.loop(
       Animated.sequence([
@@ -60,7 +69,7 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
 
     pulse.start();
     return () => pulse.stop();
-  }, [activeTracking, pulseAnim]);
+  }, [activeTracking, paused, pulseAnim]);
 
   const handleStop = useCallback(() => {
     if (activeTracking) {
@@ -91,12 +100,16 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
   return (
     <View
       style={[styles.container, { borderLeftColor: activity?.color || colors.primary }]}
-      accessibilityLabel={`Tracking ${activity?.name || 'activity'}, ${timeDisplay} elapsed`}
+      accessibilityLabel={`${paused ? 'Paused' : 'Tracking'} ${activity?.name || 'activity'}, ${timeDisplay} tracked`}
     >
       <View style={styles.header}>
         <View style={styles.recordingIndicator}>
-          <Animated.View style={[styles.recordingDot, { opacity: pulseAnim }]} />
-          <Text style={styles.recordingText}>TRACKING</Text>
+          <Animated.View
+            style={[styles.recordingDot, paused ? styles.pausedDot : null, { opacity: paused ? 1 : pulseAnim }]}
+          />
+          <Text style={[styles.recordingText, paused ? styles.pausedText : null]}>
+            {paused ? 'PAUSED' : 'TRACKING'}
+          </Text>
         </View>
         <Text style={styles.startTime}>
           Started {new Date(activeTracking.startTime).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
@@ -123,6 +136,17 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
       </View>
 
       <View style={styles.actions}>
+        {onOpen && (
+          <TouchableOpacity
+            style={styles.openButton}
+            onPress={onOpen}
+            accessibilityRole="button"
+            accessibilityLabel="Open the Current Activity timer"
+            testID="open-current-activity"
+          >
+            <Text style={styles.openText}>Open timer</Text>
+          </TouchableOpacity>
+        )}
         <TouchableOpacity
           style={styles.stopButton}
           onPress={handleStop}
@@ -141,7 +165,7 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
 export function ActiveTimerMini({ onPress }: { onPress?: () => void }) {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
-  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
+  const elapsedSeconds = useElapsedSeconds(activeTracking);
 
   if (!activeTracking) return null;
 
@@ -161,7 +185,7 @@ export function ActiveTimerLarge() {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const { stopTracking } = useAppStore();
-  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
+  const elapsedSeconds = useElapsedSeconds(activeTracking);
 
   if (!activeTracking) return null;
 
@@ -298,6 +322,27 @@ const styles = StyleSheet.create({
   actions: {
     flexDirection: 'row',
     justifyContent: 'flex-end',
+    gap: spacing.sm,
+  },
+  pausedDot: {
+    backgroundColor: colors.textMuted,
+    borderRadius: 1,
+  },
+  pausedText: {
+    color: colors.textMuted,
+  },
+  openButton: {
+    justifyContent: 'center',
+    paddingHorizontal: spacing.lg,
+    borderRadius: borderRadius.md,
+    borderWidth: 1,
+    borderColor: colors.primary,
+    minHeight: 44,
+  },
+  openText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: colors.primary,
   },
   stopButton: {
     flexDirection: 'row',

@@ -216,14 +216,70 @@ export function getRoutineBlockDurationMinutes(
   return duration < 0 ? duration + 1440 : duration;
 }
 
-export function getTrackingEntryDurationMinutes(
-  entry: Pick<TrackingEntry, 'startTime' | 'endTime'>
-): number {
+export type TrackedTimeEntry = Pick<TrackingEntry, 'startTime' | 'endTime' | 'pauses'>;
+
+/** A span of time in epoch milliseconds, start < end. */
+export interface TimeSpan {
+  start: number;
+  end: number;
+}
+
+/**
+ * The spans of an entry that were actually tracked (#54): from its start to its end, minus its
+ * pauses. A running entry runs to `nowMs`; without `nowMs` it has no tracked time yet. An open
+ * pause runs to the entry's end (or `nowMs`). Pauses are clamped to the entry, so a pause that
+ * strays outside it (a moved clock) can never add time, only fail to remove it.
+ */
+export function getTrackedSpans(entry: TrackedTimeEntry, nowMs?: number): TimeSpan[] {
+  const start = Date.parse(entry.startTime);
+  const end = entry.endTime !== undefined ? Date.parse(entry.endTime) : nowMs;
+  if (end === undefined || !Number.isFinite(start) || !Number.isFinite(end) || end <= start) {
+    return [];
+  }
+  const pauses = (entry.pauses ?? [])
+    .map((pause) => ({
+      start: Math.max(start, Date.parse(pause.start)),
+      end: Math.min(end, pause.end !== undefined ? Date.parse(pause.end) : end),
+    }))
+    .filter((pause) => Number.isFinite(pause.start) && Number.isFinite(pause.end) && pause.end > pause.start)
+    .sort((left, right) => left.start - right.start);
+  const spans: TimeSpan[] = [];
+  let cursor = start;
+  for (const pause of pauses) {
+    if (pause.start > cursor) spans.push({ start: cursor, end: pause.start });
+    cursor = Math.max(cursor, pause.end);
+  }
+  if (end > cursor) spans.push({ start: cursor, end });
+  return spans;
+}
+
+/** Tracked milliseconds of an entry: (end − start) − paused time. See `getTrackedSpans`. */
+export function getTrackedMilliseconds(entry: TrackedTimeEntry, nowMs?: number): number {
+  return getTrackedSpans(entry, nowMs).reduce((total, span) => total + span.end - span.start, 0);
+}
+
+/**
+ * Whole tracked seconds of a running or finished entry at `nowMs`, excluding pauses. The live
+ * timer's count: it stands still while the entry is paused.
+ */
+export function getTrackedSeconds(entry: TrackedTimeEntry, nowMs: number): number {
+  return Math.max(0, Math.floor(getTrackedMilliseconds(entry, nowMs) / 1000));
+}
+
+/** Whether the entry is running with an open pause. */
+export function isTrackingEntryPaused(entry: Pick<TrackingEntry, 'endTime' | 'pauses'>): boolean {
+  if (entry.endTime !== undefined) return false;
+  const last = entry.pauses?.[entry.pauses.length - 1];
+  return last !== undefined && last.end === undefined;
+}
+
+/**
+ * A finished entry's tracked minutes: (end − start) − paused time (#54), rounded once, so an
+ * entry that was never paused keeps exactly the duration it always had. A running entry is 0.
+ */
+export function getTrackingEntryDurationMinutes(entry: TrackedTimeEntry): number {
   if (!entry.endTime) return 0;
-  const start = new Date(entry.startTime).getTime();
-  const end = new Date(entry.endTime).getTime();
-  if (!Number.isFinite(start) || !Number.isFinite(end) || end <= start) return 0;
-  return Math.max(0, Math.round((end - start) / 60000));
+  return Math.max(0, Math.round(getTrackedMilliseconds(entry) / 60000));
 }
 
 // ============================================
