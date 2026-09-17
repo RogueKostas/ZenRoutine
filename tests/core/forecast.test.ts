@@ -124,13 +124,14 @@ describe('forecastGoals — capacity', () => {
 
   it('ignores a block’s goalId: the type’s minutes go to goals in list order', () => {
     const routine = makeRoutine({
+      // A legacy value still carrying goalId (#60 removed it from the type).
       blocks: everyDay({
         id: 'work',
         activityTypeId: WORK,
         startMinutes: 9 * H,
         endMinutes: 13 * H,
         goalId: 'integrate-analytics',
-      }),
+      } as Partial<RoutineBlock>),
     });
 
     const result = forecastGoals({ routine, goals: [designFtue, integrateAnalytics], from: MONDAY });
