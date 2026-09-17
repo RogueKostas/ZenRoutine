@@ -26,7 +26,7 @@ function routineWithCapacity(minutes: number) {
 }
 
 describe('shared-capacity forecasting', () => {
-  it('shares unlinked capacity by priority without double-counting and reallocates it', () => {
+  it('shares a type\'s capacity by priority without double-counting and reallocates it', () => {
     const high = makeGoal({
       id: 'high',
       estimatedMinutes: 500,

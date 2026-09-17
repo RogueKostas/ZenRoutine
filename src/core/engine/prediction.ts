@@ -50,9 +50,9 @@ function priorityWeight(goal: Goal): number {
 /**
  * The point from which tracking evidence counts for one activity type.
  *
- * Goals sharing an activity type are coupled — they draw on the same pool of
- * that type's blocks and inherit each other's reallocations — so an activity type is the
- * boundary at which a schedule change can genuinely move a forecast. Routines
+ * Goals sharing an activity type are coupled — they draw on the pool of that
+ * type's blocks and inherit each other's reallocations — so an activity type is
+ * the boundary at which a schedule change can genuinely move a forecast. Routines
  * with no recorded per-activity change fall back to the whole-routine
  * timestamp.
  */
