@@ -59,12 +59,11 @@ export type ImportResult =
   | { ok: true }
   | { ok: false; error: string };
 
-<<<<<<< HEAD
 /** `reason` is a sentence fit to show the user. */
 export type RoutineBlocksUpdateResult =
   | { ok: true }
   | { ok: false; reason: string };
-=======
+
 /** A goal edit. `null` removes the optional type or estimate (#50); leaving a key out keeps it. */
 export type GoalUpdate = Partial<
   Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'activityTypeId' | 'estimatedMinutes'>
@@ -72,7 +71,6 @@ export type GoalUpdate = Partial<
   activityTypeId?: string | null;
   estimatedMinutes?: number | null;
 };
->>>>>>> origin/main
 
 export type HydrationSnapshot =
   | { status: 'idle' | 'loading' | 'ready'; error: null }
