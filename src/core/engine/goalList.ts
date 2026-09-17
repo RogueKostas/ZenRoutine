@@ -31,7 +31,7 @@ export function goalAcceptsTrackingFor(
   goal: Pick<Goal, 'activityTypeId'>,
   activityTypeId: string
 ): boolean {
-  return goal.activityTypeId !== undefined && goal.activityTypeId === activityTypeId;
+  return goal.activityTypeId === activityTypeId;
 }
 
 /**

@@ -91,9 +91,11 @@ describe('a goal with only a name (#50)', () => {
     expect(forecast.allocations.every((a) => a.goalId === work)).toBe(true);
   });
 
-  it('is not one of the Block Editor\'s goals for any type', () => {
-    store().addGoal({ name: 'Buy milk', description: '' });
-    expect(activeGoalsForActivityType(store().goals, 'work')).toEqual([]);
+  it('is not one of the Block Editor\'s goals for any type; a typed goal with no estimate is', () => {
+    const todo = store().addGoal({ name: 'Buy milk', description: '' });
+    const typed = store().addGoal({ name: 'Report', description: '', activityTypeId: 'work' });
+    expect(store().goals.map((g) => g.id)).toEqual([todo, typed]);
+    expect(activeGoalsForActivityType(store().goals, 'work').map((g) => g.id)).toEqual([typed]);
   });
 
   it('cannot take tracked time until it has a type, and then can', () => {
