@@ -8,49 +8,78 @@ import {
   formatDuration,
   getDayName,
   getRoutineBlockDurationMinutes,
-  minutesToTimeString,
   orderedWeekDays,
 } from '../core/utils/time';
-import { BlockEditor, SimpleBlockList } from '../components/routine';
+import { BlockEditor, WeekStrip, firstFreeHour, newBlockTimesAt } from '../components/routine';
+import { DayRibbon, useNow } from '../components/ribbon';
+import { RoutineBreakdown, plannedBreakdown } from '../components/breakdown';
 import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { DayOfWeek, RoutineBlock } from '../core/types';
 
-export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
+/** What the edit box is open for: an existing block, or a new one at given times. */
+type EditorTarget =
+  | { kind: 'edit'; block: RoutineBlock }
+  | { kind: 'new'; start: number; end: number };
+
+/**
+ * The routine surface (DESIGN-2019 §4.2–4.3, pp. 10–43): the week strip, the selected day's
+ * ribbon (the editor: tap a segment to edit it, tap empty time to add one), and the planned
+ * breakdown pie. There is no list of block cards (§4.2 behaviour rules).
+ */
+export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
   const { colors } = useTheme();
+  const now = useNow();
+  const today = now.getDay() as DayOfWeek;
   const weekStartsOn = useWeekStartsOn();
   const weekDays = useMemo(() => orderedWeekDays(weekStartsOn), [weekStartsOn]);
-  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(new Date().getDay() as DayOfWeek);
-  const [showBlockEditor, setShowBlockEditor] = useState(false);
-  const [editingBlock, setEditingBlock] = useState<RoutineBlock | undefined>(undefined);
+  const [selectedDay, setSelectedDay] = useState<DayOfWeek>(today);
+  const [editor, setEditor] = useState<EditorTarget | null>(null);
+  const [copyOpen, setCopyOpen] = useState(false);
 
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
   const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
   const dialog = useDialog();
 
-  const dayBlocks = activeRoutine?.blocks
-    .filter((b) => b.dayOfWeek === selectedDay)
-    .sort((a, b) => a.startMinutes - b.startMinutes) || [];
-
+  const blocks = activeRoutine?.blocks;
+  const dayBlocks = useMemo(
+    () => (blocks ?? []).filter((b) => b.dayOfWeek === selectedDay),
+    [blocks, selectedDay]
+  );
   const totalMinutes = dayBlocks.reduce(
     (sum, block) => sum + getRoutineBlockDurationMinutes(block),
     0
   );
+  const breakdown = useMemo(
+    () => plannedBreakdown(activeRoutine, activityTypes),
+    [activeRoutine, activityTypes]
+  );
 
-  const handleAddBlock = useCallback(() => {
-    setEditingBlock(undefined);
-    setShowBlockEditor(true);
+  const handleSelectDay = useCallback((day: DayOfWeek) => {
+    setSelectedDay(day);
+    setCopyOpen(false);
   }, []);
 
+  const handleAddBlock = useCallback(() => {
+    const times = firstFreeHour(blocks ?? [], selectedDay);
+    setEditor({ kind: 'new', start: times.start, end: times.end });
+  }, [blocks, selectedDay]);
+
+  const handleEmptyPress = useCallback(
+    (minutes: number) => {
+      const times = newBlockTimesAt(minutes, blocks ?? [], selectedDay);
+      setEditor({ kind: 'new', start: times.start, end: times.end });
+    },
+    [blocks, selectedDay]
+  );
+
   const handleEditBlock = useCallback((block: RoutineBlock) => {
-    setEditingBlock(block);
-    setShowBlockEditor(true);
+    setEditor({ kind: 'edit', block });
   }, []);
 
   const handleCloseEditor = useCallback(() => {
-    setShowBlockEditor(false);
-    setEditingBlock(undefined);
+    setEditor(null);
   }, []);
 
   const handleCopyDay = useCallback(async (targetDay: DayOfWeek) => {
@@ -60,160 +89,159 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
 
     if (targetBlocks.length > 0) {
       const confirmed = await dialog.confirm({
-        title: 'Replace existing blocks?',
-        message: `${getDayName(targetDay)} already has ${targetBlocks.length} block${targetBlocks.length > 1 ? 's' : ''}. This will replace them.`,
+        title: 'Replace existing activities?',
+        message: `${getDayName(targetDay)} already has ${targetBlocks.length} ${targetBlocks.length > 1 ? 'activities' : 'activity'}. Copying ${getDayName(selectedDay)} will replace them.`,
         confirmLabel: 'Replace',
         destructive: true,
       });
       if (!confirmed) return;
     }
     copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
-    void dialog.notify({ title: 'Copied', message: `Blocks copied to ${getDayName(targetDay)}` });
+    setCopyOpen(false);
+    void dialog.notify({ title: 'Copied', message: `${getDayName(selectedDay)} copied to ${getDayName(targetDay)}` });
   }, [activeRoutine, selectedDay, copyDayBlocks, dialog]);
+
+  if (!activeRoutine) {
+    return (
+      <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+        <View style={styles.header}>
+          <Text style={[styles.title, { color: colors.text }]}>Routine</Text>
+        </View>
+        <View style={styles.noRoutine}>
+          <Text style={styles.emptyIcon}>📋</Text>
+          <Text style={[styles.emptyTitle, { color: colors.text }]}>No routine yet</Text>
+          <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Create a routine to start organizing your week</Text>
+          <TouchableOpacity
+            style={[styles.primaryButton, { backgroundColor: colors.primary }]}
+            onPress={() => {
+              const id = addRoutine('My Week');
+              setActiveRoutine(id);
+            }}
+            accessibilityRole="button"
+            accessibilityLabel="Create routine"
+          >
+            <Text style={styles.primaryButtonText}>Create Routine</Text>
+          </TouchableOpacity>
+        </View>
+      </SafeAreaView>
+    );
+  }
+
+  const selectedName = getDayName(selectedDay);
+  const editingBlock = editor?.kind === 'edit' ? editor.block : undefined;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Routine</Text>
-        {activeRoutine && (
-          <Text style={[styles.routineName, { color: colors.textSecondary }]}>
-            {activeRoutine.name}
-          </Text>
-        )}
-      </View>
-
-      {/* Day Selector */}
-      <View style={[styles.daySelector, { borderBottomColor: colors.border }]}>
-        {weekDays.map((day) => {
-          const isSelected = day === selectedDay;
-          const isToday = day === new Date().getDay();
-          const hasBlocks = activeRoutine?.blocks.some((b) => b.dayOfWeek === day);
-          return (
-            <TouchableOpacity
-              key={day}
-              style={[
-                styles.dayButton,
-                isSelected ? { backgroundColor: colors.primary } : undefined,
-                isToday && !isSelected ? { backgroundColor: colors.backgroundSecondary } : undefined,
-              ]}
-              onPress={() => setSelectedDay(day)}
-              accessibilityRole="tab"
-              accessibilityLabel={`${getDayName(day)}${hasBlocks ? ', has planned blocks' : ''}`}
-              accessibilityState={{ selected: isSelected }}
-            >
-              <Text
-                style={[
-                  styles.dayText,
-                  { color: colors.textSecondary },
-                  isSelected ? styles.dayTextSelected : undefined,
-                ]}
-              >
-                {getDayName(day, true)}
-              </Text>
-              {hasBlocks && !isSelected && <View style={[styles.dayDot, { backgroundColor: colors.primary }]} />}
-            </TouchableOpacity>
-          );
-        })}
-      </View>
-
-      {/* Day Summary */}
-      <View style={[styles.daySummary, { borderBottomColor: colors.border }]}>
-        <Text style={[styles.dayTitle, { color: colors.text }]}>{getDayName(selectedDay)}</Text>
-        <Text style={[styles.dayStats, { color: colors.textSecondary }]}>
-          {dayBlocks.length} block{dayBlocks.length !== 1 ? 's' : ''} • {formatDuration(totalMinutes)} scheduled
+        <Text style={[styles.routineName, { color: colors.textSecondary }]} numberOfLines={1}>
+          {activeRoutine.name}
         </Text>
       </View>
 
-      {/* Timeline */}
-      <ScrollView style={styles.timeline} showsVerticalScrollIndicator={false}>
-        {activeRoutine ? (
-          dayBlocks.length > 0 ? (
-            <SimpleBlockList
-              blocks={dayBlocks}
-              activityTypes={activityTypes}
-              onBlockPress={handleEditBlock}
-            />
-          ) : (
-            <View style={styles.emptyDay}>
-              <Text style={styles.emptyIcon}>📭</Text>
-              <Text style={[styles.emptyTitle, { color: colors.text }]}>No blocks on {getDayName(selectedDay)}</Text>
-              <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Add a time block to start planning this day</Text>
+      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+        <View style={styles.column}>
+          {/* Week strip (p10, p25, p42) */}
+          <WeekStrip
+            blocks={activeRoutine.blocks}
+            activityTypes={activityTypes}
+            weekStartsOn={weekStartsOn}
+            today={today}
+            selectedDay={selectedDay}
+            onSelectDay={handleSelectDay}
+          />
+
+          {/* The selected day: toolbar, ribbon editor, day name (p13–p41) */}
+          <View
+            style={[styles.dayPanel, { backgroundColor: colors.surface, borderColor: colors.border }]}
+          >
+            <View style={styles.toolbar}>
               <TouchableOpacity
-                style={[styles.addBlockButton, { backgroundColor: colors.primary }]}
+                style={[styles.toolButton, { backgroundColor: colors.primary, borderColor: colors.primary }]}
                 onPress={handleAddBlock}
                 accessibilityRole="button"
-                accessibilityLabel={`Add a block to ${getDayName(selectedDay)}`}
+                accessibilityLabel={`Add activity to ${selectedName}`}
               >
-                <Text style={styles.addBlockButtonText}>+ Add Block</Text>
+                <Text style={styles.primaryButtonText}>+ Add activity</Text>
               </TouchableOpacity>
-            </View>
-          )
-        ) : (
-          <View style={styles.noRoutine}>
-            <Text style={styles.emptyIcon}>📋</Text>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No routine yet</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>Create a routine to start organizing your week</Text>
-            <TouchableOpacity
-              style={[styles.addBlockButton, { backgroundColor: colors.primary }]}
-              onPress={() => {
-                const id = addRoutine('My Week');
-                setActiveRoutine(id);
-              }}
-              accessibilityRole="button"
-              accessibilityLabel="Create routine"
-            >
-              <Text style={styles.addBlockButtonText}>Create Routine</Text>
-            </TouchableOpacity>
-          </View>
-        )}
-
-        {/* Copy Day Actions */}
-        {activeRoutine && dayBlocks.length > 0 && (
-          <View style={[styles.copySection, { borderTopColor: colors.border }]}>
-            <Text style={[styles.copyTitle, { color: colors.textSecondary }]}>Copy this day to...</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {weekDays.filter((d) => d !== selectedDay).map((day) => (
+              {dayBlocks.length > 0 && (
                 <TouchableOpacity
-                  key={day}
-                  style={[styles.copyButton, { backgroundColor: colors.backgroundSecondary }]}
-                  onPress={() => handleCopyDay(day)}
+                  style={[
+                    styles.toolButton,
+                    {
+                      borderColor: copyOpen ? colors.primary : colors.border,
+                      backgroundColor: copyOpen ? colors.primary + '22' : 'transparent',
+                    },
+                  ]}
+                  onPress={() => setCopyOpen((open) => !open)}
                   accessibilityRole="button"
-                  accessibilityLabel={`Copy ${getDayName(selectedDay)} blocks to ${getDayName(day)}`}
+                  accessibilityLabel={`Copy ${selectedName} to another day`}
+                  accessibilityState={{ expanded: copyOpen }}
                 >
-                  <Text style={[styles.copyButtonText, { color: colors.text }]}>{getDayName(day, true)}</Text>
+                  <Text style={[styles.toolButtonText, { color: colors.text }]}>
+                    ⧉ Copy day {copyOpen ? '▲' : '▼'}
+                  </Text>
                 </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+              )}
+            </View>
 
-        <View style={{ height: 100 }} />
+            {/* Copy-day popover (p27–p29) */}
+            {copyOpen && dayBlocks.length > 0 && (
+              <View style={[styles.copyRow, { borderColor: colors.border }]}>
+                <Text style={[styles.copyLabel, { color: colors.textSecondary }]}>
+                  Copy {getDayName(selectedDay, true)} to
+                </Text>
+                <View style={styles.copyChips}>
+                  {weekDays.filter((d) => d !== selectedDay).map((day) => (
+                    <TouchableOpacity
+                      key={day}
+                      style={[styles.copyChip, { backgroundColor: colors.backgroundSecondary, borderColor: colors.border }]}
+                      onPress={() => handleCopyDay(day)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Copy ${selectedName} to ${getDayName(day)}`}
+                    >
+                      <Text style={[styles.copyChipText, { color: colors.text }]}>{getDayName(day, true)}</Text>
+                    </TouchableOpacity>
+                  ))}
+                </View>
+              </View>
+            )}
+
+            <DayRibbon
+              blocks={activeRoutine.blocks}
+              activityTypes={activityTypes}
+              day={selectedDay}
+              height={22}
+              onSegmentPress={handleEditBlock}
+              onEmptyPress={handleEmptyPress}
+              style={styles.ribbon}
+              accessibilityLabel={`${selectedName} ribbon`}
+            />
+
+            <Text style={[styles.dayTitle, { color: colors.text }]}>{selectedName}</Text>
+            <Text style={[styles.dayStats, { color: colors.textSecondary }]}>
+              {dayBlocks.length === 0
+                ? 'Nothing planned yet. Tap the timeline to add an activity.'
+                : `${dayBlocks.length} ${dayBlocks.length === 1 ? 'activity' : 'activities'} · ${formatDuration(totalMinutes)} planned · tap an activity to edit it, or empty time to add one`}
+            </Text>
+          </View>
+
+          {/* Planned breakdown (p42–p43) */}
+          <RoutineBreakdown data={breakdown} title="Your week" />
+        </View>
       </ScrollView>
 
-      {/* Floating Add Button */}
-      {activeRoutine && (
-        <TouchableOpacity
-          style={[styles.fab, { backgroundColor: colors.primary }]}
-          onPress={handleAddBlock}
-          accessibilityRole="button"
-          accessibilityLabel={`Add a block to ${getDayName(selectedDay)}`}
-        >
-          <Text style={styles.fabText}>+</Text>
-        </TouchableOpacity>
-      )}
-
-      {/* Block Editor Modal */}
-      {activeRoutine && (
-        <BlockEditor
-          visible={showBlockEditor}
-          routineId={activeRoutine.id}
-          block={editingBlock}
-          dayOfWeek={selectedDay}
-          existingBlocks={activeRoutine.blocks}
-          onClose={handleCloseEditor}
-          onSave={handleCloseEditor}
-        />
-      )}
+      <BlockEditor
+        visible={editor !== null}
+        routineId={activeRoutine.id}
+        block={editingBlock}
+        dayOfWeek={editingBlock?.dayOfWeek ?? selectedDay}
+        existingBlocks={activeRoutine.blocks}
+        initialStart={editor?.kind === 'new' ? editor.start : undefined}
+        initialEnd={editor?.kind === 'new' ? editor.end : undefined}
+        onClose={handleCloseEditor}
+        onSave={handleCloseEditor}
+      />
     </SafeAreaView>
   );
 }
@@ -226,75 +254,93 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
+    gap: spacing.md,
   },
   title: {
     fontSize: 28,
     fontWeight: 'bold',
   },
-  routineSelector: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.xs,
-    borderRadius: borderRadius.md,
-  },
   routineName: {
+    flexShrink: 1,
     fontSize: 14,
-    marginRight: spacing.xs,
   },
-  dropdownIcon: {
-    fontSize: 10,
-  },
-  daySelector: {
-    flexDirection: 'row',
+  scrollContent: {
     paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderBottomWidth: 1,
+    paddingBottom: spacing.xl,
   },
-  dayButton: {
-    flex: 1,
+  column: {
+    width: '100%',
+    maxWidth: 1040,
+    alignSelf: 'center',
+    gap: spacing.md,
+  },
+  dayPanel: {
+    borderWidth: 1,
+    borderRadius: borderRadius.lg,
+    padding: spacing.md,
+  },
+  toolbar: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingVertical: spacing.sm,
-    marginHorizontal: 2,
+    gap: spacing.sm,
+  },
+  toolButton: {
+    minHeight: 40,
+    paddingHorizontal: spacing.md,
     borderRadius: borderRadius.md,
-    minHeight: 44,
+    borderWidth: 1,
     justifyContent: 'center',
   },
-  dayText: {
-    fontSize: 13,
-    fontWeight: '500',
-  },
-  dayTextSelected: {
-    color: '#fff',
-  },
-  dayDot: {
-    width: 4,
-    height: 4,
-    borderRadius: 2,
-    marginTop: spacing.xs,
-  },
-  daySummary: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderBottomWidth: 1,
-  },
-  dayTitle: {
-    fontSize: 20,
+  toolButtonText: {
+    fontSize: 14,
     fontWeight: '600',
   },
-  dayStats: {
-    fontSize: 14,
-    marginTop: spacing.xs,
-  },
-  timeline: {
-    flex: 1,
-  },
-  emptyDay: {
+  copyRow: {
+    marginTop: spacing.sm,
+    paddingTop: spacing.sm,
+    borderTopWidth: 1,
+    flexDirection: 'row',
+    flexWrap: 'wrap',
     alignItems: 'center',
-    paddingVertical: 60,
-    paddingHorizontal: 40,
+    gap: spacing.sm,
+  },
+  copyLabel: {
+    fontSize: 14,
+  },
+  copyChips: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 6,
+  },
+  copyChip: {
+    minHeight: 36,
+    minWidth: 44,
+    paddingHorizontal: spacing.sm,
+    borderRadius: borderRadius.sm,
+    borderWidth: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  copyChipText: {
+    fontSize: 14,
+  },
+  ribbon: {
+    marginTop: spacing.md,
+  },
+  dayTitle: {
+    fontSize: 26,
+    fontWeight: '600',
+    textAlign: 'center',
+    marginTop: spacing.md,
+  },
+  dayStats: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
   noRoutine: {
     alignItems: 'center',
@@ -316,55 +362,14 @@ const styles = StyleSheet.create({
     textAlign: 'center',
     marginBottom: spacing.lg,
   },
-  addBlockButton: {
+  primaryButton: {
     paddingHorizontal: spacing.xl,
     paddingVertical: spacing.md,
     borderRadius: borderRadius.md,
   },
-  addBlockButtonText: {
+  primaryButtonText: {
     color: '#fff',
-    fontSize: 16,
+    fontSize: 15,
     fontWeight: '600',
-  },
-  copySection: {
-    paddingHorizontal: spacing.lg,
-    paddingVertical: spacing.md,
-    borderTopWidth: 1,
-  },
-  copyTitle: {
-    fontSize: 14,
-    marginBottom: spacing.md,
-  },
-  copyButton: {
-    paddingHorizontal: spacing.md,
-    paddingVertical: spacing.sm,
-    borderRadius: borderRadius.sm,
-    marginRight: spacing.sm,
-    minHeight: 44,
-    justifyContent: 'center',
-  },
-  copyButtonText: {
-    fontSize: 14,
-  },
-  fab: {
-    position: 'absolute',
-    bottom: 24,
-    right: 24,
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    justifyContent: 'center',
-    alignItems: 'center',
-    elevation: 4,
-    shadowColor: '#000',
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.25,
-    shadowRadius: 4,
-  },
-  fabText: {
-    fontSize: 28,
-    color: '#fff',
-    fontWeight: '300',
-    marginTop: -2,
   },
 });
