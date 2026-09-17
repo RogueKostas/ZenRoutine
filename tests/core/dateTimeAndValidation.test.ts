@@ -68,15 +68,19 @@ describe('local calendar utilities', () => {
 });
 
 describe('week start preference (#44)', () => {
-  const sunday = new Date(2026, 8, 20, 23, 30); // Sunday 20 September 2026, late evening
-  const monday = new Date(2026, 8, 21, 0, 15); // the next morning
+  // Built inside each test, not at module load: the file's beforeAll switches TZ to
+  // Europe/London, and a Date constructed before that would be read an hour later on a UTC host.
+  const lateSunday = () => new Date(2026, 8, 20, 23, 30); // Sunday 20 September 2026, late evening
+  const earlyMonday = () => new Date(2026, 8, 21, 0, 15); // the next morning
 
   it('defaults to Monday, as the 2019 design draws the week', () => {
     expect(DEFAULT_WEEK_STARTS_ON).toBe(1);
-    expect(getLocalWeekStartDateKey(sunday)).toBe('2026-09-14');
+    expect(getLocalWeekStartDateKey(lateSunday())).toBe('2026-09-14');
   });
 
   it('puts a Sunday at the end of the Monday week and the start of its own Sunday week', () => {
+    const sunday = lateSunday();
+    const monday = earlyMonday();
     expect(getLocalWeekStartDateKey(sunday, 1)).toBe('2026-09-14');
     expect(getLocalWeekStartDateKey(sunday, 0)).toBe('2026-09-20');
     // Crossing Sunday -> Monday opens a new week only under Monday-first.
