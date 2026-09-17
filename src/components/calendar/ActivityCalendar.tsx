@@ -8,25 +8,23 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { useTheme } from '../theme';
-import { spacing, borderRadius } from '../theme/spacing';
+import { useTheme } from '../../theme';
+import { spacing, borderRadius } from '../../theme/spacing';
 import {
   useGoals,
   useActivityTypes,
   useActiveRoutine,
   useTrackingEntries,
-} from '../store';
-import { predictAllGoals } from '../core/engine/prediction';
+} from '../../store';
+import { predictAllGoals } from '../../core/engine/prediction';
 import {
   addDaysToDateKey,
   differenceInCalendarDays,
   formatDuration,
-  getDayName,
   parseLocalDateKey,
   toLocalDateKey,
-} from '../core/utils/time';
-import { PRIORITY_COLORS, PRIORITY_LABELS } from '../core/types';
-import type { DayOfWeek, RoutineBlock, Goal } from '../core/types';
+} from '../../core/utils/time';
+import type { DayOfWeek, RoutineBlock, Goal } from '../../core/types';
 
 const MONTH_NAMES = [
   'January', 'February', 'March', 'April', 'May', 'June',
@@ -34,6 +32,10 @@ const MONTH_NAMES = [
 ];
 
 const DAY_LABELS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+
+export const ACTIVITY_CALENDAR_TITLE = 'Activity calendar';
+export const ACTIVITY_CALENDAR_SUBTITLE =
+  'Your active routine laid over the month, with the days goals are predicted to complete';
 
 interface CalendarDay {
   date: Date;
@@ -44,7 +46,12 @@ interface CalendarDay {
   goalCompletions: Goal[];
 }
 
-export function CalendarScreen({ navigation }: any) {
+/**
+ * Month grid of the active routine's scheduled activities, formerly the root-stack
+ * `CalendarScreen`. Rendered inline by the Analytics tab. It does not draw tracking entries;
+ * they only feed the completion predictions.
+ */
+export function ActivityCalendar() {
   const { colors } = useTheme();
   const [currentDate, setCurrentDate] = useState(new Date());
   const [selectedDay, setSelectedDay] = useState<CalendarDay | null>(null);
@@ -166,26 +173,45 @@ export function CalendarScreen({ navigation }: any) {
   };
 
   return (
-    <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
+    <View style={styles.container}>
       <View style={styles.header}>
-        <TouchableOpacity onPress={() => navigation.goBack()}>
-          <Text style={[styles.backButton, { color: colors.primary }]}>← Back</Text>
-        </TouchableOpacity>
-        <Text style={[styles.title, { color: colors.text }]}>Calendar</Text>
-        <TouchableOpacity onPress={handleToday}>
+        <View style={styles.headerText}>
+          <Text style={[styles.title, { color: colors.text }]} accessibilityRole="header">
+            {ACTIVITY_CALENDAR_TITLE}
+          </Text>
+          <Text style={[styles.subtitle, { color: colors.textSecondary }]}>
+            {ACTIVITY_CALENDAR_SUBTITLE}
+          </Text>
+        </View>
+        <TouchableOpacity
+          onPress={handleToday}
+          style={styles.todayTouchTarget}
+          accessibilityRole="button"
+          accessibilityLabel="Show this month"
+        >
           <Text style={[styles.todayButton, { color: colors.primary }]}>Today</Text>
         </TouchableOpacity>
       </View>
 
       {/* Month Navigation */}
       <View style={[styles.monthNav, { borderBottomColor: colors.border }]}>
-        <TouchableOpacity onPress={handlePrevMonth} style={styles.navButton}>
+        <TouchableOpacity
+          onPress={handlePrevMonth}
+          style={styles.navButton}
+          accessibilityRole="button"
+          accessibilityLabel="Previous month"
+        >
           <Text style={[styles.navButtonText, { color: colors.primary }]}>‹</Text>
         </TouchableOpacity>
         <Text style={[styles.monthTitle, { color: colors.text }]}>
           {MONTH_NAMES[currentDate.getMonth()]} {currentDate.getFullYear()}
         </Text>
-        <TouchableOpacity onPress={handleNextMonth} style={styles.navButton}>
+        <TouchableOpacity
+          onPress={handleNextMonth}
+          style={styles.navButton}
+          accessibilityRole="button"
+          accessibilityLabel="Next month"
+        >
           <Text style={[styles.navButtonText, { color: colors.primary }]}>›</Text>
         </TouchableOpacity>
       </View>
@@ -405,7 +431,7 @@ export function CalendarScreen({ navigation }: any) {
           </ScrollView>
         </SafeAreaView>
       </Modal>
-    </SafeAreaView>
+    </View>
   );
 }
 
@@ -452,6 +478,10 @@ function getConfidenceColor(level: 'low' | 'medium' | 'high'): string {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
+    width: '100%',
+    // A square-cell grid stretched across 1920px is ~1600px tall; cap it to a readable month.
+    maxWidth: 720,
+    alignSelf: 'center',
   },
   header: {
     flexDirection: 'row',
@@ -460,13 +490,21 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.lg,
     paddingVertical: spacing.md,
   },
-  backButton: {
-    fontSize: 16,
-    fontWeight: '500',
+  headerText: {
+    flex: 1,
+    marginRight: spacing.md,
   },
   title: {
     fontSize: 18,
     fontWeight: '600',
+  },
+  subtitle: {
+    fontSize: 12,
+    marginTop: 2,
+  },
+  todayTouchTarget: {
+    minHeight: 44,
+    justifyContent: 'center',
   },
   todayButton: {
     fontSize: 16,

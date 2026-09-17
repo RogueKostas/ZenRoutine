@@ -20,6 +20,18 @@ export {
 } from './QuarantineNotice';
 export type { QuarantineReport, RepairReport } from './QuarantineNotice';
 
+export { DialogProvider, useDialog } from './Dialog';
+export { cancelResult, createDialogApi, createDialogQueue, dialogActions } from './dialogQueue';
+export type {
+  ChoiceOption,
+  ChooseRequest,
+  ConfirmRequest,
+  DialogAction,
+  DialogApi,
+  DialogQueue,
+  NotifyRequest,
+} from './dialogQueue';
+
 export {
   FadeInView,
   ScaleInView,

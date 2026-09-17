@@ -7,12 +7,12 @@ import {
   TouchableOpacity,
   TextInput,
   Modal,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
 import { useActivityTypes, useAppStore } from '../store';
+import { useDialog } from '../components/common';
 import type { ActivityType } from '../core/types';
 
 // Predefined color palette for activity types
@@ -43,11 +43,14 @@ export function ActivityTypesScreen({ navigation }: any) {
   const { colors } = useTheme();
   const activityTypes = useActivityTypes();
   const { addActivityType, updateActivityType, deleteActivityType } = useAppStore();
+  const dialog = useDialog();
 
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingActivity, setEditingActivity] = useState<EditingActivityType | null>(null);
+  const [nameError, setNameError] = useState<string | null>(null);
 
   const handleAddNew = () => {
+    setNameError(null);
     setEditingActivity({
       name: '',
       color: COLOR_PALETTE[activityTypes.length % COLOR_PALETTE.length],
@@ -57,6 +60,7 @@ export function ActivityTypesScreen({ navigation }: any) {
   };
 
   const handleEdit = (activity: ActivityType) => {
+    setNameError(null);
     setEditingActivity({
       id: activity.id,
       name: activity.name,
@@ -68,7 +72,7 @@ export function ActivityTypesScreen({ navigation }: any) {
 
   const handleSave = () => {
     if (!editingActivity || !editingActivity.name.trim()) {
-      Alert.alert('Error', 'Please enter a name for the activity type.');
+      setNameError('Please enter a name for the activity type.');
       return;
     }
 
@@ -94,25 +98,29 @@ export function ActivityTypesScreen({ navigation }: any) {
     setEditingActivity(null);
   };
 
-  const handleDelete = (activity: ActivityType) => {
-    Alert.alert(
-      'Delete Activity Type',
-      `Are you sure you want to delete "${activity.name}"? This cannot be undone.\n\nNote: If this activity type is used by any goals, routines, or tracking entries, it cannot be deleted.`,
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            try {
-              deleteActivityType(activity.id);
-            } catch (error: any) {
-              Alert.alert('Cannot Delete', error.message || 'This activity type is in use.');
-            }
-          },
-        },
-      ]
-    );
+  const handleDelete = async (activity: ActivityType) => {
+    const confirmed = await dialog.confirm({
+      title: 'Delete Activity Type',
+      message: `Are you sure you want to delete "${activity.name}"? This cannot be undone.\n\nNote: If this activity type is used by any goals, routines, or tracking entries, it cannot be deleted.`,
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+
+    // deleteActivityType refuses an in-use type by returning without deleting (it does not
+    // throw), so check the outcome rather than waiting for an error that never comes.
+    let reason = `"${activity.name}" is used by a goal, a routine block or a tracking entry, so it was kept.`;
+    try {
+      deleteActivityType(activity.id);
+    } catch (error: unknown) {
+      if (error instanceof Error && error.message) reason = error.message;
+    }
+    const stillExists = useAppStore
+      .getState()
+      .activityTypes.some((type) => type.id === activity.id);
+    if (stillExists) {
+      void dialog.notify({ title: 'Cannot Delete', message: reason });
+    }
   };
 
   return (
@@ -198,12 +206,24 @@ export function ActivityTypesScreen({ navigation }: any) {
             {/* Name Input */}
             <Text style={[styles.inputLabel, { color: colors.text }]}>Name</Text>
             <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
+              style={[styles.input, { backgroundColor: colors.surface, borderColor: nameError ? colors.error : colors.border, color: colors.text }]}
               placeholder="e.g., Reading, Meditation"
               value={editingActivity?.name || ''}
-              onChangeText={(text) => setEditingActivity((prev) => prev ? { ...prev, name: text } : null)}
+              onChangeText={(text) => {
+                setNameError(null);
+                setEditingActivity((prev) => prev ? { ...prev, name: text } : null);
+              }}
               placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Activity type name"
             />
+            {nameError && (
+              <Text
+                accessibilityLiveRegion="polite"
+                style={[styles.fieldError, { color: colors.error }]}
+              >
+                {nameError}
+              </Text>
+            )}
 
             {/* Icon Selector */}
             <Text style={[styles.inputLabel, { color: colors.text }]}>Icon</Text>
@@ -380,6 +400,10 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
     padding: spacing.md,
     fontSize: 16,
+  },
+  fieldError: {
+    fontSize: 13,
+    marginTop: spacing.xs,
   },
   iconGrid: {
     flexDirection: 'row',
