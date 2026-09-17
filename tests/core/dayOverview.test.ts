@@ -168,12 +168,35 @@ describe('getDayOverview — the director’s example on Tuesday', () => {
     });
 
     expect(summary(rows)).toEqual([
-      // The plan at midnight: FTUE until 11:00 (4h + 2h).
-      { time: '09:00–11:00', goal: 'Design FTUE flow', progress: '6/6h', state: 'past' },
+      // The plan at midnight: FTUE until 11:00. It got one hour of the two (4h + 1h).
+      { time: '09:00–11:00', goal: 'Design FTUE flow', progress: '5/6h', state: 'past' },
+      // Planned, never tracked.
+      { time: '11:00–11:30', goal: 'Integrate Analytics Framework', progress: '0/8h', state: 'past' },
       // From now, the plan moves: FTUE still needs an hour, then Analytics.
-      { time: '11:00–11:30', goal: 'Integrate Analytics Framework', progress: '0.5/8h', state: 'past' },
       { time: '11:30–12:30', goal: 'Design FTUE flow', progress: '6/6h', state: 'current' },
       { time: '12:30–13:00', goal: 'Integrate Analytics Framework', progress: '0.5/8h', state: 'upcoming' },
+    ]);
+  });
+
+  it('never lets the running total go down when a planned block went untracked', () => {
+    // The example data on a weekday at 17:10: the morning's Work block was not tracked.
+    const routine = makeRoutine({
+      blocks: [
+        makeRoutineBlock({ id: 'am', dayOfWeek: 2, activityTypeId: WORK, startMinutes: 9 * H, endMinutes: 12 * H }),
+        makeRoutineBlock({ id: 'lunch', dayOfWeek: 2, activityTypeId: HEALTH, startMinutes: 12 * H, endMinutes: 13 * H }),
+        makeRoutineBlock({ id: 'pm', dayOfWeek: 2, activityTypeId: WORK, startMinutes: 13 * H, endMinutes: 17 * H + 30 }),
+      ],
+    });
+    const rows = getDayOverview({
+      routine,
+      goals: [analytics({ name: 'Ship the analytics dashboard', estimatedMinutes: 80 * H, loggedMinutes: 45 * H })],
+      trackingEntries: [],
+      now: tuesdayAt(17, 12),
+    });
+    expect(summary(rows)).toEqual([
+      { time: '09:00–12:00', goal: 'Ship the analytics dashboard', progress: '45/80h', state: 'past' },
+      { time: '12:00–13:00', goal: null, progress: '', state: 'past' },
+      { time: '13:00–17:30', goal: 'Ship the analytics dashboard', progress: '45.3/80h', state: 'current' },
     ]);
   });
 
@@ -208,6 +231,21 @@ describe('getDayOverview — other shapes of day', () => {
     expect(summary(rows)).toEqual([
       { time: '10:15–12:45', goal: 'Integrate Analytics Framework', progress: '2.5/8h', state: 'upcoming' },
       { time: '14:30–17:00', goal: 'Integrate Analytics Framework', progress: '5/8h', state: 'upcoming' },
+    ]);
+
+    // The evening after, both sessions tracked: each past row counts only what came before its end.
+    const evening = getDayOverview({
+      routine,
+      goals: [analytics({ loggedMinutes: 5 * H })],
+      trackingEntries: [
+        entry('integrate-analytics', tuesdayAt(10, 15), tuesdayAt(12, 45)),
+        entry('integrate-analytics', tuesdayAt(14, 30), tuesdayAt(17)),
+      ],
+      now: tuesdayAt(18),
+    });
+    expect(summary(evening).map((row) => [row.progress, row.state])).toEqual([
+      ['2.5/8h', 'past'],
+      ['5/8h', 'past'],
     ]);
   });
 

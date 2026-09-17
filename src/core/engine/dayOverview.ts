@@ -31,13 +31,15 @@ import {
  * into one row. Any part of a block that no goal fills (its type has no goal, or the goals ran
  * out) is a row with `goalId: null`.
  *
- * **Running total.** A row's `trackedMinutes` is the goal's cumulative progress at the row's end,
- * if the plan is followed:
- * - a row ending at or before now: `loggedAtMidnight + planned minutes of that goal in today's
- *   rows from midnight up to the row's end`;
- * - a row ending after now: `loggedNow + planned minutes of that goal from now up to the row's
- *   end`, where `loggedNow = goal.loggedMinutes + elapsed minutes of a running entry linked to it`.
- * So the same goal twice in a day shows its total advancing (p74: 2.5/8hrs, then 5/8hrs).
+ * **Running total.** A row's `trackedMinutes` is the goal's cumulative progress at the row's end
+ * (p74: "hrs tracked towards goal"):
+ * - a row ending at or before now, from what happened: `loggedAtMidnight + minutes of today's
+ *   entries linked to the goal, up to the row's end`;
+ * - a row ending after now, if the plan is followed: `loggedNow + the goal's minutes in today's
+ *   rows between now and the row's end`, where `loggedNow = goal.loggedMinutes + elapsed minutes
+ *   of a running entry linked to it`.
+ * So the total never goes down through the day, and the same goal twice in a day shows it
+ * advancing (p74: 2.5/8hrs, then 5/8hrs).
  *
  * Minutes are on today's scale: `blockStart`/`blockEnd` of yesterday's overnight block are
  * negative (22:00 yesterday is -120), and today's overnight block runs past 1440.
@@ -151,28 +153,43 @@ function isSameBlock(allocation: ForecastAllocation, block: TodayBlock): boolean
   );
 }
 
-/** Minutes each goal gained from entries started today, plus a running entry's elapsed time. */
+interface TodayEntry {
+  goalId: string;
+  start: number;
+  /** The end time, or `now` for a running entry. */
+  end: number;
+}
+
+/**
+ * Minutes each goal gained from entries started today, plus a running entry's elapsed time,
+ * and today's entries themselves (for "tracked by the end of a past row").
+ */
 function getTodayMinutes(entries: readonly DayOverviewEntry[], now: Date) {
   const today = toLocalDateKey(now);
   const loggedToday = new Map<string, number>();
   const running = new Map<string, number>();
+  const todayEntries: TodayEntry[] = [];
   for (const entry of entries) {
     if (!entry.goalId) continue;
     const start = new Date(entry.startTime);
     if (!Number.isFinite(start.getTime())) continue;
     let minutes: number;
+    let end: number;
     if (entry.endTime) {
       minutes = getTrackingEntryDurationMinutes(entry);
+      end = new Date(entry.endTime).getTime();
     } else {
       // A running entry is not in `loggedMinutes` yet.
       minutes = Math.max(0, Math.floor((now.getTime() - start.getTime()) / 60000));
+      end = now.getTime();
       running.set(entry.goalId, (running.get(entry.goalId) ?? 0) + minutes);
     }
     if (toLocalDateKey(start) === today) {
       loggedToday.set(entry.goalId, (loggedToday.get(entry.goalId) ?? 0) + minutes);
+      if (minutes > 0) todayEntries.push({ goalId: entry.goalId, start: start.getTime(), end });
     }
   }
-  return { loggedToday, running };
+  return { loggedToday, running, todayEntries };
 }
 
 export function getDayOverview(input: DayOverviewInput): DayOverviewRow[] {
@@ -183,7 +200,7 @@ export function getDayOverview(input: DayOverviewInput): DayOverviewRow[] {
   const blocks = getTodayBlocks(input.routine?.blocks ?? [], now);
   if (blocks.length === 0) return [];
 
-  const { loggedToday, running } = getTodayMinutes(input.trackingEntries, now);
+  const { loggedToday, running, todayEntries } = getTodayMinutes(input.trackingEntries, now);
   const loggedNow = (goal: DayOverviewGoal) =>
     Math.max(0, goal.loggedMinutes) + (running.get(goal.id) ?? 0);
   const loggedAtMidnight = (goal: DayOverviewGoal) =>
@@ -256,8 +273,17 @@ export function getDayOverview(input: DayOverviewInput): DayOverviewRow[] {
 
   rows.sort((a, b) => a.startMinutes - b.startMinutes || a.blockStart - b.blockStart);
 
-  // Running totals, in time order: planned rows from midnight, forecast rows from now.
-  const plannedSoFar = new Map<string, number>();
+  const trackedTodayBy = (goalId: string, minute: number) => {
+    const until = new Date(midnight.getFullYear(), midnight.getMonth(), midnight.getDate(), 0, minute).getTime();
+    let total = 0;
+    for (const entry of todayEntries) {
+      if (entry.goalId !== goalId) continue;
+      total += Math.max(0, Math.round((Math.min(entry.end, until) - entry.start) / 60000));
+    }
+    return total;
+  };
+
+  // Running totals: past rows from what was tracked, later rows from the forecast from now.
   const forecastSoFar = new Map<string, number>();
   for (const row of rows) {
     if (!row.goalId) continue;
@@ -265,13 +291,10 @@ export function getDayOverview(input: DayOverviewInput): DayOverviewRow[] {
     if (!goal) continue;
     row.goalName = goal.name;
     row.estimatedMinutes = goal.estimatedMinutes ?? 0;
-    const beforeNow = Math.max(0, Math.min(row.endMinutes, nowMinute) - row.startMinutes);
-    const afterNow = row.endMinutes - row.startMinutes - beforeNow;
-    const planned = (plannedSoFar.get(goal.id) ?? 0) + beforeNow;
-    plannedSoFar.set(goal.id, planned);
     if (row.endMinutes <= nowMinute) {
-      row.trackedMinutes = loggedAtMidnight(goal) + planned;
+      row.trackedMinutes = loggedAtMidnight(goal) + trackedTodayBy(goal.id, row.endMinutes);
     } else {
+      const afterNow = row.endMinutes - Math.max(row.startMinutes, nowMinute);
       const forecasted = (forecastSoFar.get(goal.id) ?? 0) + afterNow;
       forecastSoFar.set(goal.id, forecasted);
       row.trackedMinutes = loggedNow(goal) + forecasted;
