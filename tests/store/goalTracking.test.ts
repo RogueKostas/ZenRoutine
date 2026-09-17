@@ -81,22 +81,41 @@ describe('goal progress invariants', () => {
     });
   });
 
-  it('rejects changing a goal activity after routine or tracking data links to it', () => {
+  it('rejects changing a goal activity after tracking data links to it', () => {
     const [firstActivity, secondActivity] = useAppStore.getState().activityTypes;
     const goalId = addGoal('Linked activity', firstActivity.id);
+    const entryId = useAppStore.getState().addCompletedEntry({
+      date: '2026-03-02',
+      startTime: '2026-03-02T09:00:00.000Z',
+      endTime: '2026-03-02T10:00:00.000Z',
+      activityTypeId: firstActivity.id,
+      goalId,
+      source: 'manual',
+    });
+    expect(entryId).not.toBeNull();
+
+    useAppStore.getState().updateGoal(goalId, { activityTypeId: secondActivity.id });
+
+    expect(useAppStore.getState().goals[0].activityTypeId).toBe(firstActivity.id);
+    expect(useAppStore.getState().trackingEntries[0].goalId).toBe(goalId);
+  });
+
+  it('lets a goal change activity when only routine blocks share its old type (#60)', () => {
+    // Blocks never name a goal, so a block of the goal's type is no link to the goal.
+    const [firstActivity, secondActivity] = useAppStore.getState().activityTypes;
+    const goalId = addGoal('Unlinked activity', firstActivity.id);
     const routineId = useAppStore.getState().activeRoutineId!;
     useAppStore.getState().addRoutineBlock(routineId, {
       dayOfWeek: 1,
       startMinutes: 540,
       endMinutes: 600,
       activityTypeId: firstActivity.id,
-      goalId,
     });
 
     useAppStore.getState().updateGoal(goalId, { activityTypeId: secondActivity.id });
 
-    expect(useAppStore.getState().goals[0].activityTypeId).toBe(firstActivity.id);
-    expect(useAppStore.getState().routines[0].blocks[0].goalId).toBe(goalId);
+    expect(useAppStore.getState().goals[0].activityTypeId).toBe(secondActivity.id);
+    expect(useAppStore.getState().routines[0].blocks[0].activityTypeId).toBe(firstActivity.id);
   });
 });
 

@@ -71,7 +71,6 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
     const activity = activityTypes.find((candidate) => candidate.id === block.activityTypeId);
     const entryId = startTracking({
       activityTypeId: block.activityTypeId,
-      goalId: block.goalId,
       routineBlockId: block.id,
       source: 'scheduled',
     });

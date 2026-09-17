@@ -1,0 +1,170 @@
+{
+  "format": "zenroutine-backup",
+  "formatVersion": 1,
+  "schemaVersion": 5,
+  "exportedAt": "2026-09-17T09:00:00.000Z",
+  "state": {
+    "activityTypes": [
+      {
+        "id": "activity-side",
+        "name": "Side Project",
+        "color": "#8E24AA",
+        "icon": "🚀",
+        "isDefault": true,
+        "sortOrder": 0,
+        "createdAt": "2026-09-01T08:00:00.000Z",
+        "updatedAt": "2026-09-01T08:00:00.000Z"
+      },
+      {
+        "id": "activity-fitness",
+        "name": "Fitness",
+        "color": "#FB8C00",
+        "icon": "💪",
+        "isDefault": true,
+        "sortOrder": 1,
+        "createdAt": "2026-09-01T08:00:00.000Z",
+        "updatedAt": "2026-09-01T08:00:00.000Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "goal-app",
+        "name": "Ship the app",
+        "description": "",
+        "estimatedMinutes": 1200,
+        "loggedMinutes": 120,
+        "activityTypeId": "activity-side",
+        "status": "active",
+        "priority": 1,
+        "createdAt": "2026-09-02T08:00:00.000Z",
+        "updatedAt": "2026-09-14T21:00:00.000Z"
+      },
+      {
+        "id": "goal-blog",
+        "name": "Write a blog post",
+        "description": "About the rewrite",
+        "estimatedMinutes": 300,
+        "loggedMinutes": 120,
+        "activityTypeId": "activity-side",
+        "status": "active",
+        "priority": 3,
+        "createdAt": "2026-09-02T08:05:00.000Z",
+        "updatedAt": "2026-09-16T20:00:00.000Z"
+      },
+      {
+        "id": "goal-10k",
+        "name": "Run a 10k",
+        "description": "",
+        "estimatedMinutes": 600,
+        "loggedMinutes": 0,
+        "activityTypeId": "activity-fitness",
+        "status": "active",
+        "priority": 2,
+        "createdAt": "2026-09-02T08:10:00.000Z",
+        "updatedAt": "2026-09-02T08:10:00.000Z"
+      }
+    ],
+    "routines": [
+      {
+        "id": "routine-week",
+        "name": "My Week",
+        "isActive": true,
+        "blocks": [
+          {
+            "id": "block-mon-side",
+            "dayOfWeek": 1,
+            "startMinutes": 1140,
+            "endMinutes": 1260,
+            "activityTypeId": "activity-side",
+            "goalId": "goal-app"
+          },
+          {
+            "id": "block-tue-run",
+            "dayOfWeek": 2,
+            "startMinutes": 420,
+            "endMinutes": 480,
+            "activityTypeId": "activity-fitness",
+            "goalId": "goal-10k"
+          },
+          {
+            "id": "block-wed-side",
+            "dayOfWeek": 3,
+            "startMinutes": 1140,
+            "endMinutes": 1200,
+            "activityTypeId": "activity-side",
+            "goalId": "goal-blog"
+          },
+          {
+            "id": "block-sat-side",
+            "dayOfWeek": 6,
+            "startMinutes": 600,
+            "endMinutes": 720,
+            "activityTypeId": "activity-side"
+          }
+        ],
+        "capacityChangedAt": {
+          "activity-side": "2026-09-02T08:20:00.000Z",
+          "activity-fitness": "2026-09-02T08:15:00.000Z"
+        },
+        "createdAt": "2026-09-01T08:00:00.000Z",
+        "updatedAt": "2026-09-02T08:20:00.000Z"
+      }
+    ],
+    "trackingEntries": [
+      {
+        "id": "entry-mon-side",
+        "date": "2026-09-14",
+        "startTime": "2026-09-14T19:00:00.000Z",
+        "endTime": "2026-09-14T21:00:00.000Z",
+        "activityTypeId": "activity-side",
+        "goalId": "goal-app",
+        "routineBlockId": "block-mon-side",
+        "source": "scheduled",
+        "createdAt": "2026-09-14T19:00:00.000Z",
+        "updatedAt": "2026-09-14T21:00:00.000Z"
+      },
+      {
+        "id": "entry-manual-blog",
+        "date": "2026-09-15",
+        "startTime": "2026-09-15T12:00:00.000Z",
+        "endTime": "2026-09-15T13:00:00.000Z",
+        "activityTypeId": "activity-side",
+        "goalId": "goal-blog",
+        "source": "manual",
+        "notes": "Outline",
+        "createdAt": "2026-09-15T13:00:00.000Z",
+        "updatedAt": "2026-09-15T13:00:00.000Z"
+      },
+      {
+        "id": "entry-wed-side",
+        "date": "2026-09-16",
+        "startTime": "2026-09-16T19:00:00.000Z",
+        "endTime": "2026-09-16T20:00:00.000Z",
+        "activityTypeId": "activity-side",
+        "goalId": "goal-blog",
+        "routineBlockId": "block-wed-side",
+        "source": "scheduled",
+        "createdAt": "2026-09-16T19:00:00.000Z",
+        "updatedAt": "2026-09-16T20:00:00.000Z"
+      },
+      {
+        "id": "entry-tue-run",
+        "date": "2026-09-15",
+        "startTime": "2026-09-15T07:00:00.000Z",
+        "activityTypeId": "activity-fitness",
+        "goalId": "goal-10k",
+        "routineBlockId": "block-tue-run",
+        "source": "scheduled",
+        "createdAt": "2026-09-15T07:00:00.000Z",
+        "updatedAt": "2026-09-15T07:00:00.000Z"
+      }
+    ],
+    "activeRoutineId": "routine-week",
+    "currentTrackingEntryId": "entry-tue-run",
+    "hasCompletedOnboarding": true,
+    "preferences": {
+      "weekStartsOn": 0
+    },
+    "schemaVersion": 5
+  }
+}

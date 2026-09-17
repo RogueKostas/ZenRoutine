@@ -171,8 +171,6 @@ describe('core planning and prediction', () => {
       predictedCompletionDate: '2026-03-16',
       weeklyMinutesAllocated: 210,
       activityWeeklyCapacity: 210,
-      dedicatedWeeklyMinutes: 0,
-      sharedWeeklyCapacity: 210,
       allocationShare: 1,
       competingGoalCount: 0,
       remainingMinutes: 420,

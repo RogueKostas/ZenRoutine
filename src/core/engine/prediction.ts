@@ -10,10 +10,8 @@ export interface PredictionResult {
   goalId: string;
   predictedCompletionDate: string | null;
   weeklyMinutesAllocated: number;
+  /** Every block of the goal's activity type: the pool that type's goals share. */
   activityWeeklyCapacity: number;
-  dedicatedWeeklyMinutes: number;
-  sharedWeeklyCapacity: number;
-  otherLinkedWeeklyMinutes: number;
   allocationShare: number;
   competingGoalCount: number;
   remainingMinutes: number;
@@ -52,9 +50,9 @@ function priorityWeight(goal: Goal): number {
 /**
  * The point from which tracking evidence counts for one activity type.
  *
- * Goals sharing an activity type are coupled — they draw on the same unlinked
- * pool and inherit each other's reallocations — so an activity type is the
- * boundary at which a schedule change can genuinely move a forecast. Routines
+ * Goals sharing an activity type are coupled — they draw on the pool of that
+ * type's blocks and inherit each other's reallocations — so an activity type is
+ * the boundary at which a schedule change can genuinely move a forecast. Routines
  * with no recorded per-activity change fall back to the whole-routine
  * timestamp.
  */
@@ -72,12 +70,13 @@ export function getCapacityChangedAt(routine: Routine, activityTypeId: string): 
  * date.
  *
  * An entry with no `goalId` counts for every goal of the activity type. That is
- * a deliberate choice, not an oversight: unlinked time is precisely the time the
- * model puts in the shared pool and divides among these goals by priority, so
- * observing it is observing the pool the forecast spends. Unlinked tracking is
- * also the ordinary path, not an edge case — an unlinked routine block starts an
- * unlinked entry, and the quick-start goal picker offers "no goal" outright — so
- * discarding it would hold a diligent user at low confidence forever.
+ * a deliberate choice, not an oversight: every block of the type feeds the pool
+ * the model divides among these goals by priority, so time tracked against the
+ * type without a goal is observing the pool the forecast spends. Unlinked
+ * tracking is also the ordinary path, not an edge case — starting a scheduled
+ * block starts an entry with no goal, since blocks never name one (#60), and the
+ * quick-start goal picker offers "no goal" outright — so discarding it would
+ * hold a diligent user at low confidence forever.
  *
  * Two consequences are accepted. Co-allocated goals with no linked history of
  * their own share one evidence count, which is honest: the shared pool is the
@@ -150,28 +149,15 @@ export function predictGoalCompletion(
   trackingHistory?: TrackingEntry[]
 ): PredictionResult {
   const weeklyCapacity = getWeeklyMinutesForActivityType(routine, goal.activityTypeId);
-  const dedicatedWeeklyMinutes = routine.blocks
-    .filter((block) => block.activityTypeId === goal.activityTypeId && block.goalId === goal.id)
-    .reduce((sum, block) => sum + getRoutineBlockDurationMinutes(block), 0);
-  const sharedWeeklyCapacity = routine.blocks
-    .filter((block) => block.activityTypeId === goal.activityTypeId && !block.goalId)
-    .reduce((sum, block) => sum + getRoutineBlockDurationMinutes(block), 0);
-  const availableWeeklyMinutes = dedicatedWeeklyMinutes + sharedWeeklyCapacity;
   const remainingMinutes = Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
 
   if (remainingMinutes === 0) {
     return {
       goalId: goal.id,
       predictedCompletionDate: toLocalDateKey(),
-      weeklyMinutesAllocated: availableWeeklyMinutes,
+      weeklyMinutesAllocated: weeklyCapacity,
       activityWeeklyCapacity: weeklyCapacity,
-      dedicatedWeeklyMinutes,
-      sharedWeeklyCapacity,
-      otherLinkedWeeklyMinutes: Math.max(
-        0,
-        weeklyCapacity - dedicatedWeeklyMinutes - sharedWeeklyCapacity
-      ),
-      allocationShare: weeklyCapacity > 0 ? availableWeeklyMinutes / weeklyCapacity : 0,
+      allocationShare: weeklyCapacity > 0 ? 1 : 0,
       competingGoalCount: 0,
       remainingMinutes: 0,
       weeksRemaining: 0,
@@ -185,24 +171,18 @@ export function predictGoalCompletion(
     trackingHistory,
     goal.id,
     goal.activityTypeId,
-    availableWeeklyMinutes,
+    weeklyCapacity,
     getCapacityChangedAt(routine, goal.activityTypeId)
   );
-  const weeksRemaining = availableWeeklyMinutes > 0
-    ? remainingMinutes / availableWeeklyMinutes
+  const weeksRemaining = weeklyCapacity > 0
+    ? remainingMinutes / weeklyCapacity
     : null;
   return {
     goalId: goal.id,
     predictedCompletionDate: weeksRemaining === null ? null : dateAfterWeeks(weeksRemaining),
-    weeklyMinutesAllocated: availableWeeklyMinutes,
+    weeklyMinutesAllocated: weeklyCapacity,
     activityWeeklyCapacity: weeklyCapacity,
-    dedicatedWeeklyMinutes,
-    sharedWeeklyCapacity,
-    otherLinkedWeeklyMinutes: Math.max(
-      0,
-      weeklyCapacity - dedicatedWeeklyMinutes - sharedWeeklyCapacity
-    ),
-    allocationShare: weeklyCapacity > 0 ? availableWeeklyMinutes / weeklyCapacity : 0,
+    allocationShare: weeklyCapacity > 0 ? 1 : 0,
     competingGoalCount: 0,
     remainingMinutes,
     weeksRemaining,
@@ -210,6 +190,13 @@ export function predictGoalCompletion(
   };
 }
 
+/**
+ * Forecast every active goal of one activity type from that type's pool.
+ *
+ * The pool is every block of the type. The routine is made of activity types only (#60), so no
+ * block is reserved for one goal: the whole pool is shared by priority weight and reallocated as
+ * goals finish.
+ */
 function predictActivityGoals(
   goals: Goal[],
   routine: Routine,
@@ -217,36 +204,17 @@ function predictActivityGoals(
 ): PredictionResult[] {
   const activityTypeId = goals[0].activityTypeId;
   const weeklyCapacity = getWeeklyMinutesForActivityType(routine, activityTypeId);
-  const sharedWeeklyCapacity = routine.blocks
-    .filter((block) => block.activityTypeId === activityTypeId && !block.goalId)
-    .reduce((sum, block) => sum + getRoutineBlockDurationMinutes(block), 0);
-  const dedicatedByGoal = new Map(
-    goals.map((goal) => [
-      goal.id,
-      routine.blocks
-        .filter((block) => block.activityTypeId === activityTypeId && block.goalId === goal.id)
-        .reduce((sum, block) => sum + getRoutineBlockDurationMinutes(block), 0),
-    ])
-  );
-  const availableWeeklyCapacity = sharedWeeklyCapacity +
-    [...dedicatedByGoal.values()].reduce((sum, minutes) => sum + minutes, 0);
   const totalWeight = goals.reduce((sum, goal) => sum + priorityWeight(goal), 0);
   const initialAllocations = new Map(
-    goals.map((goal) => [
-      goal.id,
-      (dedicatedByGoal.get(goal.id) ?? 0) + sharedWeeklyCapacity * priorityWeight(goal) / totalWeight,
-    ])
+    goals.map((goal) => [goal.id, weeklyCapacity * priorityWeight(goal) / totalWeight])
   );
 
-  if (availableWeeklyCapacity <= 0) {
+  if (weeklyCapacity <= 0) {
     return goals.map((goal) => ({
       goalId: goal.id,
       predictedCompletionDate: null,
       weeklyMinutesAllocated: 0,
       activityWeeklyCapacity: weeklyCapacity,
-      dedicatedWeeklyMinutes: 0,
-      sharedWeeklyCapacity: 0,
-      otherLinkedWeeklyMinutes: weeklyCapacity,
       allocationShare: 0,
       competingGoalCount: goals.length - 1,
       remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
@@ -273,8 +241,7 @@ function predictActivityGoals(
     const pendingWeight = pending.reduce((sum, item) => sum + item.weight, 0);
     const rates = new Map(pending.map((item) => [
       item.goal.id,
-      (dedicatedByGoal.get(item.goal.id) ?? 0) +
-        sharedWeeklyCapacity * item.weight / pendingWeight,
+      weeklyCapacity * item.weight / pendingWeight,
     ]));
     const completable = pending.filter((item) => (rates.get(item.goal.id) ?? 0) > 0);
     if (completable.length === 0) break;
@@ -299,19 +266,12 @@ function predictActivityGoals(
   return goals.map((goal) => {
     const weeksRemaining = completionWeeks.get(goal.id) ?? null;
     const weeklyMinutesAllocated = initialAllocations.get(goal.id) ?? 0;
-    const dedicatedWeeklyMinutes = dedicatedByGoal.get(goal.id) ?? 0;
     return {
       goalId: goal.id,
       predictedCompletionDate: weeksRemaining === null ? null : dateAfterWeeks(weeksRemaining),
       weeklyMinutesAllocated,
       activityWeeklyCapacity: weeklyCapacity,
-      dedicatedWeeklyMinutes,
-      sharedWeeklyCapacity,
-      otherLinkedWeeklyMinutes: Math.max(
-        0,
-        weeklyCapacity - dedicatedWeeklyMinutes - sharedWeeklyCapacity
-      ),
-      allocationShare: weeklyCapacity > 0 ? weeklyMinutesAllocated / weeklyCapacity : 0,
+      allocationShare: weeklyMinutesAllocated / weeklyCapacity,
       competingGoalCount: goals.length - 1,
       remainingMinutes: Math.max(0, goal.estimatedMinutes - goal.loggedMinutes),
       weeksRemaining,

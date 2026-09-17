@@ -23,6 +23,7 @@ import {
   makeRoutineBlock,
   makeTrackingEntry,
 } from '../helpers/builders';
+import type { RoutineBlock } from '../../src/core/types';
 import { v4PersistedState } from '../fixtures/v4Store';
 
 function makeLegacyState() {
@@ -79,7 +80,8 @@ describe('persisted-state migrations', () => {
     const legacy = makeAppState({
       goals: [makeGoal({ estimatedMinutes: 0 })],
       routines: [makeRoutine({
-        blocks: [makeRoutineBlock({ goalId: 'missing-goal' })],
+        // A pre-v6 block could name a goal; this one names a goal that is gone.
+        blocks: [{ ...makeRoutineBlock(), goalId: 'missing-goal' } as RoutineBlock],
       })],
       trackingEntries: [makeTrackingEntry({
         goalId: 'missing-goal',
@@ -91,7 +93,7 @@ describe('persisted-state migrations', () => {
     const migrated = migratePersistedState(legacy, 3);
 
     expect(migrated.goals[0].estimatedMinutes).toBe(1);
-    expect(migrated.routines[0].blocks[0].goalId).toBeUndefined();
+    expect(migrated.routines[0].blocks[0]).not.toHaveProperty('goalId');
     expect(migrated.trackingEntries[0].goalId).toBeUndefined();
     expect(migrated.trackingEntries[0].routineBlockId).toBeUndefined();
   });
@@ -624,14 +626,14 @@ describe('schema 5: the week-start preference (#44)', () => {
       ...v4Data,
       preferences: { weekStartsOn: 1 },
       lastSyncedAt: undefined,
-      schemaVersion: 5,
+      schemaVersion: CURRENT_SCHEMA_VERSION,
     });
     expect(migrated.preferences.weekStartsOn).toBe(1);
     // Stored day numbers are not renumbered by the preference: Sunday is still 0.
     expect(migrated.routines[0].blocks.map((block) => block.dayOfWeek)).toEqual([0, 1, 6]);
     expect(migrated.currentTrackingEntryId).toBe('entry-running');
     expect(v4).toEqual(original);
-    // And the result is a valid v5 store.
+    // And the result is a valid current store.
     expect(migratePersistedState(migrated, CURRENT_SCHEMA_VERSION)).toEqual(migrated);
   });
 

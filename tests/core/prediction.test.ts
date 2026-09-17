@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { predictAllGoals, predictGoalCompletion } from '../../src/core/engine/prediction';
-import type { TrackingEntry } from '../../src/core/types';
+import type { RoutineBlock, TrackingEntry } from '../../src/core/types';
 import {
   makeGoal,
   makeRoutine,
@@ -26,7 +26,7 @@ function routineWithCapacity(minutes: number) {
 }
 
 describe('shared-capacity forecasting', () => {
-  it('shares unlinked capacity by priority without double-counting and reallocates it', () => {
+  it('shares a type\'s capacity by priority without double-counting and reallocates it', () => {
     const high = makeGoal({
       id: 'high',
       estimatedMinutes: 500,
@@ -70,42 +70,64 @@ describe('shared-capacity forecasting', () => {
     expect(predictions.map((prediction) => prediction.weeklyMinutesAllocated)).toEqual([60, 60]);
   });
 
-  it('keeps linked blocks dedicated and reserves links to inactive goals', () => {
+  it('pools every block of a type, so no block is reserved for one goal (#60)', () => {
     const first = makeGoal({ id: 'first', priority: 5, estimatedMinutes: 300 });
     const second = makeGoal({ id: 'second', priority: 1, estimatedMinutes: 300 });
+    // Three blocks of one type, 240 minutes in all. Before #60 the first and last could be pinned
+    // to a goal and held back from the pool; now they are ordinary capacity.
     const routine = makeRoutine({
       updatedAt: '2026-02-01T00:00:00.000Z',
       blocks: [
-        makeRoutineBlock({ id: 'first-linked', endMinutes: 600, goalId: first.id }),
-        makeRoutineBlock({ id: 'shared', startMinutes: 600, endMinutes: 720 }),
-        makeRoutineBlock({
-          id: 'inactive-linked',
-          startMinutes: 720,
-          endMinutes: 780,
-          goalId: 'paused-goal',
-        }),
+        makeRoutineBlock({ id: 'morning', endMinutes: 600 }),
+        makeRoutineBlock({ id: 'midday', startMinutes: 600, endMinutes: 720 }),
+        makeRoutineBlock({ id: 'afternoon', startMinutes: 720, endMinutes: 780 }),
       ],
     });
 
     const [firstPrediction, secondPrediction] = predictAllGoals([first, second], routine);
 
+    // Weights 1 and 5 over the whole 240: nothing is dedicated and nothing is withheld.
     expect(firstPrediction).toMatchObject({
-      dedicatedWeeklyMinutes: 60,
-      sharedWeeklyCapacity: 120,
-      weeklyMinutesAllocated: 80,
+      weeklyMinutesAllocated: 40,
+      activityWeeklyCapacity: 240,
+      competingGoalCount: 1,
+    });
+    expect(secondPrediction).toMatchObject({
+      weeklyMinutesAllocated: 200,
       activityWeeklyCapacity: 240,
     });
-    expect(secondPrediction.weeklyMinutesAllocated).toBe(100);
     expect(firstPrediction.weeklyMinutesAllocated + secondPrediction.weeklyMinutesAllocated)
-      .toBe(180);
+      .toBe(240);
+    expect(firstPrediction).not.toHaveProperty('dedicatedWeeklyMinutes');
   });
 
-  it('keeps an unallocated competitor at low confidence despite rich activity history', () => {
-    const linked = makeGoal({ id: 'linked' });
-    const competitor = makeGoal({ id: 'competitor' });
+  it('ignores a goalId left on a block value, feeding the shared pool with it', () => {
+    // The type no longer allows it, but a stale in-memory object is still a runtime possibility;
+    // the engine must not resurrect a dedicated branch for it.
+    const first = makeGoal({ id: 'first', priority: 3, estimatedMinutes: 300 });
+    const second = makeGoal({ id: 'second', priority: 3, estimatedMinutes: 300 });
+    const legacyLinked = { ...makeRoutineBlock({ endMinutes: 11 * 60 }), goalId: first.id };
+    const linked = makeRoutine({
+      updatedAt: '2026-02-01T00:00:00.000Z',
+      blocks: [legacyLinked as RoutineBlock],
+    });
+    const plain = makeRoutine({
+      updatedAt: '2026-02-01T00:00:00.000Z',
+      blocks: [makeRoutineBlock({ endMinutes: 11 * 60 })],
+    });
+
+    const predictions = predictAllGoals([first, second], linked);
+    expect(predictions.map((prediction) => prediction.weeklyMinutesAllocated)).toEqual([60, 60]);
+    expect(predictions).toEqual(predictAllGoals([first, second], plain));
+    expect(predictGoalCompletion(second, linked)).toEqual(predictGoalCompletion(second, plain));
+  });
+
+  it('keeps a goal with no scheduled time at low confidence despite rich activity history', () => {
+    const goal = makeGoal({ id: 'unscheduled' });
+    // The routine schedules only another activity type, so this goal's pool is empty.
     const routine = makeRoutine({
       updatedAt: '2026-02-01T00:00:00.000Z',
-      blocks: [makeRoutineBlock({ endMinutes: 660, goalId: linked.id })],
+      blocks: [makeRoutineBlock({ endMinutes: 660, activityTypeId: 'activity-other' })],
     });
     const history = Array.from({ length: 14 }, (_, index) => {
       const day = String(index + 2).padStart(2, '0');
@@ -117,21 +139,15 @@ describe('shared-capacity forecasting', () => {
       });
     });
 
-    const [linkedPrediction, competitorPrediction] = predictAllGoals(
-      [linked, competitor],
-      routine,
-      history
-    );
-
-    expect(linkedPrediction.confidenceLevel).toBe('high');
-    expect(competitorPrediction).toMatchObject({
-      weeklyMinutesAllocated: 0,
-      otherLinkedWeeklyMinutes: 120,
-      predictedCompletionDate: null,
-      confidenceLevel: 'low',
-      evidenceDays: 0,
-      confidenceReason: 'No routine time is available to this goal.',
-    });
+    expect(predictAllGoals([goal, makeGoal({ id: 'sibling' })], routine, history)[0])
+      .toMatchObject({
+        weeklyMinutesAllocated: 0,
+        activityWeeklyCapacity: 0,
+        predictedCompletionDate: null,
+        confidenceLevel: 'low',
+        evidenceDays: 0,
+        confidenceReason: 'No routine time is available to this goal.',
+      });
   });
 
   it('reports no date when matching capacity is unavailable', () => {

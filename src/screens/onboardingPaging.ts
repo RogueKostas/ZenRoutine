@@ -36,7 +36,7 @@ export const ONBOARDING_SLIDES: readonly OnboardingSlide[] = [
     id: '3',
     emoji: '📅',
     title: 'Plan Your Week',
-    description: 'Build a weekly routine with time blocks. Link activities to goals to make consistent progress.',
+    description: 'Build a weekly routine from activity types. Your goals share that time in priority order.',
     color: '#1E88E5',
   },
   {

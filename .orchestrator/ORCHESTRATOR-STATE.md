@@ -851,3 +851,41 @@ Wave A: #44 lands -> #38 sidecar-merge (persistence, after #44's migration) -> W
 Wave B: #60 (after #44 + #38: touches persistence migration) -> #49 -> #50+#51 (one lane) ; #55 after forecast-engine
 (Home needs "which goal is scheduled now", which is an allocation question). #48 folds into #60.
 Deploy: live bundle now renders one onboarding slide at a time (#69 is live). Bundle hash check at the wave gate.
+
+
+## Pass 12 - 2026-09-17 ~16:35-17:00 local - WAVE A GATE PASSED ON THE DEPLOYED BUILD
+
+### Landed
+| PR | what | tests | evidence |
+|---|---|---|---|
+| #73 | week-start (#44) | 283 | real v4 browser store migrated to v5 intact (5 goals / 45 entries / 31 blocks); Sunday choice persists across reload; calendar Mon-first |
+| #74 | hotfix: #73's tests were host-TZ dependent | 283 | green under TZ=UTC, America/Los_Angeles, host |
+| #75 | forecast-engine (#52 part 1) | 304 | no UI; gate run under host TZ AND TZ=UTC |
+
+### MY ERROR, recorded as it happened
+I merged #73 with CI RED: `gh pr checks` and `gh pr merge` were chained in one command and I did not read the
+check output before the merge ran. main (eb3f205) was red for ~8 minutes; Render's checksPass held the deploy.
+Cause: two new tests built Dates at module load, before the file's beforeAll set TZ=Europe/London; CI is UTC.
+Corrected publicly on #73, fixed in #74, main green at 2266069.
+RULE: never chain merge after checks. `gh pr checks <n> --watch`, READ it, then merge in a separate call.
+RULE: every lane runs the suite once under TZ=UTC (added to _common-iter1.md).
+Found in passing: under TZ=Pacific/Auckland 2 tests in tests/core/prediction.test.ts fail (pre-existing,
+file unchanged since #6). Offered to the director as a separate task chip; not in this iteration's scope.
+
+### Wave A exit criteria - DEPLOYED build (zenroutine-web.onrender.com, bundle contains #74; #75 still deploying),
+### cleared storage, driven by in-page JS because screenshots time out while the app window is not drawn.
+Measured widths: 1024 (the pane's desktop width - NOT 1920, which the pane could not emulate) and 400.
+1. five distinct slides, in order - PASS @400 (Welcome / Set Meaningful Goals / Plan Your Week / Track Your Time /
+   See Your Progress); @1024 paging reached the last slide (title read failed on my selector, not the app).
+2. example data from first run - PASS @1024 and @400 (one tap -> Home with Today's Schedule + Active Goals).
+3. Monday-first - PASS: Routine tabs Mon/Tue/Wed... ; Calendar headers Mon..Sun, first cell 31 Aug.
+4. timer counts seconds - PASS: 0:02 -> 0:05 (@1024), 0:02 -> 0:04 (@400).
+5. `45h / 80h`, no "min this week" - PASS both widths.
+6. visible response to confirming actions - PASS: Privacy, Theme, Reset All Data, Load Sample Data, Replace existing
+   blocks? all open the app dialog; dialog card is 368px wide at 400.
+7. calendar findable - PASS: Analytics -> Calendar segment at y=70 (no scroll), "Activity calendar".
+Wave A issues: #39 #40 #41 #42 #43 #44 #46 #47 #59 #62 closed. #45 half-done (New Goal half -> Wave B). #48 -> #60.
+#38 deferred to the end of the persistence chain (#60 -> #49 -> #38), not user-visible.
+
+### In flight
+routine-types-only (#60+#48), day-ribbon (Wave C foundation; Home read-only integration only).

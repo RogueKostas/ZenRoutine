@@ -22,10 +22,18 @@ export const APP_STORAGE_KEY = 'zenroutine-storage';
  */
 export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
 /**
- * v5 (#44) added `preferences`. v4 was the first version written under the strict invariants
- * below; see STRICT_SCHEMA_VERSION.
+ * v6 (#60) removed `RoutineBlock.goalId`; see BLOCK_GOAL_REMOVED_SCHEMA_VERSION. v5 (#44) added
+ * `preferences`. v4 was the first version written under the strict invariants below; see
+ * STRICT_SCHEMA_VERSION.
  */
-export const CURRENT_SCHEMA_VERSION = 5;
+export const CURRENT_SCHEMA_VERSION = 6;
+/**
+ * The first schema version whose routine blocks cannot name a goal (#60: the routine is made of
+ * activity types only). Every blob below it may carry `goalId` on a block, and the v5 -> v6 step
+ * drops it — never honours it — whatever it points at. A subtractive migration, so like v5 it
+ * gates only itself and leaves the repair gate where it was.
+ */
+export const BLOCK_GOAL_REMOVED_SCHEMA_VERSION = 6;
 /**
  * The first schema version whose blobs were written by the strict store, and so the version the
  * lenient legacy repairs stop at. Deliberately NOT `CURRENT_SCHEMA_VERSION`: bumping the schema
@@ -422,8 +430,24 @@ function parseGoal(value: unknown, addDefaultPriority: boolean, repairLegacyValu
   };
 }
 
-function parseRoutineBlock(value: unknown): RoutineBlock {
-  const record = readRecord(value, 'routine block');
+/**
+ * The v5 -> v6 step (#60): a block's `goalId` is dropped before the block is read.
+ *
+ * Dropped unread, not validated first: a block's goal link carries no meaning any more, so a
+ * dangling or mistyped one is no reason to fail hydration or an import. The goal itself, and any
+ * tracking entry's own `goalId`, are untouched — only the plan stops naming goals.
+ */
+function dropBlockGoal(record: UnknownRecord): UnknownRecord {
+  if (!('goalId' in record)) return record;
+  const { goalId: _dropped, ...block } = record;
+  return block;
+}
+
+function parseRoutineBlock(value: unknown, version: number): RoutineBlock {
+  const stored = readRecord(value, 'routine block');
+  // At v6 and later the key is simply unknown, and unknown keys are ignored like everywhere else
+  // in this file: the block below is built field by field, so nothing unread survives the parse.
+  const record = version < BLOCK_GOAL_REMOVED_SCHEMA_VERSION ? dropBlockGoal(stored) : stored;
   const dayOfWeek = readInteger(record, 'dayOfWeek');
   if (!Number.isInteger(dayOfWeek) || dayOfWeek < 0 || dayOfWeek > 6) {
     throw new Error(`Invalid routine block day: ${dayOfWeek}`);
@@ -442,7 +466,6 @@ function parseRoutineBlock(value: unknown): RoutineBlock {
     startMinutes,
     endMinutes,
     activityTypeId: readString(record, 'activityTypeId'),
-    goalId: readOptionalString(record, 'goalId'),
   };
 }
 
@@ -491,13 +514,13 @@ function readPreferences(record: UnknownRecord): Preferences {
   };
 }
 
-function parseRoutine(value: unknown): Routine {
+function parseRoutine(value: unknown, version: number): Routine {
   const record = readRecord(value, 'routine');
   return {
     id: readString(record, 'id'),
     name: readString(record, 'name'),
     isActive: readBoolean(record, 'isActive'),
-    blocks: readArray(record, 'blocks').map(parseRoutineBlock),
+    blocks: readArray(record, 'blocks').map((block) => parseRoutineBlock(block, version)),
     capacityChangedAt: readCapacityChangedAt(record, 'capacityChangedAt'),
     createdAt: readIsoDateTime(record, 'createdAt'),
     updatedAt: readIsoDateTime(record, 'updatedAt'),
@@ -625,7 +648,7 @@ export function migratePersistedState(
   const goals = readArray(record, 'goals').map(
     (value) => parseGoal(value, version < 3, version < STRICT_SCHEMA_VERSION)
   );
-  let routines = readArray(record, 'routines').map(parseRoutine);
+  const routines = readArray(record, 'routines').map((routine) => parseRoutine(routine, version));
   // A single unreadable tracking entry must not be able to take the whole store down with it.
   // Everything above stays strict: activity types, goals and routines are the skeleton the rest
   // of the state hangs off, and a store missing one of those is not a store worth opening.
@@ -728,26 +751,17 @@ export function migratePersistedState(
   );
 
   const goalsById = new Map(goals.map((goal) => [goal.id, goal]));
-  const blockGoalIsInvalid = (block: RoutineBlock) => {
-    if (!block.goalId) return false;
-    const goal = goalsById.get(block.goalId);
-    return !goal || goal.activityTypeId !== block.activityTypeId;
-  };
+  // There is no routine-block counterpart to this check any more. Blocks used to be checked the
+  // same way — cleared below v4, a thrown error from v4 on — but #60 drops a block's goalId in
+  // `parseRoutineBlock` before this point, so a dangling block goal is no longer something the
+  // blob can hold in live state, and refusing to open over a field that is being discarded anyway
+  // would lock the user out for nothing.
   const entryGoalIsInvalid = (entry: TrackingEntry) => {
     if (!entry.goalId) return false;
     const goal = goalsById.get(entry.goalId);
     return !goal || goal.activityTypeId !== entry.activityTypeId;
   };
-  const hasInvalidBlockGoal = routines.some((routine) => routine.blocks.some(blockGoalIsInvalid));
   if (version < STRICT_SCHEMA_VERSION) {
-    if (hasInvalidBlockGoal) {
-      routines = routines.map((routine) => ({
-        ...routine,
-        blocks: routine.blocks.map((block) =>
-          blockGoalIsInvalid(block) ? { ...block, goalId: undefined } : block
-        ),
-      }));
-    }
     // Legacy repair is kept, and is deliberately preferred over quarantining: clearing an
     // optional reference keeps the entry — and its minutes — in the user's history, which is
     // strictly better than setting the whole record aside. It is only available here because a
@@ -759,9 +773,6 @@ export function migratePersistedState(
       );
     }
   } else {
-    if (hasInvalidBlockGoal) {
-      throw new Error('Invalid routine block goal: goal is missing or uses another activity type');
-    }
     quarantineEntries(
       entryGoalIsInvalid,
       'Invalid tracking entry goal: goal is missing or uses another activity type'
@@ -771,12 +782,17 @@ export function migratePersistedState(
   const routineBlocksById = new Map(
     routines.flatMap((routine) => routine.blocks).map((block) => [block.id, block])
   );
+  /**
+   * An entry's block must exist and be of the entry's activity type. It used to also have to agree
+   * with a goal-linked block's goal; with blocks no longer naming goals (#60) that half is gone,
+   * rather than judged against the goalId the v5 -> v6 step dropped. An entry started from a block
+   * may be for any goal of that type, or none, so a pre-v6 disagreement is not a fault to repair
+   * or quarantine over — the entry keeps both its goal and its block.
+   */
   const entryRoutineBlockIsInvalid = (entry: TrackingEntry) => {
     if (!entry.routineBlockId) return false;
     const block = routineBlocksById.get(entry.routineBlockId);
-    return !block ||
-      block.activityTypeId !== entry.activityTypeId ||
-      Boolean(block.goalId && block.goalId !== entry.goalId);
+    return !block || block.activityTypeId !== entry.activityTypeId;
   };
   if (version < STRICT_SCHEMA_VERSION) {
     if (trackingEntries.some(entryRoutineBlockIsInvalid)) {
