@@ -957,3 +957,29 @@ pushed with the new exact-match `-ExpectDeletions` gate; #81 union-resolved src/
 ### In flight
 goals-list (#50 #51 #49-UI #45-half; schema v8), ribbon-drag (#58 remainder: edge drag + zoom).
 Next: current-activity (#54 + #53; schema v9) after goals-list; then sidecar #38; then review readiness.
+
+
+## Pass 15 - 2026-09-17 ~18:00-18:15 local - WAVE B GATE PASSED ON THE DEPLOYED BUILD
+
+### Landed
+| PR | lane | issues | tests | rendered evidence (real keyboard/mouse via CDP) |
+|---|---|---|---|---|
+| #82 | goals-list | #45 #49 #50 #51 (closed) | 543 | list matches p60-62; "Buy milk"+Enter stored with no type/estimate; filter Work -> "Add a Work goal…" -> Draft slides stored as Work; real mouse drag of the handle -> order 0 Draft slides, hidden goals kept order |
+Merge work: took main's BlockEditor/HomeScreen (restructured by #79/#81) and re-applied the lane's tolerance edits;
+deleted unused GoalCard.tsx at the lane's request (-ExpectDeletions).
+
+### Wave B exit criteria - LIVE build (bundle contains #82), fresh profile, Skip -> "Try it with example data", 1280px
+1. Goals screen is p51/p67: list, filter box, drag - PASS (list + filter box + handles live; drag observed on #82's merged build)
+2. goal with a name alone - PASS ("Call the dentist" stored with no type/estimate, schema v8, row visible)
+3. no block offers a goal picker - PASS (Edit activity dialog: no "Link to Goal"; "Goals for this activity type" instead)
+4. Home names today's goals - PASS (rows "Ship the analytics dashboard 45/80h", NEXT card names the goal)
+5. explainer no longer claims dedicated blocks - PASS ("…worked in list order: the top one gets all of the time first…")
+Wave B issues: #48 #49 #50 #51 #55 #60 closed.
+
+### Director decisions surfaced (none blocking)
+- "1hr" on a new goal is a DISPLAY default, not stored (to-do items claim no forecast time); Block Editor
+  quick-add still stores 60 min.
+
+### In flight
+current-activity (#54 + #53; schema v9), ribbon-drag (#58 remainder).
+Then: sidecar #38 (after current-activity), then Wave C gate + review readiness.
