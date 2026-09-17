@@ -8,7 +8,7 @@
   "expectedGitEmail": "kostas@roguesun.com",
   "cadenceMinutes": 15,
   "idleCadenceMinutes": 30,
-  "laneTimeoutMin": 75,
+  "laneTimeoutMin": 110,
   "maxConcurrentLanes": 4,
   "briefsDir": ".orchestrator/briefs",
   "stateFile": ".orchestrator/ORCHESTRATOR-STATE.md",

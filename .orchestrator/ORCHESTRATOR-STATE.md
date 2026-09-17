@@ -889,3 +889,42 @@ Wave A issues: #39 #40 #41 #42 #43 #44 #46 #47 #59 #62 closed. #45 half-done (Ne
 
 ### In flight
 routine-types-only (#60+#48), day-ribbon (Wave C foundation; Home read-only integration only).
+
+
+## Pass 13 - 2026-09-17 ~17:00-17:40 local - Wave B model changes landed; Wave B UI + Wave C in flight
+
+### Landed (CI read green before every merge)
+| PR | lane | issues | tests | evidence |
+|---|---|---|---|---|
+| #76 | routine-types-only | #60, #48 | 329 | real v5 browser store -> v6, 0 blocks with goalId, data intact; Block Editor "Goals for this activity type" + quick-add |
+| #77 | day-ribbon | (Wave C foundation) | 357 | RENDERED (headless Edge): 1920 labels/ticks/now-marker; 500 stacked labels, thinned ticks |
+| #78 | goal-order | #49 model half | 395 | real v6 store (priorities) -> v7 order exactly as derived; explainer + "Next in line" copy; no chips |
+My merge fixes: #76 forecast.test.ts cast (goalId removed from type after #75 used it).
+
+### Rendering: a way round the hidden-window problem
+C:\CoworkBridge\tools\shot.ps1 = headless Edge (built in, no download) screenshot of the lane-dist server.
+serve-dist.js now accepts POST /__seed (the app's localStorage as JSON, saved beside dist) and serves
+/__seed.html?to=... which loads it and redirects. So: seed once from the in-app tab, then shots of a populated app.
+LIMITS (measured): headless Edge lays out at >= ~500px even when --window-size=400 (a 400 shot is a cropped 500
+layout); deep links (/Tabs/Goals) land on Home, so a shot is always Home. Use the in-app tab's DOM for other
+screens. msedge returns before writing the file (script waits). PowerShell `$args` is automatic - renamed.
+
+### Lane corrections accepted this pass
+- routine-types-only: explainer described priority-weight sharing (prediction.ts still did); rewritten again by #78.
+- day-ribbon: blocks have no names, so labels are type names (design open question §4.2); tick thinning is by
+  ribbon width, not screen width.
+- goal-order: priority changes never reset forecast confidence, so reorders don't either; global order confirmed
+  against p60/p65-67.
+
+### Config
+laneTimeoutMin 75 -> 110 (UI-surface lanes are the largest of the iteration).
+
+### In flight (4 lanes)
+| lane | issues | owns |
+|---|---|---|
+| routine-surface | #63, #58 | RoutineScreen, components/routine (not blockGoals), ribbon extensions, pie |
+| goals-list | #50, #51, #49 UI, #45 half | Goal type optional (schema 8), GoalsScreen rewrite, drag |
+| home-today | #55, #56 | HomeScreen, new dayOverview selector |
+| forecast-calendar | #52 part 2 | Analytics Calendar segment -> "Forecast" |
+Persistence chain from here: goals-list (v8) -> tracking-states #54 -> sidecar #38. Then current-activity #53
+(after #54). Then review readiness.
