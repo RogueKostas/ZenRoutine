@@ -70,6 +70,16 @@ describe('pause and resume (#54)', () => {
     const before = store().trackingEntries;
     store().resumeTracking();
     expect(store().trackingEntries).toBe(before);
+
+    // Nor to resume twice: the closed pause keeps its end.
+    at('2026-03-02T09:10:00.000Z');
+    store().pauseTracking();
+    at('2026-03-02T09:15:00.000Z');
+    store().resumeTracking();
+    const resumed = store().trackingEntries;
+    at('2026-03-02T09:30:00.000Z');
+    store().resumeTracking();
+    expect(store().trackingEntries).toBe(resumed);
   });
 
   it('does nothing to pause a finished entry, or with nothing running', () => {

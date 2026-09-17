@@ -48,11 +48,12 @@ describe('tracked time is (end − start) − paused time (#54)', () => {
   });
 
   it('rounds the total once, not each piece', () => {
-    // Two 30-second pieces: each would round to 1 or 0; together they are one minute.
+    // Two 30-second pieces around a one-minute pause: each alone would round up to a minute;
+    // together they are one minute.
     const entry = makeTrackingEntry({
       startTime: iso(9),
-      endTime: '2026-03-02T09:01:00.000Z',
-      pauses: [{ start: '2026-03-02T09:00:30.000Z', end: '2026-03-02T09:00:30.000Z' }],
+      endTime: iso(9, 2),
+      pauses: [{ start: '2026-03-02T09:00:30.000Z', end: '2026-03-02T09:01:30.000Z' }],
     });
     expect(getTrackingEntryDurationMinutes(entry)).toBe(1);
   });

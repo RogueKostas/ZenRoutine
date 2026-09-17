@@ -24,9 +24,9 @@ describe('currentActivityLayout', () => {
     expect(layout.pieSize).toBe(240);
   });
 
-  it('never overflows a 320px phone', () => {
-    const layout = currentActivityLayout(320);
-    expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(320 - 32);
+  it.each([280, 300, 320])('never overflows a %ipx phone, gutters included', (width) => {
+    const layout = currentActivityLayout(width);
+    expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(width - 32);
   });
 
   it('puts the three columns side by side at 1920px', () => {

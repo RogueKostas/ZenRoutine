@@ -328,7 +328,7 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   tabText: {
-    fontSize: 20,
+    fontSize: 18,
   },
   tabActive: {
     fontWeight: '600',
