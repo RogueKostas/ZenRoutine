@@ -1,3 +1,4 @@
+import { sortGoalsByOrder } from '../../core/engine/goalOrder';
 import type { Goal } from '../../core/types';
 
 /**
@@ -9,7 +10,7 @@ export const QUICK_ADD_GOAL_ESTIMATE_MINUTES = 60;
 
 /**
  * The goals the Block Editor lists under "Goals for this activity type": the type's active goals,
- * in the order the Goals screen shows them (priority first, then list order). Read-only — a block
+ * in list order (#49), which is the order the block's time goes to them. Read-only — a block
  * never names a goal (#60), so this is information about where the block's time goes, not a picker.
  */
 export function activeGoalsForActivityType(
@@ -17,9 +18,9 @@ export function activeGoalsForActivityType(
   activityTypeId: string | null
 ): Goal[] {
   if (!activityTypeId) return [];
-  return goals
-    .filter((goal) => goal.activityTypeId === activityTypeId && goal.status === 'active')
-    .sort((left, right) => left.priority - right.priority);
+  return sortGoalsByOrder(
+    goals.filter((goal) => goal.activityTypeId === activityTypeId && goal.status === 'active')
+  );
 }
 
 /** What the store's `addGoal` needs for a quick-added goal, or why there is nothing to add. */

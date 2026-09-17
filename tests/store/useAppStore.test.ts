@@ -10,8 +10,11 @@ import {
   selectPersistedAppState,
 } from '../../src/store/persistence';
 
+/** A stored goal before v7 replaced `priority` with `order` (#49). */
+type PreV7Goal = Omit<Goal, 'order'> & { priority: 1 | 2 | 3 | 4 | 5 };
+
 /** The stored shape before v5 added `preferences` (#44). */
-type PreV5AppState = Omit<AppState, 'preferences'>;
+type PreV5AppState = Omit<AppState, 'preferences' | 'goals'> & { goals: PreV7Goal[] };
 
 const storageKey = 'zenroutine-storage';
 const frozenTime = '2026-03-02T09:00:00.000Z';
@@ -42,7 +45,7 @@ describe('goal and tracking actions', () => {
     expect(useAppStore.getState().goals).toContainEqual(expect.objectContaining({
       id: goalId,
       loggedMinutes: 0,
-      priority: 3,
+      order: 0,
       status: 'active',
       createdAt: frozenTime,
       updatedAt: frozenTime,
@@ -583,7 +586,7 @@ describe('routine-level capacity timestamps', () => {
 describe('persisted state', () => {
   it('rehydrates application data from the configured AsyncStorage key', async () => {
     const activityType = useAppStore.getState().activityTypes[0];
-    const persistedGoal: Goal = {
+    const persistedGoal: PreV7Goal = {
       id: 'persisted-goal',
       name: 'Resume safely',
       description: 'Prove data can be restored',
@@ -613,8 +616,9 @@ describe('persisted state', () => {
     }));
     await useAppStore.persist.rehydrate();
 
+    const { priority: _priority, ...restoredGoal } = persistedGoal;
+    expect(useAppStore.getState().goals).toEqual([{ ...restoredGoal, order: 0 }]);
     expect(useAppStore.getState()).toMatchObject({
-      goals: [persistedGoal],
       hasCompletedOnboarding: true,
       preferences: { weekStartsOn: 1 },
       schemaVersion: CURRENT_SCHEMA_VERSION,

@@ -11,12 +11,15 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useGoals, useActivityTypes, useActiveRoutine, useAppStore } from '../store';
-import { predictAllGoals } from '../core/engine/prediction';
+import {
+  GOAL_FORECAST_EXPLAINER,
+  describeGoalQueue,
+  predictAllGoals,
+} from '../core/engine/prediction';
 import { formatDuration, parseDuration } from '../core/utils/time';
 import { chipRowContentStyle, chipRowStyle } from '../components/common/chipRow';
 import type { TabScreenProps } from '../navigation/types';
-import type { GoalStatus, GoalPriority } from '../core/types';
-import { PRIORITY_LABELS, PRIORITY_COLORS } from '../core/types';
+import type { GoalStatus } from '../core/types';
 
 type FilterStatus = 'all' | GoalStatus;
 
@@ -29,7 +32,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const [newGoalEstimate, setNewGoalEstimate] = useState('');
   const [newGoalDescription, setNewGoalDescription] = useState('');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
-  const [selectedPriority, setSelectedPriority] = useState<GoalPriority>(3); // Default to Medium
   const [goalError, setGoalError] = useState<string | null>(null);
 
   const goals = useGoals();
@@ -37,7 +39,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   const activeRoutine = useActiveRoutine();
   const { addGoal, setGoalStatus, deleteGoal, trackingEntries } = useAppStore();
 
-  // Filter by status
+  // `goals` is already in list order (#49); filtering keeps it.
   let filteredGoals = statusFilter === 'all'
     ? goals
     : goals.filter((g) => g.status === statusFilter);
@@ -46,9 +48,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
   if (activityFilter) {
     filteredGoals = filteredGoals.filter((g) => g.activityTypeId === activityFilter);
   }
-
-  // Sort by priority (highest = 1 first)
-  filteredGoals = [...filteredGoals].sort((a, b) => (a.priority ?? 3) - (b.priority ?? 3));
 
   const predictions = activeRoutine
     ? predictAllGoals(goals, activeRoutine, trackingEntries)
@@ -74,7 +73,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
       description: newGoalDescription.trim(),
       estimatedMinutes: estimate.minutes,
       activityTypeId: selectedActivityId,
-      priority: selectedPriority,
     });
     if (!goalId) {
       setGoalError('The goal could not be saved. Check the details and try again.');
@@ -85,7 +83,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
     setNewGoalEstimate('');
     setNewGoalDescription('');
     setSelectedActivityId(null);
-    setSelectedPriority(3);
     setGoalError(null);
     setShowAddModal(false);
   };
@@ -220,9 +217,7 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         <View style={[styles.forecastNotice, { backgroundColor: colors.backgroundSecondary }]}>
           <Text style={[styles.forecastNoticeTitle, { color: colors.text }]}>How forecasts work</Text>
           <Text style={[styles.forecastNoticeText, { color: colors.textSecondary }]}>
-            All of an activity type's routine blocks form one pool of time. That type's active
-            goals share the pool by priority, and a finished goal's share passes to the rest.
-            Dates assume this routine and these priorities continue.
+            {GOAL_FORECAST_EXPLAINER}
           </Text>
         </View>
       )}
@@ -246,14 +241,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                     <Text style={[styles.goalName, { color: colors.text }]}>{goal.name}</Text>
                     <View style={styles.goalMeta}>
                       <Text style={[styles.goalActivity, { color: colors.textSecondary }]}>{activity?.name}</Text>
-                      {goal.priority && (
-                        <View style={[styles.priorityBadge, { backgroundColor: PRIORITY_COLORS[goal.priority] + '20' }]}>
-                          <View style={[styles.priorityDot, { backgroundColor: PRIORITY_COLORS[goal.priority] }]} />
-                          <Text style={[styles.priorityText, { color: PRIORITY_COLORS[goal.priority] }]}>
-                            {PRIORITY_LABELS[goal.priority]}
-                          </Text>
-                        </View>
-                      )}
                     </View>
                   </View>
                   <View style={[styles.statusBadge, getStatusBadgeStyle(goal.status)]}>
@@ -295,13 +282,11 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                       </View>
                     </View>
                     <Text style={[styles.predictionCapacity, { color: colors.text }]}>
-                      {formatDuration(prediction.weeklyMinutesAllocated)}/week allocated from{' '}
-                      {formatDuration(prediction.activityWeeklyCapacity)} scheduled
+                      {formatDuration(prediction.weeklyMinutesAllocated)} in the next 7 days, of{' '}
+                      {formatDuration(prediction.activityWeeklyCapacity)}/week scheduled for this type
                     </Text>
                     <Text style={[styles.predictionReason, { color: colors.textSecondary }]}>
-                      {prediction.competingGoalCount > 0
-                        ? `This activity's time is shared with ${prediction.competingGoalCount} other active goal${prediction.competingGoalCount === 1 ? '' : 's'} by priority. `
-                        : 'No other active goal competes for this activity. '}
+                      {describeGoalQueue(prediction)}{' '}
                       {prediction.confidenceReason}
                     </Text>
                   </View>
@@ -494,38 +479,6 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
               ))}
             </View>
 
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Priority</Text>
-            <View style={styles.priorityGrid}>
-              {([1, 2, 3, 4, 5] as GoalPriority[]).map((priority) => (
-                <TouchableOpacity
-                  key={priority}
-                  style={[
-                    styles.priorityOption,
-                    { backgroundColor: colors.backgroundSecondary },
-                    selectedPriority === priority && {
-                      borderColor: PRIORITY_COLORS[priority],
-                      backgroundColor: PRIORITY_COLORS[priority] + '15',
-                      borderWidth: 2,
-                    },
-                  ]}
-                  onPress={() => setSelectedPriority(priority)}
-                  accessibilityRole="radio"
-                  accessibilityLabel={`${PRIORITY_LABELS[priority]} priority`}
-                  accessibilityState={{ checked: selectedPriority === priority }}
-                >
-                  <View style={[styles.priorityOptionDot, { backgroundColor: PRIORITY_COLORS[priority] }]} />
-                  <Text
-                    style={[
-                      styles.priorityOptionText,
-                      { color: colors.text },
-                      selectedPriority === priority && { fontWeight: '600' },
-                    ]}
-                  >
-                    {PRIORITY_LABELS[priority]}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
             {goalError && (
               <Text accessibilityLiveRegion="assertive" style={[styles.formError, { color: colors.error }]}>
                 {goalError}
@@ -654,23 +607,6 @@ const styles = StyleSheet.create({
     marginTop: 2,
     flexWrap: 'wrap',
     gap: 6,
-  },
-  priorityBadge: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 6,
-    paddingVertical: 2,
-    borderRadius: 4,
-  },
-  priorityDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    marginRight: 4,
-  },
-  priorityText: {
-    fontSize: 10,
-    fontWeight: '600',
   },
   statusBadge: {
     paddingHorizontal: 8,
@@ -891,29 +827,5 @@ const styles = StyleSheet.create({
   },
   activityNameSelected: {
     fontWeight: '600',
-  },
-  priorityGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-    gap: 8,
-  },
-  priorityOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 10,
-    borderRadius: 8,
-    borderWidth: 1,
-    borderColor: 'transparent',
-  },
-  priorityOptionDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 8,
-  },
-  priorityOptionText: {
-    fontSize: 14,
   },
 });

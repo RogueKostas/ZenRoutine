@@ -21,7 +21,13 @@ import {
   parseQuarantineArchive,
   selectPersistedAppState,
 } from '../../src/store/persistence';
-import { makeAppState, makeGoal, makeRoutine, makeTrackingEntry } from '../helpers/builders';
+import {
+  makeAppState,
+  makeGoal,
+  makeRoutine,
+  makeTrackingEntry,
+  withListOrder,
+} from '../helpers/builders';
 import { V4_STORE_BLOB, v4PersistedState } from '../fixtures/v4Store';
 
 function deferred<T>() {
@@ -639,7 +645,8 @@ describe('the week-start preference across launches (#44)', () => {
     expect(state.preferences).toEqual({ weekStartsOn: 1 });
     const { schemaVersion: _stamp, ...v4Data } = v4;
     expect(selectPersistedAppState(state)).toEqual({
-      ...v4Data,
+      // v7 (#49): the one goal's priority became the top list position.
+      ...withListOrder(v4Data, ['goal-report']),
       preferences: { weekStartsOn: 1 },
       schemaVersion: CURRENT_SCHEMA_VERSION,
     });

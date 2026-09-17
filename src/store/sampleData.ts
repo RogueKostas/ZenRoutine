@@ -3,7 +3,6 @@ import type {
   AppState,
   DayOfWeek,
   Goal,
-  GoalPriority,
   Routine,
   RoutineBlock,
   TrackingEntry,
@@ -77,25 +76,19 @@ interface SampleGoal {
   description: string;
   estimatedMinutes: number;
   activity: SampleActivity;
-  priority: GoalPriority;
 }
 
+/**
+ * In list order (#49), most important first. The two Work goals show the queue: the dashboard
+ * takes Work's time first and the planning doc waits for it.
+ */
 const SAMPLE_GOALS: readonly SampleGoal[] = [
   {
     key: 'dashboard',
     name: 'Ship the analytics dashboard',
-    description: 'Morning deep-work blocks go here.',
+    description: 'Takes all the Work time until it ships.',
     estimatedMinutes: 80 * 60,
     activity: 'Work',
-    priority: 1,
-  },
-  {
-    key: 'planning',
-    name: 'Write the Q4 planning doc',
-    description: 'Fits around the dashboard in the afternoons.',
-    estimatedMinutes: 12 * 60,
-    activity: 'Work',
-    priority: 3,
   },
   {
     key: 'marathon',
@@ -103,7 +96,6 @@ const SAMPLE_GOALS: readonly SampleGoal[] = [
     description: 'Three runs a week plus a long Saturday run.',
     estimatedMinutes: 24 * 60,
     activity: 'Fitness',
-    priority: 2,
   },
   {
     key: 'course',
@@ -111,7 +103,13 @@ const SAMPLE_GOALS: readonly SampleGoal[] = [
     description: 'Only just started tracking this one.',
     estimatedMinutes: 30 * 60,
     activity: 'Side Project',
-    priority: 2,
+  },
+  {
+    key: 'planning',
+    name: 'Write the Q4 planning doc',
+    description: 'Next in line for Work once the dashboard ships.',
+    estimatedMinutes: 12 * 60,
+    activity: 'Work',
   },
   {
     key: 'reading',
@@ -119,7 +117,6 @@ const SAMPLE_GOALS: readonly SampleGoal[] = [
     description: 'Scheduled but never tracked yet.',
     estimatedMinutes: 8 * 60,
     activity: 'Personal Development',
-    priority: 4,
   },
 ];
 
@@ -181,7 +178,10 @@ export function missingSampleActivityTypes(
 
 export interface SampleData {
   routine: Routine;
-  /** Goals with `loggedMinutes` at zero; the store adds progress as it records each entry. */
+  /**
+   * Goals with `loggedMinutes` at zero, in list order with `order` from 0; the store adds progress
+   * as it records each entry, and renumbers them to follow the user's own goals.
+   */
   goals: Goal[];
   trackingEntries: Omit<TrackingEntry, 'id' | 'createdAt' | 'updatedAt'>[];
 }
@@ -229,7 +229,7 @@ export function buildSampleData(activityTypes: readonly ActivityType[], now: Dat
   };
 
   const goalIds = new Map(SAMPLE_GOALS.map((goal) => [goal.key, generateId()]));
-  const goals: Goal[] = SAMPLE_GOALS.map((goal) => ({
+  const goals: Goal[] = SAMPLE_GOALS.map((goal, order) => ({
     id: goalIds.get(goal.key)!,
     name: goal.name,
     description: goal.description,
@@ -237,7 +237,7 @@ export function buildSampleData(activityTypes: readonly ActivityType[], now: Dat
     loggedMinutes: 0,
     activityTypeId: idFor(goal.activity),
     status: 'active',
-    priority: goal.priority,
+    order,
     createdAt: scheduledSince,
     updatedAt: scheduledSince,
   }));
