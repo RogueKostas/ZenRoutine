@@ -2,7 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
 import { TabNavigator } from './TabNavigator';
-import { DebugScreen, ActivityTypesScreen, CalendarScreen } from '../screens';
+import { DebugScreen, ActivityTypesScreen } from '../screens';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -34,14 +34,6 @@ export function RootNavigator() {
       <Stack.Screen
         name="ActivityTypes"
         component={ActivityTypesScreen}
-        options={{
-          headerShown: false,
-          presentation: 'modal',
-        }}
-      />
-      <Stack.Screen
-        name="Calendar"
-        component={CalendarScreen}
         options={{
           headerShown: false,
           presentation: 'modal',

@@ -5,12 +5,22 @@ import { useTheme } from '../theme';
 import { useActiveRoutine, useActivityTypes, useTrackingEntries } from '../store';
 import { getRoutineBreakdown, getTrackedBreakdown, MINUTES_IN_WEEK } from '../core/engine/analytics';
 import { formatDuration, getLocalWeekStartDateKey } from '../core/utils/time';
+import { ActivityCalendar } from '../components/calendar';
 import type { TabScreenProps } from '../navigation/types';
 
 type ViewMode = 'planned' | 'tracked' | 'comparison';
 
+/** The views the Analytics tab switches between, in display order. Add a segment with one row. */
+export const ANALYTICS_SEGMENTS = [
+  { key: 'breakdown', label: 'Breakdown' },
+  { key: 'calendar', label: 'Calendar' },
+] as const;
+
+export type AnalyticsSegment = (typeof ANALYTICS_SEGMENTS)[number]['key'];
+
 export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
   const { colors } = useTheme();
+  const [segment, setSegment] = useState<AnalyticsSegment>('breakdown');
   const [viewMode, setViewMode] = useState<ViewMode>('comparison');
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
@@ -158,135 +168,154 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
         <Text style={[styles.title, { color: colors.text }]}>Analytics</Text>
-        <TouchableOpacity
-          style={[styles.calendarButton, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            // @ts-ignore - Calendar screen exists in RootStack
-            navigation.navigate('Calendar');
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Open tracking calendar"
-        >
-          <Text style={styles.calendarButtonText}>📅 Calendar</Text>
-        </TouchableOpacity>
       </View>
 
-      {/* View Mode Selector */}
-      <View style={[styles.modeSelector, { backgroundColor: colors.backgroundSecondary }]}>
-        {(['planned', 'tracked', 'comparison'] as ViewMode[]).map((mode) => (
-          <TouchableOpacity
-            key={mode}
-            style={[
-              styles.modeButton,
-              viewMode === mode && [styles.modeButtonActive, { backgroundColor: colors.surface }],
-            ]}
-            onPress={() => setViewMode(mode)}
-            accessibilityRole="tab"
-            accessibilityLabel={`${mode} analytics`}
-            accessibilityState={{ selected: viewMode === mode }}
-          >
-            <Text style={[
-              styles.modeText,
-              { color: colors.textSecondary },
-              viewMode === mode && { color: colors.text, fontWeight: '600' },
-            ]}>
-              {mode.charAt(0).toUpperCase() + mode.slice(1)}
-            </Text>
-          </TouchableOpacity>
-        ))}
+      {/* Segment Selector */}
+      <View
+        style={[styles.segmentSelector, { borderColor: colors.primary }]}
+        accessibilityRole="tablist"
+      >
+        {ANALYTICS_SEGMENTS.map(({ key, label }) => {
+          const selected = segment === key;
+          return (
+            <TouchableOpacity
+              key={key}
+              style={[styles.segmentButton, selected && { backgroundColor: colors.primary }]}
+              onPress={() => setSegment(key)}
+              accessibilityRole="tab"
+              accessibilityLabel={label}
+              accessibilityState={{ selected }}
+            >
+              <Text style={[styles.segmentText, { color: selected ? '#fff' : colors.primary }]}>
+                {label}
+              </Text>
+            </TouchableOpacity>
+          );
+        })}
       </View>
 
-      <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
-        {/* Summary Card */}
-        <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
-          <View style={styles.summaryRow}>
-            <View style={styles.summaryItem}>
-              <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalPlanned)}</Text>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Planned / week</Text>
-            </View>
-            <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
-            <View style={styles.summaryItem}>
-              <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalTracked)}</Text>
-              <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Tracked this week</Text>
-            </View>
-          </View>
-          <View style={styles.summaryProgress}>
-            <View style={[styles.summaryProgressBar, { backgroundColor: colors.borderLight }]}>
-              <View
+      {segment === 'calendar' && <ActivityCalendar />}
+
+      {segment === 'breakdown' && (
+        <>
+          {/* View Mode Selector */}
+          <View style={[styles.modeSelector, { backgroundColor: colors.backgroundSecondary }]}>
+            {(['planned', 'tracked', 'comparison'] as ViewMode[]).map((mode) => (
+              <TouchableOpacity
+                key={mode}
                 style={[
-                  styles.summaryProgressFill,
-                  { width: `${Math.min(100, totalPlanned > 0 ? (totalTracked / totalPlanned) * 100 : 0)}%`, backgroundColor: colors.primary },
+                  styles.modeButton,
+                  viewMode === mode && [styles.modeButtonActive, { backgroundColor: colors.surface }],
                 ]}
-              />
+                onPress={() => setViewMode(mode)}
+                accessibilityRole="tab"
+                accessibilityLabel={`${mode} analytics`}
+                accessibilityState={{ selected: viewMode === mode }}
+              >
+                <Text style={[
+                  styles.modeText,
+                  { color: colors.textSecondary },
+                  viewMode === mode && { color: colors.text, fontWeight: '600' },
+                ]}>
+                  {mode.charAt(0).toUpperCase() + mode.slice(1)}
+                </Text>
+              </TouchableOpacity>
+            ))}
+          </View>
+
+          <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+            {/* Summary Card */}
+            <View style={[styles.summaryCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <View style={styles.summaryRow}>
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalPlanned)}</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Planned / week</Text>
+                </View>
+                <View style={[styles.summaryDivider, { backgroundColor: colors.border }]} />
+                <View style={styles.summaryItem}>
+                  <Text style={[styles.summaryValue, { color: colors.text }]}>{formatDuration(totalTracked)}</Text>
+                  <Text style={[styles.summaryLabel, { color: colors.textSecondary }]}>Tracked this week</Text>
+                </View>
+              </View>
+              <View style={styles.summaryProgress}>
+                <View style={[styles.summaryProgressBar, { backgroundColor: colors.borderLight }]}>
+                  <View
+                    style={[
+                      styles.summaryProgressFill,
+                      { width: `${Math.min(100, totalPlanned > 0 ? (totalTracked / totalPlanned) * 100 : 0)}%`, backgroundColor: colors.primary },
+                    ]}
+                  />
+                </View>
+                <Text style={[styles.summaryProgressText, { color: colors.textSecondary }]}>
+                  {totalPlanned > 0 ? ((totalTracked / totalPlanned) * 100).toFixed(0) : 0}% of plan
+                </Text>
+              </View>
             </View>
-            <Text style={[styles.summaryProgressText, { color: colors.textSecondary }]}>
-              {totalPlanned > 0 ? ((totalTracked / totalPlanned) * 100).toFixed(0) : 0}% of plan
-            </Text>
-          </View>
-        </View>
 
-        {/* Breakdown Content */}
-        {viewMode === 'planned' && (
-          <View style={styles.breakdownSection}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned Time Breakdown</Text>
-            {plannedBreakdown.length > 0 ? (
-              plannedBreakdown.map((item, index) =>
-                renderBreakdownItem(
-                  { ...item, plannedMinutes: item.plannedMinutes },
-                  index,
-                  totalPlanned
-                )
-              )
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No routine set up yet</Text>
-                <TouchableOpacity
-                  style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-                  onPress={() => navigation.navigate('Routine')}
-                >
-                  <Text style={styles.emptyButtonText}>Set up routine</Text>
-                </TouchableOpacity>
+            {/* Breakdown Content */}
+            {viewMode === 'planned' && (
+              <View style={styles.breakdownSection}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned Time Breakdown</Text>
+                {plannedBreakdown.length > 0 ? (
+                  plannedBreakdown.map((item, index) =>
+                    renderBreakdownItem(
+                      { ...item, plannedMinutes: item.plannedMinutes },
+                      index,
+                      totalPlanned
+                    )
+                  )
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No routine set up yet</Text>
+                    <TouchableOpacity
+                      style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+                      onPress={() => navigation.navigate('Routine')}
+                    >
+                      <Text style={styles.emptyButtonText}>Set up routine</Text>
+                    </TouchableOpacity>
+                  </View>
+                )}
               </View>
             )}
-          </View>
-        )}
 
-        {viewMode === 'tracked' && (
-          <View style={styles.breakdownSection}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Tracked Time This Week</Text>
-            {trackedBreakdown.length > 0 ? (
-              trackedBreakdown.map((item, index) =>
-                renderBreakdownItem(
-                  { ...item, actualMinutes: item.actualMinutes },
-                  index,
-                  totalTracked
-                )
-              )
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No time tracked this week</Text>
-                <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Start tracking to see your analytics</Text>
+            {viewMode === 'tracked' && (
+              <View style={styles.breakdownSection}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Tracked Time This Week</Text>
+                {trackedBreakdown.length > 0 ? (
+                  trackedBreakdown.map((item, index) =>
+                    renderBreakdownItem(
+                      { ...item, actualMinutes: item.actualMinutes },
+                      index,
+                      totalTracked
+                    )
+                  )
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No time tracked this week</Text>
+                    <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Start tracking to see your analytics</Text>
+                  </View>
+                )}
               </View>
             )}
-          </View>
-        )}
 
-        {viewMode === 'comparison' && (
-          <View style={styles.breakdownSection}>
-            <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned vs Tracked</Text>
-            {plannedBreakdown.length > 0 || trackedBreakdown.length > 0 ? (
-              renderComparison()
-            ) : (
-              <View style={styles.emptyState}>
-                <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No data to compare</Text>
-                <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Set up a routine and track some time</Text>
+            {viewMode === 'comparison' && (
+              <View style={styles.breakdownSection}>
+                <Text style={[styles.sectionTitle, { color: colors.text }]}>Planned vs Tracked</Text>
+                {plannedBreakdown.length > 0 || trackedBreakdown.length > 0 ? (
+                  renderComparison()
+                ) : (
+                  <View style={styles.emptyState}>
+                    <Text style={[styles.emptyText, { color: colors.textSecondary }]}>No data to compare</Text>
+                    <Text style={[styles.emptySubtext, { color: colors.textMuted }]}>Set up a routine and track some time</Text>
+                  </View>
+                )}
               </View>
             )}
-          </View>
-        )}
 
-        <View style={{ height: 40 }} />
-      </ScrollView>
+            <View style={{ height: 40 }} />
+          </ScrollView>
+        </>
+      )}
     </SafeAreaView>
   );
 }
@@ -306,18 +335,22 @@ const styles = StyleSheet.create({
     fontSize: 28,
     fontWeight: 'bold',
   },
-  calendarButton: {
+  segmentSelector: {
     flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
+    marginHorizontal: 20,
+    marginBottom: 16,
     borderRadius: 8,
+    borderWidth: 1,
+    overflow: 'hidden',
+  },
+  segmentButton: {
+    flex: 1,
     minHeight: 44,
+    alignItems: 'center',
     justifyContent: 'center',
   },
-  calendarButtonText: {
-    color: '#fff',
-    fontSize: 14,
+  segmentText: {
+    fontSize: 15,
     fontWeight: '600',
   },
   modeSelector: {
