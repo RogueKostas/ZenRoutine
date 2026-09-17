@@ -1,5 +1,6 @@
 import type { BreakdownDatum } from '../breakdown/pieLayout';
 import type { Goal, TrackingEntry } from '../../core/types';
+import { spacing } from '../../theme/spacing';
 import {
   DEFAULT_POMODORO_SETTINGS,
   formatCountdown,
@@ -20,23 +21,59 @@ import {
 // Pure pieces of the Current Activity view (#53, design p75–p77), kept out of the component so
 // they can be tested without a renderer.
 
-/** Columns side by side from this width; below it the view stacks (phone first). */
-export const WIDE_LAYOUT_MIN_WIDTH = 720;
 export const RING_THICKNESS = 14;
-const GUTTER = 16;
+/** Horizontal padding of the view's content; the screen uses this same constant. */
+export const CONTENT_PADDING = spacing.lg;
+/** Gap between the pie and each side column in the three-column row; likewise shared. */
+export const COLUMN_GAP = spacing.xl;
+const WIDE_PIE_SIZE = 260;
+const MIN_PIE_SIZE = 140;
+const MAX_PIE_SIZE = 240;
+/**
+ * A side column narrower than this cannot hold "Not tracking…" or "6:00 / 30hrs" on one line, so
+ * three columns are only worth it once both sides can have this much.
+ */
+export const MIN_COLUMN_WIDTH = 180;
+/** Past this the columns would drift away from the pie rather than read as one panel. */
+const MAX_COLUMN_WIDTH = 320;
+
+/** Three columns need the pie, both minimum columns, both gaps and both gutters to fit. */
+export const WIDE_LAYOUT_MIN_WIDTH =
+  2 * CONTENT_PADDING +
+  WIDE_PIE_SIZE +
+  2 * RING_THICKNESS +
+  2 * COLUMN_GAP +
+  2 * MIN_COLUMN_WIDTH;
 
 export interface CurrentActivityLayout {
   wide: boolean;
   /** Diameter of the countdown pie; the block ring goes around it. */
   pieSize: number;
+  /**
+   * Width to give each side column in the three-column row, or null when the view stacks and the
+   * two columns share the row below the pie instead. Never a flex basis: on web `flex: 0` expands
+   * to `flex: 0 1 0%`, which overrides an explicit width and shrinks the column to nothing.
+   */
+  columnWidth: number | null;
 }
 
 export function currentActivityLayout(windowWidth: number): CurrentActivityLayout {
   const width = Number.isFinite(windowWidth) && windowWidth > 0 ? windowWidth : 360;
-  const wide = width >= WIDE_LAYOUT_MIN_WIDTH;
-  if (wide) return { wide, pieSize: 260 };
-  const room = width - 2 * GUTTER - 2 * RING_THICKNESS;
-  return { wide, pieSize: Math.max(140, Math.min(240, Math.floor(room))) };
+  const content = width - 2 * CONTENT_PADDING;
+  if (width >= WIDE_LAYOUT_MIN_WIDTH) {
+    const forColumns = content - (WIDE_PIE_SIZE + 2 * RING_THICKNESS) - 2 * COLUMN_GAP;
+    return {
+      wide: true,
+      pieSize: WIDE_PIE_SIZE,
+      columnWidth: Math.min(MAX_COLUMN_WIDTH, Math.floor(forColumns / 2)),
+    };
+  }
+  const room = content - 2 * RING_THICKNESS;
+  return {
+    wide: false,
+    pieSize: Math.max(MIN_PIE_SIZE, Math.min(MAX_PIE_SIZE, Math.floor(room))),
+    columnWidth: null,
+  };
 }
 
 export type TrackingBadge = 'LIVE' | 'PAUSED' | 'IDLE';

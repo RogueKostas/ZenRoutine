@@ -24,6 +24,8 @@ import { useNow } from '../components/ribbon';
 import { TrackedDayRibbon } from '../components/tracking/TrackedDayRibbon';
 import { TomatoRow } from '../components/tracking/TomatoRow';
 import {
+  COLUMN_GAP,
+  CONTENT_PADDING,
   RING_THICKNESS,
   blockRingData,
   countdownPieData,
@@ -180,9 +182,16 @@ export function CurrentActivityScreen({ navigation }: RootStackScreenProps<'Curr
     </View>
   );
 
+  // In the three-column row each side column is a fixed width from the layout; stacked, the two
+  // share the row under the pie. `flex` is never used to size them: see `columnWidth`.
+  const columnStyle =
+    layout.columnWidth === null
+      ? styles.columnShared
+      : [styles.columnFixed, { width: layout.columnWidth }];
+
   const badgeColor = badge === 'LIVE' ? colors.error : colors.textMuted;
   const stateColumn = (
-    <View style={[styles.column, layout.wide ? styles.columnWide : null]}>
+    <View style={[styles.column, columnStyle]}>
       <View style={[styles.badge, { borderColor: badgeColor }]} testID="tracking-badge">
         <View style={[styles.badgeDot, { backgroundColor: badgeColor }, paused ? styles.badgeDotPaused : null]} />
         <Text style={[styles.badgeText, { color: badgeColor }]}>{badge}</Text>
@@ -233,7 +242,7 @@ export function CurrentActivityScreen({ navigation }: RootStackScreenProps<'Curr
   );
 
   const goalColumn = (
-    <View style={[styles.column, layout.wide ? styles.columnWide : null]}>
+    <View style={[styles.column, columnStyle]}>
       {progress ? (
         <Text style={[styles.progress, { color: colors.text }]} testID="goal-progress" accessibilityLabel={`Tracked so far over total estimated: ${progress}`}>
           {progress}
@@ -334,7 +343,7 @@ const styles = StyleSheet.create({
     fontWeight: '600',
   },
   content: {
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: CONTENT_PADDING,
     paddingTop: spacing.md,
     paddingBottom: spacing.lg,
   },
@@ -385,7 +394,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     alignItems: 'center',
     justifyContent: 'center',
-    gap: spacing.xl,
+    gap: COLUMN_GAP,
   },
   narrowPie: {
     alignItems: 'center',
@@ -396,15 +405,24 @@ const styles = StyleSheet.create({
     gap: spacing.md,
   },
   column: {
-    flex: 1,
     gap: spacing.sm,
   },
-  columnWide: {
-    flex: 0,
-    width: 220,
+  /** Stacked: the two columns split the row under the pie evenly. */
+  columnShared: {
+    flexGrow: 1,
+    flexShrink: 1,
+    flexBasis: 0,
+  },
+  /** Three columns: the width comes from the layout, so nothing may grow or shrink it. */
+  columnFixed: {
+    flexGrow: 0,
+    flexShrink: 0,
+    flexBasis: 'auto',
   },
   pieWrap: {
     position: 'relative',
+    // Its width is the layout's; the three-column row must not squeeze it.
+    flexShrink: 0,
   },
   pieCentre: {
     position: 'absolute',

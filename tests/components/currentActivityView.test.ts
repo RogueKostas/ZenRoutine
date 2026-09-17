@@ -1,7 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  COLUMN_GAP,
+  CONTENT_PADDING,
+  MIN_COLUMN_WIDTH,
   RING_THICKNESS,
+  WIDE_LAYOUT_MIN_WIDTH,
   blockRingData,
   countdownPieData,
   currentActivityLayout,
@@ -17,24 +21,63 @@ const after = (minutes: number, seconds = 0) => Date.parse(START) + minutes * 60
 const running = { startTime: START };
 
 describe('currentActivityLayout', () => {
+  /** Everything the three-column row puts on one line, gutters included. */
+  const wideRowWidth = (layout: { pieSize: number; columnWidth: number | null }) =>
+    2 * CONTENT_PADDING +
+    layout.pieSize +
+    2 * RING_THICKNESS +
+    2 * COLUMN_GAP +
+    2 * (layout.columnWidth ?? 0);
+
   it('stacks at 500px with a pie that fits inside the gutters', () => {
     const layout = currentActivityLayout(500);
     expect(layout.wide).toBe(false);
-    expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(500 - 32);
+    expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(500 - 2 * CONTENT_PADDING);
     expect(layout.pieSize).toBe(240);
   });
 
-  it.each([280, 300, 320])('never overflows a %ipx phone, gutters included', (width) => {
-    const layout = currentActivityLayout(width);
-    expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(width - 32);
-  });
+  it.each([280, 300, 320, 360, 500])(
+    'never overflows a %ipx phone, gutters included',
+    (width) => {
+      const layout = currentActivityLayout(width);
+      expect(layout.pieSize + 2 * RING_THICKNESS).toBeLessThanOrEqual(width - 2 * CONTENT_PADDING);
+    }
+  );
 
-  it('puts the three columns side by side at 1920px', () => {
-    expect(currentActivityLayout(1920)).toEqual({ wide: true, pieSize: 260 });
+  it.each([320, 360, 500, WIDE_LAYOUT_MIN_WIDTH - 1])(
+    'stacks below the breakpoint, at %ipx, with no column width to apply',
+    (width) => {
+      expect(currentActivityLayout(width)).toMatchObject({ wide: false, columnWidth: null });
+    }
+  );
+
+  // The bug this replaces: the side columns were sized with `flex: 0`, which on web expands to
+  // `flex: 0 1 0%` and overrode their width, so each collapsed to a single character.
+  it.each([WIDE_LAYOUT_MIN_WIDTH, 900, 1280, 1920])(
+    'gives both side columns a real width at %ipx',
+    (width) => {
+      const layout = currentActivityLayout(width);
+      expect(layout.wide).toBe(true);
+      expect(layout.columnWidth).toBeGreaterThanOrEqual(MIN_COLUMN_WIDTH);
+      expect(wideRowWidth(layout)).toBeLessThanOrEqual(width);
+    }
+  );
+
+  it('is three columns only once they fit, and 900 and 1280px widen them', () => {
+    expect(currentActivityLayout(WIDE_LAYOUT_MIN_WIDTH - 1).wide).toBe(false);
+    expect(currentActivityLayout(WIDE_LAYOUT_MIN_WIDTH)).toEqual({
+      wide: true,
+      pieSize: 260,
+      columnWidth: MIN_COLUMN_WIDTH,
+    });
+    expect(currentActivityLayout(900)).toEqual({ wide: true, pieSize: 260, columnWidth: 250 });
+    // Capped, so at desktop width the columns stay beside the pie instead of drifting apart.
+    expect(currentActivityLayout(1280).columnWidth).toBe(320);
+    expect(currentActivityLayout(1920).columnWidth).toBe(320);
   });
 
   it('survives a zero or missing width', () => {
-    expect(currentActivityLayout(0).wide).toBe(false);
+    expect(currentActivityLayout(0)).toEqual({ wide: false, pieSize: 240, columnWidth: null });
     expect(currentActivityLayout(Number.NaN).pieSize).toBeGreaterThan(0);
   });
 });
