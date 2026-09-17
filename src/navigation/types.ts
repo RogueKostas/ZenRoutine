@@ -17,7 +17,6 @@ export type RootStackParamList = {
   GoalDetail: { goalId: string };
   ActivityTypeEditor: { activityTypeId?: string };
   ActivityTypes: undefined;
-  Calendar: undefined;
   BlockEditor: { routineId: string; blockId?: string };
   Debug: undefined;
 };
