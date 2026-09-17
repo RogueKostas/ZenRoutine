@@ -9,6 +9,7 @@ import {
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes } from '../../store';
 import { ColorDot } from '../common/Badge';
@@ -28,6 +29,10 @@ export function ActivityPicker({
   showLabels = true,
 }: ActivityPickerProps) {
   const activityTypes = useActivityTypes();
+  // Colours follow the app theme; the static sheet below only sets layout and light defaults.
+  const { colors: theme } = useTheme();
+  const itemColors = { backgroundColor: theme.backgroundSecondary };
+  const labelColors = { color: theme.text };
 
   if (layout === 'horizontal') {
     return (
@@ -41,6 +46,7 @@ export function ActivityPicker({
             key={at.id}
             style={[
               styles.horizontalItem,
+              itemColors,
               selectedId === at.id && styles.selectedItem,
             ]}
             onPress={() => onSelect(at)}
@@ -50,6 +56,7 @@ export function ActivityPicker({
               <Text
                 style={[
                   styles.horizontalLabel,
+                  labelColors,
                   selectedId === at.id && styles.selectedLabel,
                 ]}
                 numberOfLines={1}
@@ -71,6 +78,7 @@ export function ActivityPicker({
             key={at.id}
             style={[
               styles.listItem,
+              { backgroundColor: theme.surface, borderBottomColor: theme.borderLight },
               selectedId === at.id && styles.selectedListItem,
             ]}
             onPress={() => onSelect(at)}
@@ -79,6 +87,7 @@ export function ActivityPicker({
             <Text
               style={[
                 styles.listLabel,
+                labelColors,
                 selectedId === at.id && styles.selectedLabel,
               ]}
             >
@@ -101,6 +110,7 @@ export function ActivityPicker({
           key={at.id}
           style={[
             styles.gridItem,
+            itemColors,
             selectedId === at.id && styles.selectedItem,
           ]}
           onPress={() => onSelect(at)}
@@ -110,6 +120,7 @@ export function ActivityPicker({
             <Text
               style={[
                 styles.gridLabel,
+                labelColors,
                 selectedId === at.id && styles.selectedLabel,
               ]}
               numberOfLines={1}
