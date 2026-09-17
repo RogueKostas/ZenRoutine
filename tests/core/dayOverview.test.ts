@@ -263,9 +263,13 @@ describe('getDayOverview — other shapes of day', () => {
       routine: workRoutine,
       goals: [untyped, unestimated, paused, doneLastWeek, ftue()],
       trackingEntries: [entry('untyped', tuesdayAt(7), tuesdayAt(8))],
-      now: tuesdayAt(8),
+      // After the block, so the rows come from the plan at midnight.
+      now: tuesdayAt(14),
     });
-    expect(summary(rows).map((row) => row.goal)).toEqual(['Design FTUE flow', null]);
+    expect(summary(rows).map((row) => [row.time, row.goal])).toEqual([
+      ['09:00–11:00', 'Design FTUE flow'],
+      ['11:00–13:00', null],
+    ]);
   });
 
   it('shows the after-midnight part of yesterday’s overnight block', () => {
