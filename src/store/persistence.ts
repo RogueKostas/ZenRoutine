@@ -153,8 +153,14 @@ export interface RepairedTrackingEntry {
 export const QUARANTINE_ARCHIVE_FORMAT = 'zenroutine-quarantine-archive';
 /**
  * Cap on retained generations, so a device that somehow quarantines on every launch cannot grow
- * the side-car without bound. Past the cap the OLDEST generation is dropped. Realistically
- * unreachable: with stopTracking fixed there is no known repeating source of bad records.
+ * the side-car without bound. Past the cap the OLDEST generation is dropped.
+ *
+ * This used to say the cap was "realistically unreachable: with stopTracking fixed there is no
+ * known repeating source of bad records". That was wrong when it was written — a bad record that
+ * is never cleaned out of the app blob is re-read and re-quarantined on every cold start, which is
+ * exactly a repeating source (#18). What actually keeps the cap off is `persistHydrationReports`
+ * in useAppStore: it recognises an identical generation and writes nothing, so one uncleaned
+ * record costs one generation however many times it is re-read.
  */
 export const MAX_QUARANTINE_GENERATIONS = 20;
 
@@ -1104,6 +1110,35 @@ export function migratePersistedState(
     lastSyncedAt: readOptionalIsoDateTime(record, 'lastSyncedAt'),
     schemaVersion: CURRENT_SCHEMA_VERSION,
   };
+}
+
+/**
+ * The complete hydration read: the versioned read above, which may repair, followed by the strict
+ * read the persist middleware's `merge` stage performs on its result.
+ *
+ * Both reads share one set of sinks deliberately. zustand runs `migrate` and then `merge`, and only
+ * `migrate` can be awaited (middleware.mjs:392-397); `merge` is synchronous (:415) and is followed
+ * immediately by the `set` (:419) and the `setItem` (:421) that rewrite the app blob. So a record
+ * the *strict* read drops during a migrate-path hydration would be stripped from the blob while its
+ * only side-car write was still pending in `initializeAppStore`, where a failure is swallowed
+ * (issue #38, the #19 window reached by a second route). Performing that strict read here, inside
+ * what `migrate` awaits, means every record either read drops is durable before the blob is
+ * rewritten — by construction rather than by luck.
+ *
+ * Calling this makes `merge`'s own strict read a re-read of a state that has already passed one.
+ * Two invariants make that re-read a no-op, and `tests/store/repairsAreStrictValid.test.ts` asserts
+ * both, branch by branch: every lenient repair emits output the strict read accepts unchanged, and
+ * the strict read is idempotent. If either stops holding that test fails.
+ */
+export function hydratePersistedState(
+  persistedState: unknown,
+  version: number,
+  options?: MigrationOptions
+): AppState {
+  const migrated = migratePersistedState(persistedState, version, options);
+  // Already the strict read, so a second pass would only repeat work: see the idempotence test.
+  if (version === CURRENT_SCHEMA_VERSION) return migrated;
+  return migratePersistedState(migrated, CURRENT_SCHEMA_VERSION, options);
 }
 
 export function encodeBackup(state: AppState, exportedAt = new Date().toISOString()): string {

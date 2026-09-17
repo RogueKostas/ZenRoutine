@@ -43,6 +43,7 @@ import {
   decodeBackup,
   describeInvalidPauses,
   encodeBackup,
+  hydratePersistedState,
   migratePersistedState,
   parseQuarantineArchive,
   selectPersistedAppState,
@@ -88,9 +89,11 @@ let hydrationFailure: unknown = null;
 // treats a fresh [] on every read as a changed snapshot and re-renders forever.
 const NO_QUARANTINE: readonly QuarantinedTrackingEntry[] = [];
 let quarantinedTrackingEntries: readonly QuarantinedTrackingEntry[] = NO_QUARANTINE;
-// Shared sink for one hydration attempt. Both persist stages can drop records — `migrate` for a
-// blob stamped with an older schema version, `merge` for the strict re-read that always runs —
-// and the user should be told about all of them, not just the last stage to find one.
+// Shared sink for one hydration attempt. A hydration makes up to two reads and either can drop a
+// record: the versioned read, for a blob stamped with an older schema version, and the strict
+// read. On the migrate path both happen inside `migrate` (see `hydratePersistedState`); on the
+// pure merge path only the strict one runs, in `merge`. The user should be told about every drop,
+// not just the last read to find one, so they accumulate into one array.
 let pendingQuarantine: QuarantinedTrackingEntry[] = [];
 
 // The repair channel, kept separate from the quarantine one all the way to the screen. A repaired
@@ -1656,7 +1659,13 @@ export const useAppStore = create<AppStore>()(
       skipHydration: true,
       partialize: selectPersistedAppState,
       migrate: async (persistedState, version) => {
-        const migrated = migratePersistedState(
+        // `hydratePersistedState`, not `migratePersistedState`: it performs the strict read that
+        // `merge` would otherwise be the first to make, against these same sinks, so a record the
+        // *strict* read drops on this path is also covered by the awaited write below. `merge`
+        // cannot be awaited -- zustand calls it synchronously at middleware.mjs:415, immediately
+        // before the `set` and `setItem` that rewrite the blob -- so a drop discovered there had
+        // only the swallowed write in `initializeAppStore` behind it. That was issue #38.
+        const migrated = hydratePersistedState(
           persistedState,
           version,
           { quarantine: pendingQuarantine, repairs: pendingRepairs }
@@ -1683,14 +1692,32 @@ export const useAppStore = create<AppStore>()(
         // Legacy repairs ride the same await for the same reason, and they need it more: a
         // repaired entry's original record is only in the app blob, and the `setItem` below is
         // exactly what replaces it with the repaired version. This is the one chance to copy it.
+        //
+        // A strict read that *throws* rather than dropping (a linkage failure has no sink to fall
+        // into for `activeRoutineId`, duplicate ids, and so on) rejects this promise before the
+        // write below, so no generation is recorded. That is correct: the rejection aborts the
+        // chain at :431, nothing rewrites the blob, and every record is still in it.
         await persistHydrationReports(pendingQuarantine, pendingRepairs);
         return migrated;
       },
       merge: (persistedState, currentState) => {
         if (persistedState === undefined) return currentState;
-        // Every save stamps CURRENT_SCHEMA_VERSION, so this is always the strict path and the
-        // lenient repairs inside migratePersistedState never run here. Passing a quarantine sink
-        // is what keeps one bad tracking entry from making the app permanently unopenable.
+        // Always the strict read, at CURRENT_SCHEMA_VERSION, so the lenient repairs inside
+        // migratePersistedState never run here: they are gated on STRICT_SCHEMA_VERSION, which is
+        // 4 and stays there. Passing a quarantine sink is what keeps one bad tracking entry from
+        // making the app permanently unopenable.
+        //
+        // What this call is depends on the path, and only one of the two can drop a record:
+        //
+        // - Pure merge path (blob already at CURRENT_SCHEMA_VERSION). This is hydration's only
+        //   read. zustand short-circuits at middleware.mjs:405 and `migrated` is false, so :421
+        //   never runs and nothing rewrites the blob; a record dropped here is still in it.
+        // - Migrate path. `persistedState` is what `migrate` returned, and `migrate` already ran
+        //   this exact read through `hydratePersistedState` -- inside the await that got every
+        //   dropped record to the side-car before :421 rewrites the blob. So this is a re-read of
+        //   a state that has already passed the strict read, and it drops nothing: see the two
+        //   invariants named on `hydratePersistedState`, both asserted in
+        //   tests/store/repairsAreStrictValid.test.ts.
         const migrated = migratePersistedState(
           persistedState,
           CURRENT_SCHEMA_VERSION,
@@ -1699,7 +1726,7 @@ export const useAppStore = create<AppStore>()(
         quarantinedTrackingEntries =
           pendingQuarantine.length > 0 ? pendingQuarantine : NO_QUARANTINE;
         // Repairs only ever come from the `migrate` stage — this call is strict, so the
-        // `version < CURRENT_SCHEMA_VERSION` branch that repairs open entries cannot run here.
+        // `version < STRICT_SCHEMA_VERSION` branch that repairs open entries cannot run here.
         // Publishing from `merge` anyway is what carries a migrate-stage repair to the screen,
         // since `merge` is the later of the two stages and the sink is shared across both.
         repairedTrackingEntries = pendingRepairs.length > 0 ? pendingRepairs : NO_REPAIRS;
@@ -1738,21 +1765,31 @@ export function initializeAppStore(options?: { force?: boolean }): Promise<void>
       // the only blob that still holds them. Copy them somewhere the store does not own, before
       // anything below can trigger that write.
       //
-      // This covers the merge path, where zustand reads the blob and writes nothing
-      // (middleware.mjs:405 short-circuits when the version matches), so the record is still in
-      // the app blob throughout and a failed side-car write loses nothing. That is why a failure
-      // is swallowed here but not in `migrate`: re-bricking hydration would defeat the point of
-      // quarantining when there is nothing to lose by opening.
+      // Why a failure is swallowed here but not in `migrate`: on every path that reaches this
+      // line, the app blob still holds the records this write is trying to copy, so losing the
+      // write loses nothing and re-bricking hydration would cost the user their app for no gain.
       //
-      // The migrate path has already written the side-car by the time we get here, and
-      // `persistQuarantinedEntries` recognises the identical generation and writes nothing, so
-      // one hydration still produces exactly one generation.
+      // - Pure merge path. zustand reads the blob and writes nothing: `migrated` is false because
+      //   middleware.mjs:405 short-circuited on the matching version, so :421 never runs. The
+      //   record is in the app blob throughout.
+      // - Migrate path. The side-car was already written, awaited, inside `migrate` — for the
+      //   drops of *both* hydration reads, because `migrate` now performs the strict read too
+      //   (`hydratePersistedState`). `persistHydrationReports` recognises the identical
+      //   generation and writes nothing, so one hydration still produces exactly one generation.
       //
-      // Note what keeps the merge path safe: this write happens before `persistSnapshot` below,
-      // which is the first thing in hydration that can rewrite the blob. That is an ordering
-      // property of this function, not something the type system enforces — a store write added
-      // above this point would reopen the #19 window on the merge path too. `merge` cannot take
-      // the `migrate` treatment because zustand calls it synchronously (middleware.mjs:416).
+      // The earlier version of this comment justified the swallow with ":405 short-circuits when
+      // the version matches" alone. That is true of the pure merge path and false of a drop made
+      // by the `merge` stage during a *migrate*-path hydration: there :421 does rewrite the blob
+      // without the record, and this write was the record's only durable destination. It was
+      // unreachable, but only because every lenient repair happens to emit strict-valid output —
+      // nothing said so, and nothing would have noticed it stopping (issue #38). It is now
+      // unreachable by construction instead: `migrate` makes the strict read, so a drop it finds
+      // is on the awaited write rather than on this one.
+      //
+      // One ordering property still has to hold for the pure merge path, and the type system does
+      // not enforce it: this write happens before `persistSnapshot` below, which is the first
+      // thing in hydration that can rewrite the blob. A store write added above this point would
+      // reopen the #19 window there.
       const quarantined = getQuarantinedTrackingEntries();
       const repaired = getRepairedTrackingEntries();
       if (quarantined.length > 0 || repaired.length > 0) {
