@@ -12,6 +12,7 @@ import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes, useGoals, useCurrentTracking, useAppStore } from '../../store';
 import type { ActivityType, Goal } from '../../core/types';
+import { formatGoalTimeLabel } from '../../core/utils/time';
 
 interface QuickStartProps {
   onTrackingStarted?: (entryId: string) => void;
@@ -190,7 +191,7 @@ export function QuickStart({
                   <View style={styles.goalInfo}>
                     <Text style={[styles.goalName, { color: themeColors.text }]}>{goal.name}</Text>
                     <Text style={[styles.goalDesc, { color: themeColors.textSecondary }]}>
-                      {goal.loggedMinutes} / {goal.estimatedMinutes} min this week
+                      {formatGoalTimeLabel(goal.loggedMinutes, goal.estimatedMinutes)}
                     </Text>
                   </View>
                   <View style={[styles.goalProgress, { backgroundColor: themeColors.border }]}>
@@ -198,7 +199,7 @@ export function QuickStart({
                       style={[
                         styles.goalProgressFill,
                         {
-                          width: `${Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100)}%`,
+                          width: `${goal.estimatedMinutes > 0 ? Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100) : 0}%`,
                           backgroundColor: selectedActivity?.color || colors.primary,
                         },
                       ]}
