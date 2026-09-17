@@ -928,3 +928,32 @@ laneTimeoutMin 75 -> 110 (UI-surface lanes are the largest of the iteration).
 | forecast-calendar | #52 part 2 | Analytics Calendar segment -> "Forecast" |
 Persistence chain from here: goals-list (v8) -> tracking-states #54 -> sidecar #38. Then current-activity #53
 (after #54). Then review readiness.
+
+
+## Pass 14 - 2026-09-17 ~17:40-18:05 local - Wave C screens landing
+
+### Landed (CI read green before each merge; every UI change RENDERED before merge)
+| PR | lane | issues | tests | rendered evidence |
+|---|---|---|---|---|
+| #79 | routine-surface | #63 (closed), #58 part | 425 | 1280: week strip, labelled ribbon, pie+legend; tap segment -> dark centred dialog, Fitness saved; real mouse click on empty 6pm -> New activity 18:00-19:00; 500: dialog fits |
+| #80 | forecast-calendar | #52 (closed, with #75) | 454 | 1280: Forecast month grid Mon-first, completions with type dots/ticks; milestones; day view with goal-labelled ribbon + "which goal fills each block" |
+| #81 | home-today | #55, #56 (closed) | 472 | 500: clock line, ribbon, NEXT AT 19:00 card with goal + Start early, goal-named rows, past greyed; Start early -> entry linked to the goal, source scheduled |
+My merge work: #79 deletions (3 files) and #80 deletion (ActivityCalendar.tsx, done by me - lane could not git rm)
+pushed with the new exact-match `-ExpectDeletions` gate; #81 union-resolved src/core/engine/index.ts.
+
+### Tooling added
+- lane-push.ps1 `-ExpectDeletions <paths>`: a push with deletions proceeds only when the deletion set EQUALS the list.
+  Negative control run: a 2-of-3 list was refused, the exact list passed.
+- C:\CoworkBridge\tools\cdp-shot.js: headless Edge over the DevTools protocol (Node 22 WebSocket, no deps).
+  Plan JSON: seed, `eval` steps (in-page async JS), `click` [x,y] (real mouse events), `shot`. This reaches every
+  tab (click the tab link) and makes real pointer clicks, which RNW Pressables honour where synthetic DOM clicks
+  do not always. Replaces the in-app pane for rendered checks while the window is hidden.
+
+### Director decisions surfaced (none blocking)
+1. Copy day direction: design p29 "Copy from other day" vs shipped copy-to (#79).
+2. Calendar naming: segment "Calendar", heading "Forecast" (#80).
+3. Earlier: "Activity calendar" naming is moot - replaced by Forecast.
+
+### In flight
+goals-list (#50 #51 #49-UI #45-half; schema v8), ribbon-drag (#58 remainder: edge drag + zoom).
+Next: current-activity (#54 + #53; schema v9) after goals-list; then sidecar #38; then review readiness.
