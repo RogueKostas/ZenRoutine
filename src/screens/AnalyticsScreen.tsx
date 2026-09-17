@@ -5,7 +5,7 @@ import { useTheme } from '../theme';
 import { useActiveRoutine, useActivityTypes, useTrackingEntries, useWeekStartsOn } from '../store';
 import { getRoutineBreakdown, getTrackedBreakdown, MINUTES_IN_WEEK } from '../core/engine/analytics';
 import { formatDuration, getLocalWeekStartDateKey } from '../core/utils/time';
-import { ActivityCalendar } from '../components/calendar';
+import { ForecastCalendar } from '../components/calendar';
 import type { TabScreenProps } from '../navigation/types';
 
 type ViewMode = 'planned' | 'tracked' | 'comparison';
@@ -195,7 +195,7 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
         })}
       </View>
 
-      {segment === 'calendar' && <ActivityCalendar />}
+      {segment === 'calendar' && <ForecastCalendar />}
 
       {segment === 'breakdown' && (
         <>
