@@ -10,17 +10,18 @@ import { createInitialState } from '../../src/store/persistence';
 import { makeGoal } from '../helpers/builders';
 
 describe('Goals for this activity type (Block Editor, #48/#60)', () => {
+  // Array order deliberately disagrees with list order: `order` is what counts (#49).
   const goals = [
-    makeGoal({ id: 'side-low', activityTypeId: 'side', priority: 4 }),
-    makeGoal({ id: 'fitness', activityTypeId: 'fitness', priority: 1 }),
-    makeGoal({ id: 'side-high', activityTypeId: 'side', priority: 1 }),
-    makeGoal({ id: 'side-paused', activityTypeId: 'side', priority: 1, status: 'paused' }),
-    makeGoal({ id: 'side-mid-a', activityTypeId: 'side', priority: 3 }),
-    makeGoal({ id: 'side-done', activityTypeId: 'side', status: 'completed' }),
-    makeGoal({ id: 'side-mid-b', activityTypeId: 'side', priority: 3 }),
+    makeGoal({ id: 'side-low', activityTypeId: 'side', order: 6 }),
+    makeGoal({ id: 'fitness', activityTypeId: 'fitness', order: 1 }),
+    makeGoal({ id: 'side-high', activityTypeId: 'side', order: 0 }),
+    makeGoal({ id: 'side-paused', activityTypeId: 'side', order: 2, status: 'paused' }),
+    makeGoal({ id: 'side-mid-a', activityTypeId: 'side', order: 3 }),
+    makeGoal({ id: 'side-done', activityTypeId: 'side', order: 4, status: 'completed' }),
+    makeGoal({ id: 'side-mid-b', activityTypeId: 'side', order: 5 }),
   ];
 
-  it('lists only the type\'s active goals, in the Goals screen\'s order', () => {
+  it('lists only the type\'s active goals, in list order', () => {
     expect(activeGoalsForActivityType(goals, 'side').map((goal) => goal.id)).toEqual([
       'side-high',
       'side-mid-a',

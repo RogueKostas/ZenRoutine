@@ -3,7 +3,6 @@ import type {
   AppState,
   DayOfWeek,
   Goal,
-  GoalPriority,
   GoalStatus,
   Preferences,
   Routine,
@@ -12,6 +11,7 @@ import type {
   TrackingSource,
 } from '../core/types';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
+import { renumberGoals, sortGoalsByOrder } from '../core/engine/goalOrder';
 import { DEFAULT_WEEK_STARTS_ON } from '../core/utils/time';
 
 export const APP_STORAGE_KEY = 'zenroutine-storage';
@@ -22,11 +22,19 @@ export const APP_STORAGE_KEY = 'zenroutine-storage';
  */
 export const QUARANTINE_STORAGE_KEY = 'zenroutine-quarantine';
 /**
- * v6 (#60) removed `RoutineBlock.goalId`; see BLOCK_GOAL_REMOVED_SCHEMA_VERSION. v5 (#44) added
+ * v7 (#49) replaced `Goal.priority` with `Goal.order`; see GOAL_ORDER_SCHEMA_VERSION. v6 (#60)
+ * removed `RoutineBlock.goalId`; see BLOCK_GOAL_REMOVED_SCHEMA_VERSION. v5 (#44) added
  * `preferences`. v4 was the first version written under the strict invariants below; see
  * STRICT_SCHEMA_VERSION.
  */
-export const CURRENT_SCHEMA_VERSION = 6;
+export const CURRENT_SCHEMA_VERSION = 7;
+/**
+ * The first schema version whose goals carry `order` instead of `priority` (#49: priority is list
+ * order). Every blob below it has a 1–5 `priority` on each goal, and the v6 -> v7 step turns those
+ * into a starting order (see `orderGoalsByLegacyPriority`). Like v5 and v6 it gates only itself
+ * and leaves the repair gate where it was.
+ */
+export const GOAL_ORDER_SCHEMA_VERSION = 7;
 /**
  * The first schema version whose routine blocks cannot name a goal (#60: the routine is made of
  * activity types only). Every blob below it may carry `goalId` on a block, and the v5 -> v6 step
@@ -376,18 +384,11 @@ function parseActivityType(value: unknown, migrateLegacyIcon: boolean): Activity
 const GOAL_STATUSES: GoalStatus[] = ['active', 'completed', 'paused', 'archived'];
 const TRACKING_SOURCES: TrackingSource[] = ['scheduled', 'manual', 'notification'];
 
-function parseGoal(value: unknown, addDefaultPriority: boolean, repairLegacyValues: boolean): Goal {
-  const record = readRecord(value, 'goal');
+/** Every goal field except `order`, which depends on the schema version (see `readGoals`). */
+function parseGoalFields(record: UnknownRecord, repairLegacyValues: boolean): Omit<Goal, 'order'> {
   const status = readString(record, 'status');
   if (!GOAL_STATUSES.includes(status as GoalStatus)) {
     throw new Error(`Invalid goal status: ${status}`);
-  }
-
-  const rawPriority = addDefaultPriority && record.priority === undefined
-    ? 3
-    : readNumber(record, 'priority');
-  if (![1, 2, 3, 4, 5].includes(rawPriority)) {
-    throw new Error(`Invalid goal priority: ${rawPriority}`);
   }
 
   const updatedAt = readIsoDateTime(record, 'updatedAt');
@@ -423,11 +424,76 @@ function parseGoal(value: unknown, addDefaultPriority: boolean, repairLegacyValu
     })(),
     activityTypeId: readString(record, 'activityTypeId'),
     status: status as GoalStatus,
-    priority: rawPriority as GoalPriority,
     createdAt: readIsoDateTime(record, 'createdAt'),
     updatedAt,
     completedAt,
   };
+}
+
+/**
+ * A pre-v7 goal's 1 (highest) – 5 (lowest) priority. Below v3 a goal may have none, and gets the
+ * old default of 3, as it always has. The value is validated exactly as before #49, so a blob that
+ * did not open before still does not.
+ */
+function readLegacyPriority(record: UnknownRecord, version: number): number {
+  const priority = version < 3 && record.priority === undefined
+    ? 3
+    : readNumber(record, 'priority');
+  if (![1, 2, 3, 4, 5].includes(priority)) {
+    throw new Error(`Invalid goal priority: ${priority}`);
+  }
+  return priority;
+}
+
+/**
+ * The v6 -> v7 step (#49): turn the priority enum into a starting list order.
+ *
+ * Highest priority first; within a priority, oldest `createdAt` first; then `id`, compared by code
+ * unit so the result never depends on locale. Goals created in the same millisecond (the example
+ * data does this) are the reason the `id` tie-break exists: without it the order would be whatever
+ * the blob's array order happened to be, and two devices could disagree.
+ *
+ * Exported so the derivation can be tested on its own. Every other goal field is left exactly as
+ * stored; `order` is the only addition and `priority` the only removal.
+ */
+export function orderGoalsByLegacyPriority<G extends Pick<Goal, 'id' | 'createdAt'>>(
+  goals: readonly { goal: G; priority: number }[]
+): (G & { order: number })[] {
+  return [...goals]
+    .sort((left, right) =>
+      left.priority - right.priority ||
+      Date.parse(left.goal.createdAt) - Date.parse(right.goal.createdAt) ||
+      (left.goal.id < right.goal.id ? -1 : left.goal.id > right.goal.id ? 1 : 0)
+    )
+    .map(({ goal }, order) => ({ ...goal, order }));
+}
+
+/**
+ * The goals list, in list order, with `order` numbered 0..n-1.
+ *
+ * From v7 each goal must carry a non-negative integer `order`, and no two may share one: a tie is
+ * not an order, and resolving it by array position would silently reprioritise. Gaps are accepted
+ * and closed, which keeps relative order and is a no-op for every blob the store itself wrote.
+ */
+function readGoals(record: UnknownRecord, version: number): Goal[] {
+  const values = readArray(record, 'goals').map((value) => readRecord(value, 'goal'));
+  const repairLegacyValues = version < STRICT_SCHEMA_VERSION;
+  if (version < GOAL_ORDER_SCHEMA_VERSION) {
+    return orderGoalsByLegacyPriority(values.map((goal) => ({
+      goal: parseGoalFields(goal, repairLegacyValues),
+      priority: readLegacyPriority(goal, version),
+    })));
+  }
+
+  const goals = values.map((goal) => {
+    const order = readInteger(goal, 'order');
+    if (order < 0) throw new Error('Invalid order: expected a non-negative integer');
+    return { ...parseGoalFields(goal, repairLegacyValues), order };
+  });
+  if (new Set(goals.map((goal) => goal.order)).size !== goals.length) {
+    throw new Error('Invalid goals: two goals share a list position');
+  }
+  return renumberGoals(sortGoalsByOrder(goals));
 }
 
 /**
@@ -645,9 +711,7 @@ export function migratePersistedState(
   const activityTypes = readArray(record, 'activityTypes').map(
     (value) => parseActivityType(value, version < 2)
   );
-  const goals = readArray(record, 'goals').map(
-    (value) => parseGoal(value, version < 3, version < STRICT_SCHEMA_VERSION)
-  );
+  const goals = readGoals(record, version);
   const routines = readArray(record, 'routines').map((routine) => parseRoutine(routine, version));
   // A single unreadable tracking entry must not be able to take the whole store down with it.
   // Everything above stays strict: activity types, goals and routines are the skeleton the rest

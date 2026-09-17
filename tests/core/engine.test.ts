@@ -95,7 +95,7 @@ const makeGoal = (overrides: Partial<Goal> = {}): Goal => ({
   loggedMinutes: 180,
   activityTypeId: 'focus',
   status: 'active',
-  priority: 3,
+  order: 0,
   createdAt: timestamp,
   updatedAt: timestamp,
   ...overrides,
@@ -168,16 +168,20 @@ describe('core planning and prediction', () => {
       ])
     ).toMatchObject({
       goalId: 'goal-1',
+      // Walked forward from Monday noon, past this morning's block: Tue night 120, Mon 90,
+      // Tue night 120, then the last 90 on Monday 16 March, done at 10:30.
       predictedCompletionDate: '2026-03-16',
-      weeklyMinutesAllocated: 210,
+      weeklyMinutesAllocated: 120,
       activityWeeklyCapacity: 210,
-      allocationShare: 1,
+      allocationShare: 120 / 210,
       competingGoalCount: 0,
+      goalsAhead: 0,
       remainingMinutes: 420,
-      weeksRemaining: 2,
       confidenceLevel: 'medium',
       evidenceDays: 7,
     });
+    expect(predictGoalCompletion(makeGoal(), routine).weeksRemaining)
+      .toBeCloseTo((2 * 7 * 24 * 60 - 90) / (7 * 24 * 60));
   });
 
   it('reports no date for zero allocation and today for an already completed goal', () => {

@@ -22,6 +22,8 @@ import {
   makeRoutine,
   makeRoutineBlock,
   makeTrackingEntry,
+  makeLegacyGoal,
+  withListOrder,
 } from '../helpers/builders';
 import type { RoutineBlock } from '../../src/core/types';
 import { v4PersistedState } from '../fixtures/v4Store';
@@ -29,10 +31,11 @@ import { v4PersistedState } from '../fixtures/v4Store';
 function makeLegacyState() {
   const activity = { ...makeActivityType(), icon: 'briefcase' };
   const goal = makeGoal();
-  const { priority: _priority, ...goalWithoutPriority } = goal;
+  // A schema-1 goal has neither the priority v3 added nor the order v7 replaced it with.
+  const { order: _order, ...legacyGoal } = goal;
   return {
     activityTypes: [activity],
-    goals: [goalWithoutPriority],
+    goals: [legacyGoal],
     routines: [makeRoutine({ blocks: [makeRoutineBlock()] })],
     trackingEntries: [makeTrackingEntry({ goalId: goal.id })],
     activeRoutineId: 'routine-main',
@@ -42,7 +45,7 @@ function makeLegacyState() {
 }
 
 describe('persisted-state migrations', () => {
-  it('migrates legacy icons, priority, and onboarding through schema 4', () => {
+  it('migrates legacy icons, priority (now list order), and onboarding through schema 4', () => {
     const legacy = makeLegacyState();
     const original = structuredClone(legacy);
 
@@ -54,17 +57,16 @@ describe('persisted-state migrations', () => {
       activeRoutineId: 'routine-main',
     });
     expect(migrated.activityTypes[0].icon).toBe('💼');
-    expect(migrated.goals[0].priority).toBe(3);
+    expect(migrated.goals[0].order).toBe(0);
+    expect(migrated.goals[0]).not.toHaveProperty('priority');
     expect(legacy).toEqual(original);
     expect(migratePersistedState(migrated, CURRENT_SCHEMA_VERSION)).toEqual(migrated);
   });
 
   it('repairs legacy negative progress and invalid current pointers without losing history', () => {
     const legacy = {
-      ...makeAppState({
-        goals: [makeGoal({ loggedMinutes: -15 })],
-        trackingEntries: [makeTrackingEntry()],
-      }),
+      ...makeAppState({ trackingEntries: [makeTrackingEntry()] }),
+      goals: [makeLegacyGoal({ loggedMinutes: -15 })],
       currentTrackingEntryId: 'entry-focus',
     };
     delete (legacy as Partial<typeof legacy>).hasCompletedOnboarding;
@@ -77,17 +79,19 @@ describe('persisted-state migrations', () => {
   });
 
   it('repairs schema-3 values that the old public actions could persist', () => {
-    const legacy = makeAppState({
-      goals: [makeGoal({ estimatedMinutes: 0 })],
-      routines: [makeRoutine({
-        // A pre-v6 block could name a goal; this one names a goal that is gone.
-        blocks: [{ ...makeRoutineBlock(), goalId: 'missing-goal' } as RoutineBlock],
-      })],
-      trackingEntries: [makeTrackingEntry({
-        goalId: 'missing-goal',
-        routineBlockId: 'missing-block',
-      })],
-    });
+    const legacy = {
+      ...makeAppState({
+        routines: [makeRoutine({
+          // A pre-v6 block could name a goal; this one names a goal that is gone.
+          blocks: [{ ...makeRoutineBlock(), goalId: 'missing-goal' } as RoutineBlock],
+        })],
+        trackingEntries: [makeTrackingEntry({
+          goalId: 'missing-goal',
+          routineBlockId: 'missing-block',
+        })],
+      }),
+      goals: [makeLegacyGoal({ estimatedMinutes: 0 })],
+    };
     delete (legacy as Partial<typeof legacy>).hasCompletedOnboarding;
 
     const migrated = migratePersistedState(legacy, 3);
@@ -444,10 +448,13 @@ describe('stale reference linkage', () => {
     // clearing it on a legacy blob. Quarantining is the repair, which is why this one behaves
     // the same either side of the version gate.
     const orphan = makeTrackingEntry({ id: 'entry-orphan', activityTypeId: 'activity-vanished' });
-    const state = makeAppState({
-      goals: [makeGoal()],
-      trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), orphan],
-    });
+    const state = {
+      ...makeAppState({
+        trackingEntries: [makeTrackingEntry({ id: 'entry-good' }), orphan],
+      }),
+      // Readable at v3 (priority) and at the current version (order, with priority ignored).
+      goals: [{ ...makeGoal(), priority: 3 }],
+    };
 
     for (const version of [3, CURRENT_SCHEMA_VERSION]) {
       const quarantine: QuarantinedTrackingEntry[] = [];
@@ -620,10 +627,11 @@ describe('schema 5: the week-start preference (#44)', () => {
 
     const migrated = migratePersistedState(v4, 4);
 
-    // Everything the v4 store held, byte for byte, plus the new default and the new stamp.
+    // Everything the v4 store held, byte for byte, plus the new default and the new stamp — and,
+    // since v7 (#49), its one goal's priority turned into the top list position.
     const { schemaVersion: _stamp, ...v4Data } = original;
     expect(migrated).toEqual({
-      ...v4Data,
+      ...withListOrder(v4Data, ['goal-report']),
       preferences: { weekStartsOn: 1 },
       lastSyncedAt: undefined,
       schemaVersion: CURRENT_SCHEMA_VERSION,
@@ -733,7 +741,7 @@ describe('backup codec', () => {
     expect(decodeBackup(serialized)).toMatchObject({
       schemaVersion: CURRENT_SCHEMA_VERSION,
       hasCompletedOnboarding: false,
-      goals: [expect.objectContaining({ priority: 3 })],
+      goals: [expect.objectContaining({ order: 0 })],
     });
   });
 
