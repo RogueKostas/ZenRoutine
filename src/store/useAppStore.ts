@@ -59,6 +59,11 @@ export type ImportResult =
   | { ok: true }
   | { ok: false; error: string };
 
+/** `reason` is a sentence fit to show the user. */
+export type RoutineBlocksUpdateResult =
+  | { ok: true }
+  | { ok: false; reason: string };
+
 export type HydrationSnapshot =
   | { status: 'idle' | 'loading' | 'ready'; error: null }
   | { status: 'error'; error: string };
@@ -514,6 +519,14 @@ interface AppActions {
   // Routine Block Actions
   addRoutineBlock: (routineId: string, block: Omit<RoutineBlock, 'id'>) => string | null;
   updateRoutineBlock: (routineId: string, blockId: string, data: Partial<Omit<RoutineBlock, 'id'>>) => void;
+  /**
+   * Several block edits as one write, validated together (a shared boundary moves two blocks at
+   * once, and neither edit is valid alone). All or nothing: on refusal nothing changes.
+   */
+  updateRoutineBlocks: (
+    routineId: string,
+    updates: ReadonlyArray<{ id: string; data: Partial<Omit<RoutineBlock, 'id'>> }>
+  ) => RoutineBlocksUpdateResult;
   deleteRoutineBlock: (routineId: string, blockId: string) => void;
   copyDayBlocks: (routineId: string, fromDay: DayOfWeek, toDays: DayOfWeek[]) => void;
 
@@ -1020,6 +1033,61 @@ export const useAppStore = create<AppStore>()(
               : r
           ),
         }));
+      },
+
+      updateRoutineBlocks: (routineId, updates) => {
+        const state = get();
+        const routine = state.routines.find((candidate) => candidate.id === routineId);
+        if (!routine) return { ok: false, reason: 'That routine no longer exists.' };
+
+        const changed = new Map<string, { before: RoutineBlock; after: RoutineBlock }>();
+        for (const { id, data } of updates) {
+          const before = routine.blocks.find((candidate) => candidate.id === id);
+          if (!before) return { ok: false, reason: 'That activity no longer exists.' };
+          const base = changed.get(id)?.after ?? before;
+          changed.set(id, { before, after: toRoutineBlock({ ...base, ...data, id }) });
+        }
+        const candidateBlocks = routine.blocks.map((block) => changed.get(block.id)?.after ?? block);
+        for (const { after } of changed.values()) {
+          const validation = validateRoutineBlock(after);
+          if (!validation.isValid) return { ok: false, reason: validation.errors[0].message };
+          if (!blockReferencesAreValid(state, after)) {
+            return { ok: false, reason: 'That activity type no longer exists.' };
+          }
+          if (findOverlappingBlocks(candidateBlocks, after).length > 0) {
+            return { ok: false, reason: 'That would overlap another activity.' };
+          }
+        }
+
+        const capacityTypeIds: string[] = [];
+        for (const { before, after } of changed.values()) {
+          const fields = (Object.keys(after) as (keyof RoutineBlock)[]).filter(
+            (field) => after[field] !== before[field]
+          );
+          if (fields.some((field) => CAPACITY_RELEVANT_BLOCK_FIELDS.includes(field))) {
+            capacityTypeIds.push(before.activityTypeId, after.activityTypeId);
+          } else if (fields.length === 0) {
+            changed.delete(before.id);
+          }
+        }
+        // As with a single edit: nothing changed, nothing written.
+        if (changed.size === 0) return { ok: true };
+
+        const now = new Date().toISOString();
+        const capacityChangedAt = withCapacityChangedAt(routine, capacityTypeIds, now);
+        set((current) => ({
+          routines: current.routines.map((r) =>
+            r.id === routineId
+              ? {
+                  ...r,
+                  blocks: r.blocks.map((b) => changed.get(b.id)?.after ?? b),
+                  capacityChangedAt,
+                  updatedAt: now,
+                }
+              : r
+          ),
+        }));
+        return { ok: true };
       },
 
       deleteRoutineBlock: (routineId, blockId) => {
