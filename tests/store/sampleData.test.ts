@@ -96,7 +96,7 @@ describe('example data (#62)', () => {
     for (const block of routine.blocks) {
       expect(validateRoutineBlock(block).isValid).toBe(true);
       expect(findOverlappingBlocks(routine.blocks, block)).toEqual([]);
-      expect(block.goalId).toBeUndefined();
+      expect(block).not.toHaveProperty('goalId');
     }
     const weekday = [1, 2, 3, 4, 5].map((day) => scheduledMinutesOn(routine, day));
     const weekend = [0, 6].map((day) => scheduledMinutesOn(routine, day));

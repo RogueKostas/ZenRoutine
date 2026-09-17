@@ -12,7 +12,7 @@ import {
 import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { minutesToTimeString, formatDuration } from '../../core/utils/time';
-import type { RoutineBlock, ActivityType, Goal } from '../../core/types';
+import type { RoutineBlock, ActivityType } from '../../core/types';
 
 interface BlockItemLayout {
   y: number;
@@ -154,11 +154,6 @@ export function DraggableBlockList({
                   {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)}
                 </Text>
                 <Text style={[styles.blockActivity, { color: colors.text }]}>{activity?.name || 'Unknown'}</Text>
-                {block.goalId && (
-                  <View style={[styles.goalTag, { backgroundColor: colors.primary + '15' }]}>
-                    <Text style={[styles.goalTagText, { color: colors.primary }]}>Goal linked</Text>
-                  </View>
-                )}
               </View>
 
               <View style={styles.blockMeta}>
@@ -173,29 +168,22 @@ export function DraggableBlockList({
   );
 }
 
-// Enhanced block list with goal information
+// Block list for one day. A block is an activity type only (#60), so it shows no goal.
 interface SimpleBlockListProps {
   blocks: RoutineBlock[];
   activityTypes: ActivityType[];
-  goals?: Goal[];
   onBlockPress: (block: RoutineBlock) => void;
 }
 
 export function SimpleBlockList({
   blocks,
   activityTypes,
-  goals = [],
   onBlockPress,
 }: SimpleBlockListProps) {
   const { colors } = useTheme();
 
   const getActivity = (activityTypeId: string) => {
     return activityTypes.find((a) => a.id === activityTypeId);
-  };
-
-  const getGoal = (goalId: string | undefined) => {
-    if (!goalId) return undefined;
-    return goals.find((g) => g.id === goalId);
   };
 
   if (blocks.length === 0) {
@@ -206,13 +194,8 @@ export function SimpleBlockList({
     <View style={styles.container}>
       {blocks.map((block) => {
         const activity = getActivity(block.activityTypeId);
-        const goal = getGoal(block.goalId);
         const duration = block.endMinutes - block.startMinutes;
         const adjustedDuration = duration > 0 ? duration : duration + 1440;
-
-        // Calculate goal progress if linked
-        const goalProgress = goal ? Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100) : 0;
-        const blockContribution = goal ? Math.min(100, (adjustedDuration / goal.estimatedMinutes) * 100) : 0;
 
         return (
           <TouchableOpacity
@@ -233,55 +216,9 @@ export function SimpleBlockList({
                 {minutesToTimeString(block.startMinutes)} - {minutesToTimeString(block.endMinutes)} • {formatDuration(adjustedDuration)}
               </Text>
 
-              {/* Goal name (prominent) or Activity name */}
-              {goal ? (
-                <>
-                  <Text style={[styles.goalName, { color: colors.text }]} numberOfLines={1}>
-                    {goal.name}
-                  </Text>
-                  <Text style={[styles.activitySubtitle, { color: colors.textSecondary }]}>
-                    {activity?.name || 'Unknown'}
-                  </Text>
-                </>
-              ) : (
-                <Text style={[styles.blockActivityLarge, { color: colors.text }]}>
-                  {activity?.name || 'Unknown'}
-                </Text>
-              )}
-
-              {/* Progress bar for linked goals */}
-              {goal && (
-                <View style={styles.progressContainer}>
-                  <View style={[styles.progressBarBg, { backgroundColor: colors.borderLight }]}>
-                    {/* Previous progress */}
-                    <View
-                      style={[
-                        styles.progressFillPrevious,
-                        { width: `${goalProgress}%`, backgroundColor: activity?.color || colors.primary, opacity: 0.5 },
-                      ]}
-                    />
-                    {/* This block's contribution (shown brighter) */}
-                    <View
-                      style={[
-                        styles.progressFillCurrent,
-                        {
-                          left: `${goalProgress}%`,
-                          width: `${Math.min(blockContribution, 100 - goalProgress)}%`,
-                          backgroundColor: activity?.color || colors.primary,
-                        },
-                      ]}
-                    />
-                  </View>
-                  <View style={styles.progressLabels}>
-                    <Text style={[styles.progressText, { color: colors.textMuted }]}>
-                      {formatDuration(goal.loggedMinutes)} logged
-                    </Text>
-                    <Text style={[styles.progressText, { color: colors.textMuted }]}>
-                      +{formatDuration(adjustedDuration)} this block
-                    </Text>
-                  </View>
-                </View>
-              )}
+              <Text style={[styles.blockActivityLarge, { color: colors.text }]}>
+                {activity?.name || 'Unknown'}
+              </Text>
             </View>
 
             {/* Right: Chevron */}
@@ -335,17 +272,6 @@ const styles = StyleSheet.create({
     fontSize: 16,
     fontWeight: '600',
   },
-  goalTag: {
-    alignSelf: 'flex-start',
-    marginTop: spacing.xs,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 2,
-    borderRadius: borderRadius.sm,
-  },
-  goalTagText: {
-    fontSize: 11,
-    fontWeight: '500',
-  },
   blockMeta: {
     justifyContent: 'center',
     alignItems: 'flex-end',
@@ -384,47 +310,9 @@ const styles = StyleSheet.create({
     flex: 1,
     paddingRight: spacing.sm,
   },
-  goalName: {
-    fontSize: 16,
-    fontWeight: '600',
-    marginBottom: 2,
-  },
-  activitySubtitle: {
-    fontSize: 13,
-  },
   blockActivityLarge: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  progressContainer: {
-    marginTop: spacing.sm,
-  },
-  progressBarBg: {
-    height: 6,
-    borderRadius: 3,
-    overflow: 'hidden',
-    position: 'relative',
-  },
-  progressFillPrevious: {
-    position: 'absolute',
-    left: 0,
-    top: 0,
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressFillCurrent: {
-    position: 'absolute',
-    top: 0,
-    height: '100%',
-    borderRadius: 3,
-  },
-  progressLabels: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    marginTop: 4,
-  },
-  progressText: {
-    fontSize: 10,
   },
   chevronContainer: {
     justifyContent: 'center',

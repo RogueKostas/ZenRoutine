@@ -338,7 +338,6 @@ export function ActivityCalendar() {
                     .sort((a, b) => a.startMinutes - b.startMinutes)
                     .map(block => {
                       const activity = activityTypes.find(a => a.id === block.activityTypeId);
-                      const goal = block.goalId ? goals.find(g => g.id === block.goalId) : null;
                       const duration = block.endMinutes - block.startMinutes;
                       const adjustedDuration = duration > 0 ? duration : duration + 1440;
 
@@ -355,11 +354,6 @@ export function ActivityCalendar() {
                             <Text style={[styles.blockActivity, { color: colors.text }]}>
                               {activity?.icon} {activity?.name}
                             </Text>
-                            {goal && (
-                              <Text style={[styles.blockGoal, { color: colors.primary }]}>
-                                Goal: {goal.name}
-                              </Text>
-                            )}
                           </View>
                           <Text style={[styles.blockDuration, { color: colors.textSecondary }]}>
                             {formatDuration(adjustedDuration)}
@@ -682,10 +676,6 @@ const styles = StyleSheet.create({
   blockActivity: {
     fontSize: 14,
     fontWeight: '500',
-  },
-  blockGoal: {
-    fontSize: 12,
-    marginTop: 2,
   },
   blockDuration: {
     fontSize: 12,

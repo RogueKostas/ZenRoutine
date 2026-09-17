@@ -4,12 +4,11 @@ import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { minutesToTimeString } from '../../core/utils/time';
 import { BlockTimelineItem } from './BlockCard';
-import type { RoutineBlock, ActivityType, Goal } from '../../core/types';
+import type { RoutineBlock, ActivityType } from '../../core/types';
 
 interface TimelineProps {
   blocks: RoutineBlock[];
   activityTypes: ActivityType[];
-  goals?: Goal[];
   startHour?: number;
   endHour?: number;
   pixelsPerHour?: number;
@@ -21,7 +20,6 @@ interface TimelineProps {
 export function Timeline({
   blocks,
   activityTypes,
-  goals = [],
   startHour = 6,
   endHour = 24,
   pixelsPerHour = 60,
@@ -79,7 +77,6 @@ export function Timeline({
         <View style={styles.blocksContainer}>
           {sortedBlocks.map((block) => {
             const activityType = activityTypes.find((a) => a.id === block.activityTypeId);
-            const goal = goals.find((g) => g.id === block.goalId);
             const top = (block.startMinutes - startMinutes) * pixelsPerMinute;
             const duration = block.endMinutes - block.startMinutes;
             const adjustedDuration = duration < 0 ? duration + 1440 : duration;
@@ -96,7 +93,6 @@ export function Timeline({
                 <BlockTimelineItem
                   block={block}
                   activityType={activityType}
-                  goal={goal}
                   onPress={() => onBlockPress?.(block)}
                   pixelsPerMinute={pixelsPerMinute}
                   minHeight={30}

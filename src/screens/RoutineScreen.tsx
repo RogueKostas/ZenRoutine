@@ -3,7 +3,7 @@ import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-nati
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-import { useActiveRoutine, useActivityTypes, useGoals, useAppStore, useWeekStartsOn } from '../store';
+import { useActiveRoutine, useActivityTypes, useAppStore, useWeekStartsOn } from '../store';
 import {
   formatDuration,
   getDayName,
@@ -26,7 +26,6 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
 
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
-  const goals = useGoals();
   const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
   const dialog = useDialog();
 
@@ -132,7 +131,6 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
             <SimpleBlockList
               blocks={dayBlocks}
               activityTypes={activityTypes}
-              goals={goals}
               onBlockPress={handleEditBlock}
             />
           ) : (

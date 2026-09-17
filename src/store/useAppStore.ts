@@ -13,6 +13,7 @@ import {
   TrackingSource,
   DayOfWeek,
   WeekStartsOn,
+  toRoutineBlock,
 } from '../core/types';
 import { generateId } from '../core/utils/id';
 import { createDefaultActivityTypes } from '../core/engine/defaults';
@@ -296,14 +297,9 @@ function contributionDelta(
 
 function blockReferencesAreValid(
   state: AppState,
-  block: Pick<RoutineBlock, 'activityTypeId' | 'goalId'>
+  block: Pick<RoutineBlock, 'activityTypeId'>
 ): boolean {
-  if (!state.activityTypes.some((activity) => activity.id === block.activityTypeId)) {
-    return false;
-  }
-  if (!block.goalId) return true;
-  const goal = state.goals.find((candidate) => candidate.id === block.goalId);
-  return goal?.activityTypeId === block.activityTypeId;
+  return state.activityTypes.some((activity) => activity.id === block.activityTypeId);
 }
 
 /**
@@ -351,17 +347,16 @@ function withCapacityChangedAt(
  *   `dayOfWeek` alone does not change the minute total -- but it does change
  *   the schedule the tracking evidence was gathered against, which is what
  *   confidence measures.)
- * - `goalId`: moves that time between the activity type's dedicated and shared
- *   pools, which changes every competing goal's allocation.
  *
  * `id` is deliberately absent: it identifies the block, it is not capacity.
+ * That is every other field a block has, now that blocks no longer name a goal
+ * (#60).
  */
 const CAPACITY_RELEVANT_BLOCK_FIELDS: readonly (keyof RoutineBlock)[] = [
   'activityTypeId',
   'dayOfWeek',
   'startMinutes',
   'endMinutes',
-  'goalId',
 ];
 
 /**
@@ -474,7 +469,6 @@ function trackingEntryIsValid(state: AppState, entry: TrackingEntry): boolean {
       .flatMap((routine) => routine.blocks)
       .find((block) => block.id === entry.routineBlockId);
     if (!routineBlock || routineBlock.activityTypeId !== entry.activityTypeId) return false;
-    if (routineBlock.goalId && routineBlock.goalId !== entry.goalId) return false;
   }
   return true;
 }
@@ -657,12 +651,8 @@ export const useAppStore = create<AppStore>()(
             const loggedMinutes = data.loggedMinutes ?? goal.loggedMinutes;
             const activityTypeId = data.activityTypeId ?? goal.activityTypeId;
             const priority = data.priority ?? goal.priority;
-            const changesLinkedActivity = activityTypeId !== goal.activityTypeId && (
-              state.routines.some((routine) => routine.blocks.some(
-                (block) => block.goalId === goal.id
-              )) ||
-              state.trackingEntries.some((entry) => entry.goalId === goal.id)
-            );
+            const changesLinkedActivity = activityTypeId !== goal.activityTypeId &&
+              state.trackingEntries.some((entry) => entry.goalId === goal.id);
             if (
               !(data.name ?? goal.name).trim() ||
               !Number.isInteger(estimatedMinutes) ||
@@ -718,13 +708,6 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => ({
           goals: state.goals.filter((g) => g.id !== id),
-          // Also update any routine blocks that reference this goal
-          routines: state.routines.map((r) => ({
-            ...r,
-            blocks: r.blocks.map((b) =>
-              b.goalId === id ? { ...b, goalId: undefined } : b
-            ),
-          })),
           trackingEntries: state.trackingEntries.map((entry) =>
             entry.goalId === id
               ? { ...entry, goalId: undefined, updatedAt: now }
@@ -925,10 +908,10 @@ export const useAppStore = create<AppStore>()(
         if (!routine) return null;
 
         const blockId = generateId();
-        const newBlock: RoutineBlock = {
+        const newBlock = toRoutineBlock({
           ...block,
           id: blockId,
-        };
+        });
         if (
           !validateRoutineBlock(newBlock).isValid ||
           !blockReferencesAreValid(state, newBlock) ||
@@ -963,7 +946,7 @@ export const useAppStore = create<AppStore>()(
         const routine = state.routines.find((candidate) => candidate.id === routineId);
         const block = routine?.blocks.find((candidate) => candidate.id === blockId);
         if (!routine || !block) return;
-        const updatedBlock: RoutineBlock = { ...block, ...data };
+        const updatedBlock = toRoutineBlock({ ...block, ...data, id: block.id });
         if (
           !validateRoutineBlock(updatedBlock).isValid ||
           !blockReferencesAreValid(state, updatedBlock) ||
@@ -972,7 +955,7 @@ export const useAppStore = create<AppStore>()(
           return;
         }
 
-        const changedFields = (Object.keys(data) as (keyof RoutineBlock)[]).filter(
+        const changedFields = (Object.keys(updatedBlock) as (keyof RoutineBlock)[]).filter(
           (field) => updatedBlock[field] !== block[field]
         );
         // Reopening a block and tapping Save without touching anything is the
@@ -986,7 +969,7 @@ export const useAppStore = create<AppStore>()(
           CAPACITY_RELEVANT_BLOCK_FIELDS.includes(field)
         );
         // Both sides matter: the new activity type gains capacity and, when the
-        // type or the goal link moved, the old one loses it.
+        // type moved, the old one loses it.
         const capacityChangedAt = withCapacityChangedAt(
           routine,
           capacityMoved ? [block.activityTypeId, updatedBlock.activityTypeId] : [],
@@ -1121,10 +1104,8 @@ export const useAppStore = create<AppStore>()(
               .flatMap((routine) => routine.blocks)
               .find((block) => block.id === data.routineBlockId)
           : undefined;
-        const routineBlockIsValid = !data.routineBlockId || (
-          routineBlock?.activityTypeId === data.activityTypeId &&
-          (!routineBlock.goalId || routineBlock.goalId === data.goalId)
-        );
+        const routineBlockIsValid = !data.routineBlockId ||
+          routineBlock?.activityTypeId === data.activityTypeId;
         if (!activityExists || !goalIsValid || !routineBlockIsValid) return null;
 
         // Stop any currently running tracking

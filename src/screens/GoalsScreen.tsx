@@ -220,8 +220,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
         <View style={[styles.forecastNotice, { backgroundColor: colors.backgroundSecondary }]}>
           <Text style={[styles.forecastNoticeTitle, { color: colors.text }]}>How forecasts work</Text>
           <Text style={[styles.forecastNoticeText, { color: colors.textSecondary }]}>
-            Goal-linked blocks stay dedicated. Unlinked time is shared by priority, then
-            reallocated as goals finish. Dates assume this routine and these priorities continue.
+            All of an activity type's routine blocks form one pool of time. That type's active
+            goals share the pool by priority, and a finished goal's share passes to the rest.
+            Dates assume this routine and these priorities continue.
           </Text>
         </View>
       )}
@@ -298,14 +299,9 @@ export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
                       {formatDuration(prediction.activityWeeklyCapacity)} scheduled
                     </Text>
                     <Text style={[styles.predictionReason, { color: colors.textSecondary }]}>
-                      {prediction.dedicatedWeeklyMinutes > 0
-                        ? `${formatDuration(prediction.dedicatedWeeklyMinutes)} is linked directly to this goal. `
-                        : ''}
-                      {prediction.competingGoalCount > 0 && prediction.sharedWeeklyCapacity > 0
-                        ? `Unlinked time is shared with ${prediction.competingGoalCount} other active goal${prediction.competingGoalCount === 1 ? '' : 's'} by priority. `
-                        : prediction.otherLinkedWeeklyMinutes > 0
-                          ? `${formatDuration(prediction.otherLinkedWeeklyMinutes)} is linked to other goals and stays reserved. `
-                          : 'No other active goal competes for this activity. '}
+                      {prediction.competingGoalCount > 0
+                        ? `This activity's time is shared with ${prediction.competingGoalCount} other active goal${prediction.competingGoalCount === 1 ? '' : 's'} by priority. `
+                        : 'No other active goal competes for this activity. '}
                       {prediction.confidenceReason}
                     </Text>
                   </View>
