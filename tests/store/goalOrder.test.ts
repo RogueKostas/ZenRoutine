@@ -56,7 +56,10 @@ describe('moveGoalInList', () => {
 
   it('changes nothing for an unknown goal or target', () => {
     expect(moveGoalInList(goals, 'missing', { before: 'a' }, laterTime)).toBe(goals);
-    expect(moveGoalInList(goals, 'a', { after: 'missing' }, laterTime)).toBe(goals);
+    for (const goalId of ['a', 'c', 'e']) {
+      expect(moveGoalInList(goals, goalId, { after: 'missing' }, laterTime)).toBe(goals);
+      expect(moveGoalInList(goals, goalId, { before: 'missing' }, laterTime)).toBe(goals);
+    }
   });
 
   it('moves within a filtered view relative to the visible rows, leaving hidden rows in place', () => {
@@ -174,10 +177,11 @@ describe('store: goal order (#49)', () => {
   });
 
   it('writes nothing for a move that moves nothing', () => {
-    const [a] = addGoals('A', 'B');
+    const [a, b] = addGoals('A', 'B');
     const before = useAppStore.getState().goals;
     useAppStore.getState().moveGoal(a, { before: a });
     useAppStore.getState().moveGoal(a, { after: 'missing' });
+    useAppStore.getState().moveGoal(b, { after: 'missing' });
     expect(useAppStore.getState().goals).toBe(before);
   });
 
@@ -197,6 +201,11 @@ describe('store: goal order (#49)', () => {
     useAppStore.getState().updateGoal(a, smuggled);
     expect(storedIds()).toEqual([a, b]);
     expect(useAppStore.getState().goals[0]).toMatchObject({ name: 'A renamed', order: 0 });
+
+    // The explicit-status path builds the goal differently, so it is checked on its own.
+    const smuggledWithStatus = { status: 'paused' as const, order: 5 };
+    useAppStore.getState().updateGoal(b, smuggledWithStatus);
+    expect(useAppStore.getState().goals[1]).toMatchObject({ id: b, status: 'paused', order: 1 });
   });
 
   it('stamps no capacity change on any routine when goals are reordered', () => {
