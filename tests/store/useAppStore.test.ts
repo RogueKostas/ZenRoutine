@@ -10,6 +10,9 @@ import {
   selectPersistedAppState,
 } from '../../src/store/persistence';
 
+/** The stored shape before v5 added `preferences` (#44). */
+type PreV5AppState = Omit<AppState, 'preferences'>;
+
 const storageKey = 'zenroutine-storage';
 const frozenTime = '2026-03-02T09:00:00.000Z';
 
@@ -574,7 +577,7 @@ describe('persisted state', () => {
       createdAt: frozenTime,
       updatedAt: frozenTime,
     };
-    const persistedState: AppState = {
+    const persistedState: PreV5AppState = {
       activityTypes: [activityType],
       goals: [persistedGoal],
       routines: [],
@@ -595,7 +598,8 @@ describe('persisted state', () => {
     expect(useAppStore.getState()).toMatchObject({
       goals: [persistedGoal],
       hasCompletedOnboarding: true,
-      schemaVersion: 4,
+      preferences: { weekStartsOn: 1 },
+      schemaVersion: CURRENT_SCHEMA_VERSION,
     });
     expect(await AsyncStorage.getItem(storageKey)).not.toBeNull();
   });
@@ -603,7 +607,7 @@ describe('persisted state', () => {
   it('preserves per-activity capacity timestamps through a rehydrate', async () => {
     const activityType = useAppStore.getState().activityTypes[0];
     const capacityChangedAt = { [activityType.id]: '2026-02-01T00:00:00.000Z' };
-    const persistedState: AppState = {
+    const persistedState: PreV5AppState = {
       activityTypes: [activityType],
       goals: [],
       routines: [{

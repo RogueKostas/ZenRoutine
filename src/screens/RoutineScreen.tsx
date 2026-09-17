@@ -1,24 +1,25 @@
-import React, { useState, useCallback } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
-import { useActiveRoutine, useActivityTypes, useGoals, useAppStore } from '../store';
+import { useActiveRoutine, useActivityTypes, useGoals, useAppStore, useWeekStartsOn } from '../store';
 import {
   formatDuration,
   getDayName,
   getRoutineBlockDurationMinutes,
   minutesToTimeString,
+  orderedWeekDays,
 } from '../core/utils/time';
 import { BlockEditor, SimpleBlockList } from '../components/routine';
 import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { DayOfWeek, RoutineBlock } from '../core/types';
 
-const DAYS: DayOfWeek[] = [0, 1, 2, 3, 4, 5, 6];
-
 export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
   const { colors } = useTheme();
+  const weekStartsOn = useWeekStartsOn();
+  const weekDays = useMemo(() => orderedWeekDays(weekStartsOn), [weekStartsOn]);
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(new Date().getDay() as DayOfWeek);
   const [showBlockEditor, setShowBlockEditor] = useState(false);
   const [editingBlock, setEditingBlock] = useState<RoutineBlock | undefined>(undefined);
@@ -84,7 +85,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
 
       {/* Day Selector */}
       <View style={[styles.daySelector, { borderBottomColor: colors.border }]}>
-        {DAYS.map((day) => {
+        {weekDays.map((day) => {
           const isSelected = day === selectedDay;
           const isToday = day === new Date().getDay();
           const hasBlocks = activeRoutine?.blocks.some((b) => b.dayOfWeek === day);
@@ -173,7 +174,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
           <View style={[styles.copySection, { borderTopColor: colors.border }]}>
             <Text style={[styles.copyTitle, { color: colors.textSecondary }]}>Copy this day to...</Text>
             <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-              {DAYS.filter((d) => d !== selectedDay).map((day) => (
+              {weekDays.filter((d) => d !== selectedDay).map((day) => (
                 <TouchableOpacity
                   key={day}
                   style={[styles.copyButton, { backgroundColor: colors.backgroundSecondary }]}

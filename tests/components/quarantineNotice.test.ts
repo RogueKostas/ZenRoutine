@@ -29,6 +29,7 @@ import {
 import {
   APP_STORAGE_KEY,
   CURRENT_SCHEMA_VERSION,
+  STRICT_SCHEMA_VERSION,
   createInitialState,
 } from '../../src/store/persistence';
 import { makeAppState, makeTrackingEntry } from '../helpers/builders';
@@ -202,7 +203,7 @@ describe('the quarantine notice itself', () => {
         trackingEntries: [...state.trackingEntries, unreadable],
         currentTrackingEntryId: 'open-selected',
       },
-      version: CURRENT_SCHEMA_VERSION - 1,
+      version: STRICT_SCHEMA_VERSION - 1,
     }));
     await initializeAppStore({ force: true });
 

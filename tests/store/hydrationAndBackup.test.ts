@@ -14,6 +14,7 @@ import {
   CURRENT_SCHEMA_VERSION,
   MAX_QUARANTINE_GENERATIONS,
   QUARANTINE_STORAGE_KEY,
+  STRICT_SCHEMA_VERSION,
   appendQuarantineGeneration,
   createInitialState,
   encodeBackup,
@@ -21,6 +22,7 @@ import {
   selectPersistedAppState,
 } from '../../src/store/persistence';
 import { makeAppState, makeGoal, makeRoutine, makeTrackingEntry } from '../helpers/builders';
+import { V4_STORE_BLOB, v4PersistedState } from '../fixtures/v4Store';
 
 function deferred<T>() {
   let resolve!: (value: T) => void;
@@ -307,7 +309,7 @@ describe('hydration of a store whose references have gone stale', () => {
 });
 
 describe('hydration of a legacy store that was left with two timers running', () => {
-  const LEGACY = CURRENT_SCHEMA_VERSION - 1;
+  const LEGACY = STRICT_SCHEMA_VERSION - 1;
   // The one that stays resumable, and the one that used to be silently zeroed (issue #4).
   const openSelected = makeTrackingEntry({ id: 'open-selected', endTime: undefined });
   const openStranded = makeTrackingEntry({
@@ -386,7 +388,7 @@ describe('hydration of a legacy store that was left with two timers running', ()
 });
 
 describe('durability of the quarantine side-car', () => {
-  const LEGACY_SCHEMA_VERSION = CURRENT_SCHEMA_VERSION - 1;
+  const LEGACY_SCHEMA_VERSION = STRICT_SCHEMA_VERSION - 1;
 
   // Two tests below need a write that fails for one key and succeeds for every other, which means
   // replacing the base implementation rather than using a `...Once` variant. `restoreMocks` does
@@ -622,5 +624,86 @@ describe('reset and backup actions', () => {
       error: 'disk full',
     });
     expect(selectPersistedAppState(useAppStore.getState())).toEqual(before);
+  });
+});
+
+describe('the week-start preference across launches (#44)', () => {
+  it('opens a real v4 store with everything intact and a Monday week', async () => {
+    await AsyncStorage.setItem(APP_STORAGE_KEY, V4_STORE_BLOB);
+    const v4 = v4PersistedState();
+
+    await initializeAppStore({ force: true });
+
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    const state = useAppStore.getState();
+    expect(state.preferences).toEqual({ weekStartsOn: 1 });
+    const { schemaVersion: _stamp, ...v4Data } = v4;
+    expect(selectPersistedAppState(state)).toEqual({
+      ...v4Data,
+      preferences: { weekStartsOn: 1 },
+      schemaVersion: CURRENT_SCHEMA_VERSION,
+    });
+    // Nothing was set aside or altered on the way.
+    expect(getQuarantinedTrackingEntries()).toEqual([]);
+    expect(getRepairedTrackingEntries()).toEqual([]);
+    expect(await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)).toBeNull();
+
+    // The store rewrote itself at v5 with the default filled in.
+    const rewritten = JSON.parse((await AsyncStorage.getItem(APP_STORAGE_KEY))!) as {
+      version: number;
+      state: { preferences: unknown; trackingEntries: unknown[] };
+    };
+    expect(rewritten.version).toBe(CURRENT_SCHEMA_VERSION);
+    expect(rewritten.state.preferences).toEqual({ weekStartsOn: 1 });
+    expect(rewritten.state.trackingEntries).toEqual(v4.trackingEntries);
+  });
+
+  it('persists a change of week start and reads it back on the next launch', async () => {
+    useAppStore.getState().setWeekStartsOn(0);
+    expect(useAppStore.getState().preferences.weekStartsOn).toBe(0);
+
+    // The store's own write-through is what persists it.
+    const raw = await AsyncStorage.getItem(APP_STORAGE_KEY);
+    expect(JSON.parse(raw!).state.preferences).toEqual({ weekStartsOn: 0 });
+
+    // A cold start: forget the in-memory choice (that write is persisted too, so put the blob
+    // back afterwards), then hydrate from storage.
+    useAppStore.setState(createInitialState());
+    expect(useAppStore.getState().preferences.weekStartsOn).toBe(1);
+    await AsyncStorage.setItem(APP_STORAGE_KEY, raw!);
+    await initializeAppStore({ force: true });
+
+    expect(useAppStore.getState().preferences).toEqual({ weekStartsOn: 0 });
+  });
+
+  it('ignores a week start that is not Sunday or Monday', () => {
+    useAppStore.getState().setWeekStartsOn(3 as never);
+    expect(useAppStore.getState().preferences).toEqual({ weekStartsOn: 1 });
+  });
+
+  it('keeps the preference through Reset All Data', async () => {
+    useAppStore.getState().setWeekStartsOn(0);
+    await useAppStore.getState().resetState();
+    expect(useAppStore.getState().preferences).toEqual({ weekStartsOn: 0 });
+  });
+
+  it('takes the backup\'s preference on import, and Monday from a backup that has none', async () => {
+    useAppStore.getState().setWeekStartsOn(0);
+    const sundayBackup = useAppStore.getState().exportData();
+
+    useAppStore.getState().setWeekStartsOn(1);
+    expect(await useAppStore.getState().importData(sundayBackup)).toEqual({ ok: true });
+    expect(useAppStore.getState().preferences).toEqual({ weekStartsOn: 0 });
+
+    const v4Backup = JSON.stringify({
+      format: 'zenroutine-backup',
+      formatVersion: 1,
+      schemaVersion: 4,
+      exportedAt: '2026-09-17T09:00:00.000Z',
+      state: v4PersistedState(),
+    });
+    expect(await useAppStore.getState().importData(v4Backup)).toEqual({ ok: true });
+    expect(useAppStore.getState().preferences).toEqual({ weekStartsOn: 1 });
+    expect(useAppStore.getState().goals.map((goal) => goal.id)).toEqual(['goal-report']);
   });
 });

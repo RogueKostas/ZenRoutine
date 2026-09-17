@@ -4,6 +4,7 @@ import {
   BACKUP_FORMAT,
   BACKUP_FORMAT_VERSION,
   CURRENT_SCHEMA_VERSION,
+  STRICT_SCHEMA_VERSION,
   decodeBackup,
   encodeBackup,
   migratePersistedState,
@@ -22,6 +23,7 @@ import {
   makeRoutineBlock,
   makeTrackingEntry,
 } from '../helpers/builders';
+import { v4PersistedState } from '../fixtures/v4Store';
 
 function makeLegacyState() {
   const activity = { ...makeActivityType(), icon: 'briefcase' };
@@ -134,7 +136,7 @@ describe('legacy open timers that have to be closed', () => {
     repairs?: RepairedTrackingEntry[]
   ) => migratePersistedState(
     makeAppState({ trackingEntries: [...entries], currentTrackingEntryId }),
-    CURRENT_SCHEMA_VERSION - 1,
+    STRICT_SCHEMA_VERSION - 1,
     repairs ? { repairs } : undefined
   );
 
@@ -609,7 +611,95 @@ describe('stale reference linkage', () => {
   });
 });
 
+describe('schema 5: the week-start preference (#44)', () => {
+  it('carries a real v4 store forward untouched and gives it a Monday week', () => {
+    const v4 = v4PersistedState();
+    const original = structuredClone(v4);
+
+    const migrated = migratePersistedState(v4, 4);
+
+    // Everything the v4 store held, byte for byte, plus the new default and the new stamp.
+    const { schemaVersion: _stamp, ...v4Data } = original;
+    expect(migrated).toEqual({
+      ...v4Data,
+      preferences: { weekStartsOn: 1 },
+      lastSyncedAt: undefined,
+      schemaVersion: 5,
+    });
+    expect(migrated.preferences.weekStartsOn).toBe(1);
+    // Stored day numbers are not renumbered by the preference: Sunday is still 0.
+    expect(migrated.routines[0].blocks.map((block) => block.dayOfWeek)).toEqual([0, 1, 6]);
+    expect(migrated.currentTrackingEntryId).toBe('entry-running');
+    expect(v4).toEqual(original);
+    // And the result is a valid v5 store.
+    expect(migratePersistedState(migrated, CURRENT_SCHEMA_VERSION)).toEqual(migrated);
+  });
+
+  it('keeps a v4 store on the strict path instead of silently repairing it', () => {
+    // v4 was written by the strict store, so the lenient pre-v4 repairs must not start applying
+    // to it just because the schema number moved on. Two open timers is corruption at v4.
+    const v4 = v4PersistedState();
+    const entries = v4.trackingEntries as Record<string, unknown>[];
+    v4.trackingEntries = [...entries, { ...entries[1], id: 'entry-second-open' }];
+
+    expect(() => migratePersistedState(v4, 4)).toThrow('only one entry can be open');
+    expect(() => migratePersistedState(v4, 3)).not.toThrow();
+  });
+
+  it('round-trips a Sunday preference', () => {
+    const state = makeAppState({ preferences: { weekStartsOn: 0 } });
+    expect(migratePersistedState(state, CURRENT_SCHEMA_VERSION).preferences).toEqual({
+      weekStartsOn: 0,
+    });
+  });
+
+  it.each([
+    ['missing', undefined],
+    ['not an object', 'monday'],
+    ['an out-of-range day', { weekStartsOn: 3 }],
+    ['a stringly day', { weekStartsOn: '0' }],
+  ])('falls back to Monday when the stored preference is %s', (_label, preferences) => {
+    const state = { ...makeAppState(), preferences };
+    expect(migratePersistedState(state, CURRENT_SCHEMA_VERSION).preferences).toEqual({
+      weekStartsOn: 1,
+    });
+  });
+
+  it('drops unknown preference keys', () => {
+    const state = { ...makeAppState(), preferences: { weekStartsOn: 0, colour: 'teal' } };
+    expect(migratePersistedState(state, CURRENT_SCHEMA_VERSION).preferences).toEqual({
+      weekStartsOn: 0,
+    });
+  });
+});
+
 describe('backup codec', () => {
+  it('exports the week-start preference and restores it', () => {
+    const state = makeAppState({ preferences: { weekStartsOn: 0 } });
+    const serialized = encodeBackup(state, TEST_TIMESTAMP);
+
+    expect(JSON.parse(serialized).state.preferences).toEqual({ weekStartsOn: 0 });
+    expect(decodeBackup(serialized).preferences).toEqual({ weekStartsOn: 0 });
+  });
+
+  it('imports a v4 backup, which has no preferences, with a Monday week', () => {
+    const serialized = JSON.stringify({
+      format: BACKUP_FORMAT,
+      formatVersion: BACKUP_FORMAT_VERSION,
+      schemaVersion: 4,
+      exportedAt: TEST_TIMESTAMP,
+      state: v4PersistedState(),
+    });
+
+    const decoded = decodeBackup(serialized);
+    expect(decoded.preferences).toEqual({ weekStartsOn: 1 });
+    expect(decoded.trackingEntries.map((entry) => entry.id)).toEqual([
+      'entry-monday',
+      'entry-running',
+    ]);
+    expect(decoded.schemaVersion).toBe(CURRENT_SCHEMA_VERSION);
+  });
+
   it('round-trips a complete current snapshot including Unicode and optional fields', () => {
     const state = makeAppState({
       goals: [makeGoal({ name: 'Write 日本語 notes', description: '🧘 Calm focus' })],

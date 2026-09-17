@@ -2,7 +2,7 @@ import React, { useMemo, useState } from 'react';
 import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useActiveRoutine, useActivityTypes, useTrackingEntries } from '../store';
+import { useActiveRoutine, useActivityTypes, useTrackingEntries, useWeekStartsOn } from '../store';
 import { getRoutineBreakdown, getTrackedBreakdown, MINUTES_IN_WEEK } from '../core/engine/analytics';
 import { formatDuration, getLocalWeekStartDateKey } from '../core/utils/time';
 import { ActivityCalendar } from '../components/calendar';
@@ -26,7 +26,8 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
   const activityTypes = useActivityTypes();
   const trackingEntries = useTrackingEntries();
 
-  const weekStart = getLocalWeekStartDateKey();
+  const weekStartsOn = useWeekStartsOn();
+  const weekStart = getLocalWeekStartDateKey(new Date(), weekStartsOn);
 
   const plannedBreakdown = useMemo(() => {
     if (!activeRoutine) return [];

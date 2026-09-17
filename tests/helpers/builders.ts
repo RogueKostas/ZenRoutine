@@ -94,6 +94,7 @@ export function makeAppState(overrides: Partial<AppState> = {}): AppState {
     activeRoutineId: routine.id,
     currentTrackingEntryId: null,
     hasCompletedOnboarding: true,
+    preferences: { weekStartsOn: 1 },
     schemaVersion: CURRENT_SCHEMA_VERSION,
     ...overrides,
   };
