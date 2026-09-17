@@ -11,7 +11,15 @@ import {
   orderedWeekDays,
 } from '../core/utils/time';
 import { BlockEditor, WeekStrip, firstFreeHour, newBlockTimesAt } from '../components/routine';
-import { DayRibbon, useNow } from '../components/ribbon';
+import {
+  BlockTimeUpdate,
+  DEFAULT_RIBBON_WINDOW,
+  DayRibbon,
+  RibbonWindow,
+  RibbonZoomControls,
+  useNow,
+  zoomFocusMinutes,
+} from '../components/ribbon';
 import { RoutineBreakdown, plannedBreakdown } from '../components/breakdown';
 import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
@@ -36,10 +44,15 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
   const [selectedDay, setSelectedDay] = useState<DayOfWeek>(today);
   const [editor, setEditor] = useState<EditorTarget | null>(null);
   const [copyOpen, setCopyOpen] = useState(false);
+  // Zoom (p31–p33) and the last activity touched, which + / − zoom around.
+  const [ribbonWindow, setRibbonWindow] = useState<RibbonWindow>(DEFAULT_RIBBON_WINDOW);
+  const [focusBlockId, setFocusBlockId] = useState<string | null>(null);
+  // Why the last drag was refused, shown under the ribbon.
+  const [dragError, setDragError] = useState<string | null>(null);
 
   const activeRoutine = useActiveRoutine();
   const activityTypes = useActivityTypes();
-  const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
+  const { addRoutine, setActiveRoutine, copyDayBlocks, updateRoutineBlocks } = useAppStore();
   const dialog = useDialog();
 
   const blocks = activeRoutine?.blocks;
@@ -59,7 +72,22 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
   const handleSelectDay = useCallback((day: DayOfWeek) => {
     setSelectedDay(day);
     setCopyOpen(false);
+    setDragError(null);
+    setFocusBlockId(null);
   }, []);
+
+  const routineId = activeRoutine?.id;
+  const handleEdgeCommit = useCallback(
+    (updates: BlockTimeUpdate[]) => {
+      if (!routineId || updates.length === 0) return;
+      setFocusBlockId(updates[updates.length - 1].id);
+      // One write for both blocks of a shared boundary; a refusal leaves the ribbon as it was.
+      const result = updateRoutineBlocks(routineId, updates);
+      setDragError(result.ok ? null : `Couldn't move that edge: ${result.reason}`);
+    },
+    [routineId, updateRoutineBlocks]
+  );
+  const focusBlock = blocks?.find((block) => block.id === focusBlockId) ?? null;
 
   const handleAddBlock = useCallback(() => {
     const times = firstFreeHour(blocks ?? [], selectedDay);
@@ -75,6 +103,7 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
   );
 
   const handleEditBlock = useCallback((block: RoutineBlock) => {
+    setFocusBlockId(block.id);
     setEditor({ kind: 'edit', block });
   }, []);
 
@@ -207,22 +236,43 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
               </View>
             )}
 
+            <View style={styles.zoomControls}>
+              <RibbonZoomControls
+                window={ribbonWindow}
+                onChange={setRibbonWindow}
+                focusMinutes={zoomFocusMinutes(ribbonWindow, focusBlock)}
+              />
+            </View>
+
             <DayRibbon
               blocks={activeRoutine.blocks}
               activityTypes={activityTypes}
               day={selectedDay}
+              window={ribbonWindow}
+              onWindowChange={setRibbonWindow}
               height={22}
               onSegmentPress={handleEditBlock}
               onEmptyPress={handleEmptyPress}
+              onEdgeCommit={handleEdgeCommit}
               style={styles.ribbon}
               accessibilityLabel={`${selectedName} ribbon`}
             />
+
+            {dragError !== null && (
+              <Text
+                style={[styles.dragError, { color: colors.error }]}
+                accessibilityRole="alert"
+                accessibilityLiveRegion="polite"
+              >
+                {dragError}
+              </Text>
+            )}
 
             <Text style={[styles.dayTitle, { color: colors.text }]}>{selectedName}</Text>
             <Text style={[styles.dayStats, { color: colors.textSecondary }]}>
               {dayBlocks.length === 0
                 ? 'Nothing planned yet. Tap the timeline to add an activity.'
-                : `${dayBlocks.length} ${dayBlocks.length === 1 ? 'activity' : 'activities'} · ${formatDuration(totalMinutes)} planned · tap an activity to edit it, or empty time to add one`}
+                : `${dayBlocks.length} ${dayBlocks.length === 1 ? 'activity' : 'activities'} · ${formatDuration(totalMinutes)} planned · tap an activity to edit it, drag its yellow edges to resize, or tap empty time to add one`}
             </Text>
           </View>
 
@@ -328,8 +378,16 @@ const styles = StyleSheet.create({
   copyChipText: {
     fontSize: 14,
   },
-  ribbon: {
+  zoomControls: {
     marginTop: spacing.md,
+  },
+  ribbon: {
+    marginTop: spacing.sm,
+  },
+  dragError: {
+    fontSize: 13,
+    textAlign: 'center',
+    marginTop: spacing.xs,
   },
   dayTitle: {
     fontSize: 26,

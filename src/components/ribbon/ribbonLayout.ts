@@ -202,37 +202,80 @@ export function formatRibbonEdgeLabel(minutes: number): string {
   return mins === 0 ? `${hour}${suffix}` : `${hour}:${String(mins).padStart(2, '0')}${suffix}`;
 }
 
-/** Label every `step` hours: 1 where there is room, 2 on narrow widths, more when very tight. */
-export function tickLabelStep(widthPx: number, window?: RibbonWindow): number {
+/** Sub-hour labels (`7:45`) are wider than bare hours, so they need more room. */
+export const MIN_SUBHOUR_TICK_LABEL_SPACING_PX = 40;
+
+const TICK_LABEL_STEPS: Record<number, readonly number[]> = {
+  60: [1, 2, 3, 4, 6],
+  30: [1, 2, 4, 6],
+  15: [1, 2, 4, 8],
+};
+
+/**
+ * Minutes between ticks on a zoomed ribbon: quarter hours at 2h or less, half hours at 4h or
+ * less, otherwise hours. Opt-in (the zoomable editor): other ribbons keep hourly ticks.
+ */
+export function tickIntervalForWindow(window?: RibbonWindow): 15 | 30 | 60 {
   const visible = normalizeRibbonWindow(window);
-  const hours = (visible.endMinutes - visible.startMinutes) / 60;
+  const span = visible.endMinutes - visible.startMinutes;
+  if (span <= 120) return 15;
+  if (span <= 240) return 30;
+  return 60;
+}
+
+/** Label every `step` ticks: 1 where there is room, 2 on narrow widths, more when very tight. */
+export function tickLabelStep(widthPx: number, window?: RibbonWindow, intervalMinutes: number = 60): number {
+  const visible = normalizeRibbonWindow(window);
+  const intervals = (visible.endMinutes - visible.startMinutes) / intervalMinutes;
   if (!(widthPx > 0)) return 1;
-  const pxPerHour = widthPx / hours;
-  for (const step of [1, 2, 3, 4, 6]) {
-    if (pxPerHour * step >= MIN_TICK_LABEL_SPACING_PX) return step;
+  const pxPerInterval = widthPx / intervals;
+  const spacing = intervalMinutes >= 60 ? MIN_TICK_LABEL_SPACING_PX : MIN_SUBHOUR_TICK_LABEL_SPACING_PX;
+  const steps = TICK_LABEL_STEPS[intervalMinutes] ?? TICK_LABEL_STEPS[60];
+  for (const step of steps) {
+    if (pxPerInterval * step >= spacing) return step;
   }
-  return 12;
+  return Math.max(1, Math.round(720 / intervalMinutes));
+}
+
+/** `8` on the hour, `8:15` between hours. */
+export function formatRibbonTick(minutes: number): string {
+  const mins = minutes % 60;
+  return mins === 0 ? formatRibbonHour(minutes) : `${formatRibbonHour(minutes)}:${String(mins).padStart(2, '0')}`;
+}
+
+export interface RibbonTickOptions {
+  /** Minutes between ticks; whole hours by default. */
+  intervalMinutes?: number;
+  /** Labels this close to either end are dropped; defaults to `TICK_EDGE_CLEARANCE_PX`. */
+  edgeClearancePx?: number;
 }
 
 /**
- * One tick per whole hour strictly inside the window. With `widthPx`, labels are thinned
- * (counting whole hours from the window start, so on 7–23 the narrow set is 9, 11, 1 … 9) and
- * dropped near the ends. The tick marks themselves are always returned.
+ * One tick per interval (default: whole hours) strictly inside the window. With `widthPx`,
+ * labels are thinned (counting ticks from the window start, so on 7–23 the narrow set is
+ * 9, 11, 1 … 9) and dropped near the ends. The tick marks themselves are always returned.
  */
-export function layoutRibbonTicks(window?: RibbonWindow, widthPx?: number): RibbonTick[] {
+export function layoutRibbonTicks(
+  window?: RibbonWindow,
+  widthPx?: number,
+  options: RibbonTickOptions = {}
+): RibbonTick[] {
   const visible = normalizeRibbonWindow(window);
-  const step = widthPx === undefined ? 1 : tickLabelStep(widthPx, visible);
+  const interval =
+    options.intervalMinutes !== undefined && options.intervalMinutes > 0 ? options.intervalMinutes : 60;
+  const clearance = options.edgeClearancePx ?? TICK_EDGE_CLEARANCE_PX;
+  const step = widthPx === undefined ? 1 : tickLabelStep(widthPx, visible, interval);
   const ticks: RibbonTick[] = [];
-  const firstHour = Math.floor(visible.startMinutes / 60) + 1;
-  for (let hour = firstHour; hour * 60 < visible.endMinutes; hour++) {
-    const minutes = hour * 60;
+  const first = Math.floor(visible.startMinutes / interval) + 1;
+  for (let index = first; index * interval < visible.endMinutes; index++) {
+    const minutes = index * interval;
     const x = toFraction(minutes, visible);
-    const hoursFromStart = Math.round((minutes - visible.startMinutes) / 60);
+    const ticksFromStart = Math.round((minutes - visible.startMinutes) / interval);
     const nearEdge =
       widthPx !== undefined &&
-      (x * widthPx < TICK_EDGE_CLEARANCE_PX || (1 - x) * widthPx < TICK_EDGE_CLEARANCE_PX);
-    const labelled = hoursFromStart % step === 0 && !nearEdge;
-    ticks.push({ minutes, x, label: labelled ? formatRibbonHour(minutes) : '' });
+      (x * widthPx < clearance || (1 - x) * widthPx < clearance);
+    const labelled = ticksFromStart % step === 0 && !nearEdge;
+    ticks.push({ minutes, x, label: labelled ? formatRibbonTick(minutes) : '' });
   }
   return ticks;
 }
