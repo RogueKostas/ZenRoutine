@@ -6,7 +6,6 @@ import {
   ScrollView,
   StyleSheet,
   Modal,
-  Alert,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { colors } from '../../theme/colors';
@@ -17,6 +16,8 @@ import { validateRoutineBlock, findOverlappingBlocks } from '../../core/engine/v
 import { TimeRangePicker } from './TimePicker';
 import { ActivityPicker } from '../activity/ActivityPicker';
 import { Button } from '../common/Button';
+import { useDialog } from '../common/Dialog';
+import { blockEditorErrors, type BlockEditorErrors } from './blockEditorErrors';
 import type { RoutineBlock, DayOfWeek, ActivityType } from '../../core/types';
 
 interface BlockEditorProps {
@@ -47,12 +48,15 @@ export function BlockEditor({
   const [startTime, setStartTime] = useState(540); // 9:00 AM
   const [endTime, setEndTime] = useState(600); // 10:00 AM
   const [showGoalPicker, setShowGoalPicker] = useState(false);
+  const [errors, setErrors] = useState<BlockEditorErrors>({});
+  const dialog = useDialog();
 
   const isEditing = !!block;
 
   // Initialize state when block changes
   useEffect(() => {
     if (visible) {
+      setErrors({});
       if (block) {
         setSelectedActivityId(block.activityTypeId);
         setSelectedGoalId(block.goalId);
@@ -81,7 +85,7 @@ export function BlockEditor({
 
   const handleSave = () => {
     if (!selectedActivityId) {
-      Alert.alert('Error', 'Please select an activity type');
+      setErrors({ activity: 'Please select an activity type' });
       return;
     }
 
@@ -97,19 +101,20 @@ export function BlockEditor({
 
     const validation = validateRoutineBlock(newBlock);
     if (!validation.isValid) {
-      Alert.alert('Invalid Block', validation.errors.map((e) => e.message).join('\n'));
+      setErrors(blockEditorErrors(validation.errors));
       return;
     }
+    setErrors({});
 
     // Check for overlaps (excluding current block if editing)
     const blocksToCheck = existingBlocks.filter((b) => b.id !== block?.id);
     const overlaps = findOverlappingBlocks(blocksToCheck, newBlock as RoutineBlock);
     if (overlaps.length > 0) {
       const overlapActivity = activityTypes.find((a) => a.id === overlaps[0].activityTypeId);
-      Alert.alert(
-        'Time Conflict',
-        `This block overlaps with an existing "${overlapActivity?.name}" block. Please adjust the time.`
-      );
+      void dialog.notify({
+        title: 'Time Conflict',
+        message: `This block overlaps with an existing "${overlapActivity?.name}" block. Please adjust the time.`,
+      });
       return;
     }
 
@@ -134,27 +139,32 @@ export function BlockEditor({
     onClose();
   };
 
-  const handleDelete = () => {
+  const handleDelete = async () => {
     if (!block) return;
 
-    Alert.alert(
-      'Delete Block',
-      'Are you sure you want to delete this time block?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Delete',
-          style: 'destructive',
-          onPress: () => {
-            deleteRoutineBlock(routineId, block.id);
-            onClose();
-          },
-        },
-      ]
-    );
+    const confirmed = await dialog.confirm({
+      title: 'Delete Block',
+      message: 'Are you sure you want to delete this time block?',
+      confirmLabel: 'Delete',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    deleteRoutineBlock(routineId, block.id);
+    onClose();
+  };
+
+  const handleStartTimeChange = (minutes: number) => {
+    setErrors((prev) => ({ ...prev, time: undefined }));
+    setStartTime(minutes);
+  };
+
+  const handleEndTimeChange = (minutes: number) => {
+    setErrors((prev) => ({ ...prev, time: undefined }));
+    setEndTime(minutes);
   };
 
   const handleActivitySelect = (activity: ActivityType) => {
+    setErrors((prev) => ({ ...prev, activity: undefined }));
     setSelectedActivityId(activity.id);
     // Clear goal if it doesn't match the new activity type
     if (selectedGoalId) {
@@ -190,6 +200,11 @@ export function BlockEditor({
           <View style={styles.dayBadge}>
             <Text style={styles.dayBadgeText}>{getDayName(dayOfWeek)}</Text>
           </View>
+          {errors.other && (
+            <Text accessibilityLiveRegion="polite" style={styles.fieldError}>
+              {errors.other}
+            </Text>
+          )}
 
           {/* Time Range */}
           <View style={styles.section}>
@@ -197,10 +212,15 @@ export function BlockEditor({
             <TimeRangePicker
               startTime={startTime}
               endTime={endTime}
-              onStartTimeChange={setStartTime}
-              onEndTimeChange={setEndTime}
+              onStartTimeChange={handleStartTimeChange}
+              onEndTimeChange={handleEndTimeChange}
               minuteInterval={15}
             />
+            {errors.time && (
+              <Text accessibilityLiveRegion="polite" style={styles.fieldError}>
+                {errors.time}
+              </Text>
+            )}
           </View>
 
           {/* Activity Type */}
@@ -211,6 +231,11 @@ export function BlockEditor({
               onSelect={handleActivitySelect}
               layout="grid"
             />
+            {errors.activity && (
+              <Text accessibilityLiveRegion="polite" style={styles.fieldError}>
+                {errors.activity}
+              </Text>
+            )}
           </View>
 
           {/* Goal (optional) */}
@@ -404,6 +429,11 @@ const styles = StyleSheet.create({
   },
   section: {
     marginBottom: spacing.xl,
+  },
+  fieldError: {
+    fontSize: 13,
+    color: colors.error,
+    marginTop: spacing.sm,
   },
   sectionHeader: {
     flexDirection: 'row',

@@ -1,6 +1,6 @@
 import React, { useEffect, useState, useSyncExternalStore } from 'react';
 import { StatusBar } from 'expo-status-bar';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, Text, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
@@ -18,8 +18,10 @@ import {
 import { ThemeProvider, useTheme, colors, darkColors } from './src/theme';
 import { OnboardingScreen } from './src/screens';
 import {
+  DialogProvider,
   QuarantineNotice,
   RepairNotice,
+  useDialog,
   isHydrationNoticeVisible,
   type QuarantineReport,
   type RepairReport,
@@ -56,6 +58,7 @@ function AppContent() {
   const completeOnboarding = useAppStore((state) => state.completeOnboarding);
   const hasCompletedOnboarding = useHasCompletedOnboarding();
   const { isDark, colors: themeColors } = useTheme();
+  const dialog = useDialog();
   const hydration = useSyncExternalStore(
     subscribeHydration,
     getHydrationSnapshot,
@@ -105,23 +108,21 @@ function AppContent() {
   }
 
   if (hydration.status === 'error') {
-    const confirmReset = () => {
-      Alert.alert(
-        'Reset local data?',
-        'This removes ZenRoutine data stored on this device. Use this only if retrying does not work.',
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Reset data',
-            style: 'destructive',
-            onPress: () => {
-              void resetAppStoreAfterHydrationError().catch(() => {
-                Alert.alert('Reset failed', 'ZenRoutine could not reset local data.');
-              });
-            },
-          },
-        ]
-      );
+    const confirmReset = async () => {
+      const confirmed = await dialog.confirm({
+        title: 'Reset local data?',
+        message:
+          'This removes ZenRoutine data stored on this device. Use this only if retrying does not work.',
+        confirmLabel: 'Reset data',
+        destructive: true,
+      });
+      if (!confirmed) return;
+      void resetAppStoreAfterHydrationError().catch(() => {
+        void dialog.notify({
+          title: 'Reset failed',
+          message: 'ZenRoutine could not reset local data.',
+        });
+      });
     };
 
     return (
@@ -199,7 +200,9 @@ export default function App() {
     <GestureHandlerRootView style={styles.container}>
       <SafeAreaProvider>
         <ThemeProvider initialMode="system">
-          <AppContent />
+          <DialogProvider>
+            <AppContent />
+          </DialogProvider>
         </ThemeProvider>
       </SafeAreaProvider>
     </GestureHandlerRootView>
