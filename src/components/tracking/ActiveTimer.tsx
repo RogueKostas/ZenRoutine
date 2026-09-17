@@ -3,7 +3,27 @@ import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useCurrentTracking, useActivityTypes, useAppStore } from '../../store';
-import { formatDuration } from '../../core/utils/time';
+import { formatElapsed, getElapsedSeconds } from '../../core/utils/time';
+
+// Elapsed seconds are held in state so every tick changes it and re-renders; each tick
+// recomputes from the start time rather than counting, so throttled background tabs catch up.
+function useElapsedSeconds(startTime: string | undefined): number {
+  const [elapsedSeconds, setElapsedSeconds] = useState(0);
+
+  useEffect(() => {
+    if (!startTime) {
+      setElapsedSeconds(0);
+      return;
+    }
+
+    const update = () => setElapsedSeconds(getElapsedSeconds(startTime, Date.now()));
+    update();
+    const interval = setInterval(update, 1000);
+    return () => clearInterval(interval);
+  }, [startTime]);
+
+  return elapsedSeconds;
+}
 
 interface ActiveTimerProps {
   onPress?: () => void;
@@ -15,28 +35,8 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const { stopTracking } = useAppStore();
-  const [elapsedMinutes, setElapsedMinutes] = useState(0);
+  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
   const [pulseAnim] = useState(() => new Animated.Value(1));
-
-  // Calculate elapsed time
-  useEffect(() => {
-    if (!activeTracking) {
-      setElapsedMinutes(0);
-      return;
-    }
-
-    const calculateElapsed = () => {
-      const startTime = new Date(activeTracking.startTime).getTime();
-      const now = Date.now();
-      const diffMinutes = Math.floor((now - startTime) / 60000);
-      setElapsedMinutes(diffMinutes);
-    };
-
-    calculateElapsed();
-    const interval = setInterval(calculateElapsed, 1000);
-
-    return () => clearInterval(interval);
-  }, [activeTracking]);
 
   // Pulse animation for the recording indicator
   useEffect(() => {
@@ -73,13 +73,7 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
   }
 
   const activity = activityTypes.find((a) => a.id === activeTracking.activityTypeId);
-  const hours = Math.floor(elapsedMinutes / 60);
-  const minutes = elapsedMinutes % 60;
-  const seconds = Math.floor((Date.now() - new Date(activeTracking.startTime).getTime()) / 1000) % 60;
-
-  const timeDisplay = hours > 0
-    ? `${hours}:${minutes.toString().padStart(2, '0')}:${seconds.toString().padStart(2, '0')}`
-    : `${minutes}:${seconds.toString().padStart(2, '0')}`;
+  const timeDisplay = formatElapsed(elapsedSeconds);
 
   if (compact) {
     return (
@@ -121,7 +115,7 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
 
         <View style={styles.timerSection}>
           <Text style={styles.timerDisplay}>{timeDisplay}</Text>
-          <Text style={styles.timerLabel}>{formatDuration(elapsedMinutes)} elapsed</Text>
+          <Text style={styles.timerLabel}>elapsed</Text>
         </View>
       </View>
 
@@ -144,35 +138,17 @@ export function ActiveTimer({ onPress, compact = false, onStopped }: ActiveTimer
 export function ActiveTimerMini({ onPress }: { onPress?: () => void }) {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
-  const [seconds, setSeconds] = useState(0);
-
-  useEffect(() => {
-    if (!activeTracking) return;
-
-    const updateTime = () => {
-      const startTime = new Date(activeTracking.startTime).getTime();
-      const elapsed = Math.floor((Date.now() - startTime) / 1000);
-      setSeconds(elapsed);
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, [activeTracking]);
+  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
 
   if (!activeTracking) return null;
 
   const activity = activityTypes.find((a) => a.id === activeTracking.activityTypeId);
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
 
   return (
     <TouchableOpacity style={styles.miniContainer} onPress={onPress}>
       <View style={styles.miniDot} />
       <Text style={styles.miniIcon}>{activity?.icon}</Text>
-      <Text style={styles.miniTime}>
-        {mins}:{secs.toString().padStart(2, '0')}
-      </Text>
+      <Text style={styles.miniTime}>{formatElapsed(elapsedSeconds)}</Text>
     </TouchableOpacity>
   );
 }
@@ -182,30 +158,16 @@ export function ActiveTimerLarge() {
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const { stopTracking } = useAppStore();
-  const [elapsed, setElapsed] = useState({ hours: 0, minutes: 0, seconds: 0 });
-
-  useEffect(() => {
-    if (!activeTracking) return;
-
-    const updateTime = () => {
-      const startTime = new Date(activeTracking.startTime).getTime();
-      const diff = Date.now() - startTime;
-      const totalSeconds = Math.floor(diff / 1000);
-      setElapsed({
-        hours: Math.floor(totalSeconds / 3600),
-        minutes: Math.floor((totalSeconds % 3600) / 60),
-        seconds: totalSeconds % 60,
-      });
-    };
-
-    updateTime();
-    const interval = setInterval(updateTime, 1000);
-    return () => clearInterval(interval);
-  }, [activeTracking]);
+  const elapsedSeconds = useElapsedSeconds(activeTracking?.startTime);
 
   if (!activeTracking) return null;
 
   const activity = activityTypes.find((a) => a.id === activeTracking.activityTypeId);
+  const elapsed = {
+    hours: Math.floor(elapsedSeconds / 3600),
+    minutes: Math.floor((elapsedSeconds % 3600) / 60),
+    seconds: elapsedSeconds % 60,
+  };
 
   return (
     <View style={styles.largeContainer}>

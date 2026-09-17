@@ -5,7 +5,6 @@ import {
   StyleSheet,
   ScrollView,
   TouchableOpacity,
-  Alert,
   ActivityIndicator,
   Modal,
   Share,
@@ -14,6 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useAppStore, useActivityTypes } from '../store';
+import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { ThemeMode } from '../theme';
 
@@ -82,16 +82,19 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   const { colors, mode, setMode, isDark } = useTheme();
   const activityTypes = useActivityTypes();
   const { resetState, exportData, importData, _addSampleData } = useAppStore();
+  const dialog = useDialog();
 
-  const handleThemeChange = () => {
-    Alert.alert(
-      'Theme',
-      'Choose your preferred theme',
-      THEME_OPTIONS.map((option) => ({
-        text: option.label + (mode === option.value ? ' ✓' : ''),
-        onPress: () => setMode(option.value),
-      }))
-    );
+  const handleThemeChange = async () => {
+    const choice = await dialog.choose({
+      title: 'Theme',
+      message: 'Choose your preferred theme',
+      options: THEME_OPTIONS.map((option) => ({
+        label: option.label,
+        value: option.value,
+        selected: mode === option.value,
+      })),
+    });
+    if (choice) setMode(choice);
   };
 
   const getThemeLabel = () => {
@@ -144,49 +147,42 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
     setBackupMode(null);
     setBackupText('');
     setBackupError(null);
-    Alert.alert('Import complete', 'Your ZenRoutine backup has been restored.');
+    void dialog.notify({
+      title: 'Import complete',
+      message: 'Your ZenRoutine backup has been restored.',
+    });
   };
 
-  const handleResetData = () => {
-    Alert.alert(
-      'Reset All Data',
-      'This will permanently delete all your goals, routines, and tracking history. This cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Reset',
-          style: 'destructive',
-          onPress: async () => {
-            try {
-              await resetState();
-              Alert.alert('Success', 'All data has been reset.');
-            } catch {
-              Alert.alert(
-                'Reset failed',
-                'Your existing data was left unchanged. Please try again.'
-              );
-            }
-          },
-        },
-      ]
-    );
+  const handleResetData = async () => {
+    const confirmed = await dialog.confirm({
+      title: 'Reset All Data',
+      message:
+        'This will permanently delete all your goals, routines, and tracking history. This cannot be undone.',
+      confirmLabel: 'Reset',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    try {
+      await resetState();
+      void dialog.notify({ title: 'Success', message: 'All data has been reset.' });
+    } catch {
+      void dialog.notify({
+        title: 'Reset failed',
+        message: 'Your existing data was left unchanged. Please try again.',
+      });
+    }
   };
 
-  const handleLoadSampleData = () => {
-    Alert.alert(
-      'Load Sample Data',
-      'This will add sample goals, routines, and tracking entries to help you explore the app.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Load',
-          onPress: () => {
-            _addSampleData();
-            Alert.alert('Success', 'Sample data has been loaded.');
-          },
-        },
-      ]
-    );
+  const handleLoadSampleData = async () => {
+    const confirmed = await dialog.confirm({
+      title: 'Load Sample Data',
+      message:
+        'This will add sample goals, routines, and tracking entries to help you explore the app.',
+      confirmLabel: 'Load',
+    });
+    if (!confirmed) return;
+    _addSampleData();
+    void dialog.notify({ title: 'Success', message: 'Sample data has been loaded.' });
   };
 
   return (
@@ -273,7 +269,9 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
               title="Privacy Policy"
-              onPress={() => Alert.alert('Privacy', 'Your data stays on your device.')}
+              onPress={() =>
+                void dialog.notify({ title: 'Privacy', message: 'Your data stays on your device.' })
+              }
             />
           </View>
         </View>

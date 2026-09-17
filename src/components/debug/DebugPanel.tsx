@@ -6,8 +6,8 @@ import {
   TouchableOpacity,
   StyleSheet,
   TextInput,
-  Alert,
 } from 'react-native';
+import { useDialog } from '../common/Dialog';
 import {
   useAppStore,
   useActivityTypes,
@@ -27,6 +27,7 @@ export function DebugPanel() {
   const [newGoalMinutes, setNewGoalMinutes] = useState('60');
   const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
   const [predictions, setPredictions] = useState<PredictionResult[]>([]);
+  const dialog = useDialog();
 
   const activityTypes = useActivityTypes();
   const goals = useGoals();
@@ -66,7 +67,7 @@ export function DebugPanel() {
 
   const handleAddGoal = () => {
     if (!newGoalName.trim() || !selectedActivityId) {
-      Alert.alert('Error', 'Please enter a goal name and select an activity type');
+      void dialog.notify({ title: 'Error', message: 'Please enter a goal name and select an activity type' });
       return;
     }
     const minutes = parseInt(newGoalMinutes, 10) || 60;
@@ -82,7 +83,7 @@ export function DebugPanel() {
 
   const handleAddBlock = () => {
     if (!activeRoutine || !selectedActivityId) {
-      Alert.alert('Error', 'Please select a routine and activity type');
+      void dialog.notify({ title: 'Error', message: 'Please select a routine and activity type' });
       return;
     }
     const now = new Date();
@@ -97,7 +98,7 @@ export function DebugPanel() {
 
   const handleStartTracking = () => {
     if (!selectedActivityId) {
-      Alert.alert('Error', 'Please select an activity type');
+      void dialog.notify({ title: 'Error', message: 'Please select an activity type' });
       return;
     }
     startTracking({
@@ -106,15 +107,14 @@ export function DebugPanel() {
     });
   };
 
-  const handleReset = () => {
-    Alert.alert(
-      'Reset All Data',
-      'This will delete all your data. Are you sure?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        { text: 'Reset', style: 'destructive', onPress: resetState },
-      ]
-    );
+  const handleReset = async () => {
+    const confirmed = await dialog.confirm({
+      title: 'Reset All Data',
+      message: 'This will delete all your data. Are you sure?',
+      confirmLabel: 'Reset',
+      destructive: true,
+    });
+    if (confirmed) await resetState();
   };
 
   const renderSection = () => {

@@ -54,6 +54,39 @@ export function formatDuration(minutes: number): string {
 }
 
 /**
+ * Format a live elapsed-seconds count as "M:SS" under an hour, "H:MM:SS" from an hour up.
+ * Negative or non-finite input clamps to 0.
+ */
+export function formatElapsed(seconds: number): string {
+  const total = Number.isFinite(seconds) ? Math.max(0, Math.floor(seconds)) : 0;
+  const hours = Math.floor(total / 3600);
+  const minutes = Math.floor((total % 3600) / 60);
+  const secs = (total % 60).toString().padStart(2, '0');
+  if (hours === 0) return `${minutes}:${secs}`;
+  return `${hours}:${minutes.toString().padStart(2, '0')}:${secs}`;
+}
+
+/**
+ * Whole seconds between an ISO start time and `nowMs`. Derived from the clock on every call,
+ * so a timer that was throttled in a background tab is correct as soon as it ticks again.
+ */
+export function getElapsedSeconds(startTime: string, nowMs: number): number {
+  const start = new Date(startTime).getTime();
+  if (!Number.isFinite(start) || !Number.isFinite(nowMs)) return 0;
+  return Math.max(0, Math.floor((nowMs - start) / 1000));
+}
+
+/**
+ * Goal progress figures, e.g. "4h / 20h". These are lifetime goal totals, so no period is
+ * claimed. Without a positive estimate only the logged time is shown.
+ */
+export function formatGoalTimeLabel(loggedMinutes: number, estimatedMinutes?: number): string {
+  const logged = formatDuration(Math.max(0, loggedMinutes));
+  if (estimatedMinutes === undefined || !(estimatedMinutes > 0)) return `${logged} logged`;
+  return `${logged} / ${formatDuration(estimatedMinutes)}`;
+}
+
+/**
  * Get day name from day of week number
  */
 export function getDayName(dayOfWeek: number, short: boolean = false): string {

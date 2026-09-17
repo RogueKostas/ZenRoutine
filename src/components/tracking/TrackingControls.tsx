@@ -6,11 +6,11 @@ import {
   TouchableOpacity,
   Modal,
   TextInput,
-  Alert,
 } from 'react-native';
 import { colors } from '../../theme/colors';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useCurrentTracking, useActivityTypes, useAppStore } from '../../store';
+import { useDialog } from '../common/Dialog';
 
 interface TrackingControlsProps {
   onStopped?: () => void;
@@ -24,6 +24,7 @@ export function TrackingControls({ onStopped, showNotes = true }: TrackingContro
 
   const [showStopModal, setShowStopModal] = useState(false);
   const [notes, setNotes] = useState('');
+  const dialog = useDialog();
 
   const handleStop = useCallback(() => {
     if (!activeTracking) return;
@@ -49,27 +50,21 @@ export function TrackingControls({ onStopped, showNotes = true }: TrackingContro
     onStopped?.();
   }, [activeTracking, notes, updateTrackingEntry, stopTracking, onStopped]);
 
-  const handleDiscard = useCallback(() => {
+  const handleDiscard = useCallback(async () => {
     if (!activeTracking) return;
 
-    Alert.alert(
-      'Discard tracking?',
-      'This will delete this tracking session. This action cannot be undone.',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: () => {
-            const { deleteTrackingEntry } = useAppStore.getState();
-            deleteTrackingEntry(activeTracking.id);
-            setShowStopModal(false);
-            onStopped?.();
-          },
-        },
-      ]
-    );
-  }, [activeTracking, onStopped]);
+    const confirmed = await dialog.confirm({
+      title: 'Discard tracking?',
+      message: 'This will delete this tracking session. This action cannot be undone.',
+      confirmLabel: 'Discard',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    const { deleteTrackingEntry } = useAppStore.getState();
+    deleteTrackingEntry(activeTracking.id);
+    setShowStopModal(false);
+    onStopped?.();
+  }, [activeTracking, onStopped, dialog]);
 
   if (!activeTracking) return null;
 
@@ -182,6 +177,7 @@ export function TrackingControlsSheet({
   const activityTypes = useActivityTypes();
   const { stopTracking, deleteTrackingEntry } = useAppStore();
   const [notes, setNotes] = useState('');
+  const dialog = useDialog();
 
   const handleSave = useCallback(() => {
     if (!activeTracking) return;
@@ -190,26 +186,20 @@ export function TrackingControlsSheet({
     onClose();
   }, [activeTracking, stopTracking, onClose]);
 
-  const handleDiscard = useCallback(() => {
+  const handleDiscard = useCallback(async () => {
     if (!activeTracking) return;
 
-    Alert.alert(
-      'Discard?',
-      'Delete this tracking session?',
-      [
-        { text: 'Cancel', style: 'cancel' },
-        {
-          text: 'Discard',
-          style: 'destructive',
-          onPress: () => {
-            deleteTrackingEntry(activeTracking.id);
-            setNotes('');
-            onClose();
-          },
-        },
-      ]
-    );
-  }, [activeTracking, deleteTrackingEntry, onClose]);
+    const confirmed = await dialog.confirm({
+      title: 'Discard?',
+      message: 'Delete this tracking session?',
+      confirmLabel: 'Discard',
+      destructive: true,
+    });
+    if (!confirmed) return;
+    deleteTrackingEntry(activeTracking.id);
+    setNotes('');
+    onClose();
+  }, [activeTracking, deleteTrackingEntry, onClose, dialog]);
 
   if (!activeTracking) return null;
 
