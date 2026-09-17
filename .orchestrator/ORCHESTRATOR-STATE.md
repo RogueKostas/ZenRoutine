@@ -745,3 +745,64 @@ main = ed0c771. Local and remote refs read back equal.
 No wake is scheduled. No lanes are running. `git worktree list` shows only the main checkout.
 Open: #38 (small, schedulable), #11/#15/#31/#34/#35 (director), #12/#13/#14 (product-sized).
 
+
+
+## Pass 10 - 2026-09-17 ~15:00-16:20 local - ITERATION 1 RESUMES
+
+### Authority, restated
+Director (Kostas, 17 Sep, in the Claude Code desktop session): approved `docs/ITERATION-1-GOAL.md`
+("go for it"). That plan grants: merge green PRs to main without asking (= deploy), push lane
+branches, close issues via PRs, commit the design doc. Runs Waves A-C, posting at each wave boundary
+without stopping; stop only on its section 7 conditions. The previous agent's suggestion to stop at
+Wave A was offered by the director as FYI; the director chose the goal plan.
+
+### Transport change
+The orchestrator now runs in Claude Code ON THE HOST (not Cowork + windows-bridge). Scripts are still
+C:\CoworkBridge\scripts\*, invoked directly. `. C:\CoworkBridge\tools\env.ps1` is still required for
+node/npm (node is NOT on the default PATH - measured). No python on the host (measured) -
+lane-result.py cannot run; parse claude.out with grep/node instead.
+Lane watcher: scratchpad watch-lanes.sh under the Monitor tool (emits on result event / DEADLINE /
+PID gone without result), 30 min expiry, re-armed.
+Browser verification: `.claude/launch.json` config `lane-dist` serves C:\CoworkBridge\lanes\_verify\dist
+(copy a lane's dist there) via C:\CoworkBridge\tools\serve-dist.js on :8765. `.claude/` is in
+.git/info/exclude.
+
+### Config changes (tracked file, committed with this entry)
+laneTimeoutMin 45 -> 75 (Iteration 1 lanes are UI features, larger than the bug lanes of passes 2-9).
+allowed += grep, cat, head, tail, wc, git grep (read-only).
+
+### Pre-flight - measured
+identity: gh login RogueKostas, git email kostas@roguesun.com (matches config).
+main @ 41a90cc: npm ci ok, typecheck exit 0, **129 tests / 8 files**, build:web `Exported: dist`.
+Deploy https://zenroutine-web.onrender.com loads (in-app browser, 17 Sep ~15:55). At 800px the
+onboarding renders all five slides squashed side by side - #40 confirmed live, and worse than the
+review described (width maths wrong as well as scroll).
+PR #65 (the goal plan) - CI green - merged, main = a831cb0.
+
+### #59 - orchestrator-owned, in progress
+The OneDrive `converted/images/pageNN_img1.png` set is the DRAWING LAYER ONLY (no typed text) and
+nearly every page is FLIPPED VERTICALLY (measured by transcription agents on p03, p08-p21, p44-p64).
+Replaced as a source: the original PDF renders correctly through the built-in WinRT
+`Windows.Data.Pdf` API under Windows PowerShell 5.1 (scratchpad render-pdf.ps1) - no download,
+typed text + annotations, correct orientation. 85 pages -> JPEG q80 1200px = 8.4 MB.
+Four transcription subagents + one verification subagent on the full renders.
+
+### Deviation from the plan, stated
+Wave A batch 1 dispatched BEFORE #59 lands. None of the four touches design-derived behaviour (dialogs,
+onboarding paging, timer seconds, calendar access); #59's own text scopes its precondition to the
+re-alignment work (Wave B). Batch 2 and later briefs will cite DESIGN-2019.md.
+
+### Launched - Wave A batch 1 (collision-sequenced)
+| lane | issues | backend | owns |
+|---|---|---|---|
+| web-dialogs | #39 | claude | new Dialog + all Alert.alert sites (Settings, ActivityTypes, Routine, BlockEditor, TrackingControls, DebugPanel), App.tsx provider |
+| first-run | #40, #62 | claude | OnboardingScreen, Home empty state, _addSampleData only |
+| timer-units | #42, #41 | claude | ActiveTimer, QuickStart, time.ts (add only) |
+| calendar-home | #47 | claude | AnalyticsScreen segmented view, CalendarScreen -> component, nav route removal |
+All four showed an init event within a minute.
+
+Held for batch 2, with reasons: #38 sidecar-merge (useAppStore.ts - first-run edits _addSampleData
+there); #44 week-start (CalendarScreen - calendar-home moving it; Settings - web-dialogs in it);
+#43+#46 goals-inputs; #45 time picker (BlockEditor - web-dialogs in it).
+Reconciled in the calendar-home brief: #47 says "reachable without Analytics"; ITERATION-1-PLAN
+(later, authoritative) says Analytics segmented view. Followed the plan.
