@@ -806,3 +806,48 @@ there); #44 week-start (CalendarScreen - calendar-home moving it; Settings - web
 #43+#46 goals-inputs; #45 time picker (BlockEditor - web-dialogs in it).
 Reconciled in the calendar-home brief: #47 says "reachable without Analytics"; ITERATION-1-PLAN
 (later, authoritative) says Analytics segmented view. Followed the plan.
+
+
+## Pass 11 - 2026-09-17 ~16:10-16:40 local
+
+### Landed - each gated by me on its own merged tree AND clicked through on its web build
+| PR | lane | issues | tests after | browser evidence (localhost:8765 serving the merged-tree dist) |
+|---|---|---|---|---|
+| #66 | timer-units | #42, #41 | 137 | timer ticks 0:03 -> 0:07 -> 0:13, 1920 + 400 |
+| #67 | calendar-home | #47 | 139 | Breakdown / Calendar segments, "Activity calendar", 400 + 1920 |
+| #68 | web-dialogs | #39 | 158 | Privacy notify + Escape; Load Sample Data confirm -> Success; copy-day Replace confirm; Delete Block confirm renders ABOVE the editor sheet |
+| #69 | first-run | #40, #62 | 172 | five distinct slides at 400; example data -> populated Home; Goals shows high/medium/low |
+| #70 | (orchestrator) | #59 | - | DESIGN-2019.md + 85 page images; 12/12 review annotations grep-found; p65 eyeballed |
+| #71 | goals-inputs | #43, #46 | 221 | chips 44px (were ~265); estimate echo 1h30 / 12 / abc; empty-Home offer seen |
+| #72 | inline-pickers | #45 (half) | 261 | inline Start/End fields, no Select Time screen; 5pm -> 8h |
+#45 left OPEN: its New Goal half belongs to Wave B (#50/#51); commented on the issue.
+
+### Lane corrections to MY briefs - all accepted
+- timer-units: the 0:00 freeze was a React bail-out (state never changed within a minute), not formatDuration.
+- calendar-home: the "tracking calendar" shows the ROUTINE + predicted completions, never tracking entries (the 14 Sep review's D8 is wrong too). Titled "Activity calendar"; naming is a director call.
+- web-dialogs: 25 sites not 23 (App.tsx); deleteActivityType never throws, so "Cannot Delete" was unreachable - now checked after the fact.
+- first-run: the old sample data could never be confident (scheduleChangedAt = now) and could hide a real routine.
+- goals-inputs: alignItems alone doesn't fix #43 - RNW gives every ScrollView flexGrow 1.
+- inline-pickers: end < start is an OVERNIGHT block by design of the existing validation; not rejected.
+- MY decision, stated on PR #71: a bare estimate number means HOURS (design pp. 57-58) over #46's "bare = minutes".
+
+### Tooling learned this pass
+- claude 2.1.274 writes the result event with "type":"result" NOT first -> watcher matched `^{"type":"result"` and
+  reported timer-units as "exited without result". Fixed (grep total_cost_usd AND type result);
+  C:\CoworkBridge\tools\lane-result.js parses JSON properly (python is absent). lane-status.ps1 NOT re-checked for this.
+- C:\CoworkBridge\tools\lane-pr.ps1: PR body = <lane>-log/pr-head.md + lane result. Avoids PowerShell quote hell.
+- `gh pr merge --delete-branch` also removes the local lane worktree.
+- In-app browser screenshots/clicks time out when the Claude window is not drawn; find/form_input/javascript still work.
+  Sheet slide-in animations never finish in that state.
+
+### In flight
+| lane | issues | owns |
+|---|---|---|
+| week-start | #44 | preferences.weekStartsOn + schema v5 migration, time.ts week helpers, Routine/Calendar/Analytics/Settings/Home week figures |
+| forecast-engine | #52 part 1 | NEW src/core/engine/forecast.ts only (pure fill-forward; ignores goalId and priority) |
+
+### Order from here
+Wave A: #44 lands -> #38 sidecar-merge (persistence, after #44's migration) -> Wave A gate on the DEPLOYED build.
+Wave B: #60 (after #44 + #38: touches persistence migration) -> #49 -> #50+#51 (one lane) ; #55 after forecast-engine
+(Home needs "which goal is scheduled now", which is an allocation question). #48 folds into #60.
+Deploy: live bundle now renders one onboarding slide at a time (#69 is live). Bundle hash check at the wave gate.
