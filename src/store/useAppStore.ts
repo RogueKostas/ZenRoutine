@@ -59,10 +59,20 @@ export type ImportResult =
   | { ok: true }
   | { ok: false; error: string };
 
+<<<<<<< HEAD
 /** `reason` is a sentence fit to show the user. */
 export type RoutineBlocksUpdateResult =
   | { ok: true }
   | { ok: false; reason: string };
+=======
+/** A goal edit. `null` removes the optional type or estimate (#50); leaving a key out keeps it. */
+export type GoalUpdate = Partial<
+  Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'order' | 'activityTypeId' | 'estimatedMinutes'>
+> & {
+  activityTypeId?: string | null;
+  estimatedMinutes?: number | null;
+};
+>>>>>>> origin/main
 
 export type HydrationSnapshot =
   | { status: 'idle' | 'loading' | 'ready'; error: null }
@@ -242,29 +252,57 @@ function ensureRequiredDefaults(state: AppState): AppState {
   };
 }
 
+/**
+ * `goal` with its optional type and estimate set to exactly these values (#50). An unset field is
+ * left off the object rather than stored as `undefined`, so an edited goal has the same shape as
+ * one read back from storage.
+ */
+function withGoalTypeAndEstimate(
+  goal: Goal,
+  activityTypeId: string | undefined,
+  estimatedMinutes: number | undefined
+): Goal {
+  const { activityTypeId: _type, estimatedMinutes: _estimate, ...rest } = goal;
+  return {
+    ...rest,
+    ...(activityTypeId !== undefined ? { activityTypeId } : {}),
+    ...(estimatedMinutes !== undefined ? { estimatedMinutes } : {}),
+  };
+}
+
+/**
+ * A goal's progress after its logged time or estimate changes. With no estimate (#50) there is
+ * nothing to meet: the goal never completes itself, and removing an estimate does not reopen a
+ * goal that is done.
+ */
 function applyGoalProgressChange(
   goal: Goal,
   nextLoggedMinutes: number,
-  nextEstimatedMinutes: number,
+  nextEstimatedMinutes: number | undefined,
   now: string
 ): Goal {
   const loggedMinutes = Math.max(0, nextLoggedMinutes);
-  const previouslyMetEstimate = goal.loggedMinutes >= goal.estimatedMinutes;
-  const meetsEstimate = loggedMinutes >= nextEstimatedMinutes;
+  const previouslyMetEstimate =
+    goal.estimatedMinutes !== undefined && goal.loggedMinutes >= goal.estimatedMinutes;
+  const meetsEstimate = nextEstimatedMinutes !== undefined && loggedMinutes >= nextEstimatedMinutes;
   let status = goal.status;
   let completedAt = goal.status === 'completed' ? goal.completedAt : undefined;
 
   if (meetsEstimate && status !== 'completed') {
     status = 'completed';
     completedAt = now;
-  } else if (!meetsEstimate && previouslyMetEstimate && status === 'completed') {
+  } else if (
+    nextEstimatedMinutes !== undefined &&
+    !meetsEstimate &&
+    previouslyMetEstimate &&
+    status === 'completed'
+  ) {
     status = 'active';
     completedAt = undefined;
   }
 
   return {
-    ...goal,
-    estimatedMinutes: nextEstimatedMinutes,
+    ...withGoalTypeAndEstimate(goal, goal.activityTypeId, nextEstimatedMinutes),
     loggedMinutes,
     status,
     completedAt: status === 'completed' ? completedAt ?? now : undefined,
@@ -493,10 +531,16 @@ interface AppActions {
   reorderActivityTypes: (ids: string[]) => void;
 
   // Goal Actions
-  /** Adds the goal at the bottom of the list. */
+  /**
+   * Adds the goal at the bottom of the list. Only the name is required (#50): the type and the
+   * estimate may be left out.
+   */
   addGoal: (data: Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'loggedMinutes' | 'status' | 'order'>) => string | null;
-  /** Cannot move a goal: list position changes only through `moveGoal`. */
-  updateGoal: (id: string, data: Partial<Omit<Goal, 'id' | 'createdAt' | 'updatedAt' | 'order'>>) => void;
+  /**
+   * Cannot move a goal: list position changes only through `moveGoal`. `null` removes the type or
+   * the estimate; a type cannot change, or be removed, while tracking entries are linked to the goal.
+   */
+  updateGoal: (id: string, data: GoalUpdate) => void;
   /** The other goals keep their relative order. */
   deleteGoal: (id: string) => void;
   /**
@@ -647,9 +691,10 @@ export const useAppStore = create<AppStore>()(
         const state = get();
         if (
           !data.name.trim() ||
-          !Number.isInteger(data.estimatedMinutes) ||
-          data.estimatedMinutes <= 0 ||
-          !state.activityTypes.some((activity) => activity.id === data.activityTypeId)
+          (data.estimatedMinutes !== undefined &&
+            (!Number.isInteger(data.estimatedMinutes) || data.estimatedMinutes <= 0)) ||
+          (data.activityTypeId !== undefined &&
+            !state.activityTypes.some((activity) => activity.id === data.activityTypeId))
         ) {
           return null;
         }
@@ -657,18 +702,20 @@ export const useAppStore = create<AppStore>()(
         const now = new Date().toISOString();
         set((state) => {
           // Built field by field so a stray key (a caller still passing `priority`) is not stored.
-          const newGoal: Goal = {
-            id,
-            name: data.name,
-            description: data.description,
-            estimatedMinutes: data.estimatedMinutes,
-            loggedMinutes: 0,
-            activityTypeId: data.activityTypeId,
-            status: 'active',
-            order: nextGoalOrder(state.goals),
-            createdAt: now,
-            updatedAt: now,
-          };
+          const newGoal: Goal = withGoalTypeAndEstimate(
+            {
+              id,
+              name: data.name,
+              description: data.description ?? '',
+              loggedMinutes: 0,
+              status: 'active',
+              order: nextGoalOrder(state.goals),
+              createdAt: now,
+              updatedAt: now,
+            },
+            data.activityTypeId,
+            data.estimatedMinutes
+          );
           return { goals: [...state.goals, newGoal] };
         });
         return id;
@@ -679,31 +726,43 @@ export const useAppStore = create<AppStore>()(
           goals: state.goals.map((goal) => {
             if (goal.id !== id) return goal;
             const now = new Date().toISOString();
-            const estimatedMinutes = data.estimatedMinutes ?? goal.estimatedMinutes;
+            // `null` removes the field; a missing key keeps the goal's own value.
+            const estimatedMinutes = data.estimatedMinutes === null
+              ? undefined
+              : data.estimatedMinutes ?? goal.estimatedMinutes;
             const loggedMinutes = data.loggedMinutes ?? goal.loggedMinutes;
-            const activityTypeId = data.activityTypeId ?? goal.activityTypeId;
+            const activityTypeId = data.activityTypeId === null
+              ? undefined
+              : data.activityTypeId ?? goal.activityTypeId;
             const changesLinkedActivity = activityTypeId !== goal.activityTypeId &&
               state.trackingEntries.some((entry) => entry.goalId === goal.id);
             if (
               !(data.name ?? goal.name).trim() ||
-              !Number.isInteger(estimatedMinutes) ||
-              estimatedMinutes <= 0 ||
+              (estimatedMinutes !== undefined &&
+                (!Number.isInteger(estimatedMinutes) || estimatedMinutes <= 0)) ||
               !Number.isInteger(loggedMinutes) ||
               !Number.isFinite(loggedMinutes) ||
-              !state.activityTypes.some((activity) => activity.id === activityTypeId) ||
+              (activityTypeId !== undefined &&
+                !state.activityTypes.some((activity) => activity.id === activityTypeId)) ||
               changesLinkedActivity
             ) {
               return goal;
             }
             const explicitlyRequestedStatus = data.status;
-            const merged = {
-              ...goal,
-              ...data,
-              // Position is the list's, not the goal's to edit: only `moveGoal` changes it.
-              order: goal.order,
-              completedAt: goal.completedAt,
-              updatedAt: now,
-            };
+            const merged = withGoalTypeAndEstimate(
+              {
+                ...goal,
+                ...data,
+                activityTypeId,
+                estimatedMinutes,
+                // Position is the list's, not the goal's to edit: only `moveGoal` changes it.
+                order: goal.order,
+                completedAt: goal.completedAt,
+                updatedAt: now,
+              },
+              activityTypeId,
+              estimatedMinutes
+            );
 
             if (explicitlyRequestedStatus) {
               return {
@@ -718,19 +777,22 @@ export const useAppStore = create<AppStore>()(
               };
             }
 
-            return {
-              ...merged,
-              ...applyGoalProgressChange(
-                goal,
-                loggedMinutes,
-                estimatedMinutes,
-                now
-              ),
-              name: data.name ?? goal.name,
-              description: data.description ?? goal.description,
+            return withGoalTypeAndEstimate(
+              {
+                ...merged,
+                ...applyGoalProgressChange(
+                  goal,
+                  loggedMinutes,
+                  estimatedMinutes,
+                  now
+                ),
+                name: data.name ?? goal.name,
+                description: data.description ?? goal.description,
+                createdAt: goal.createdAt,
+              },
               activityTypeId,
-              createdAt: goal.createdAt,
-            };
+              estimatedMinutes
+            );
           }),
         }));
       },
@@ -1663,12 +1725,20 @@ export const useGoals = () => useAppStore((s) => s.goals);
 export const useRoutines = () => useAppStore((s) => s.routines);
 export const useTrackingEntries = () => useAppStore((s) => s.trackingEntries);
 
+/**
+ * Active goals in list order (Home's "Active Goals"). A goal with no type or estimate (#50) is
+ * still an active goal and is listed like any other.
+ */
+export function selectActiveGoals(goals: readonly Goal[]): Goal[] {
+  return goals.filter((g) => g.status === 'active');
+}
+
 // For derived selectors, we select primitive/stable values and compute in the hook
 export const useActiveGoals = () => {
   const goals = useAppStore((s) => s.goals);
   // useMemo would be ideal here, but to keep it simple we'll accept the filter on each render
   // The key fix is that we're selecting `goals` (stable reference) not the filtered result
-  return goals.filter((g) => g.status === 'active');
+  return selectActiveGoals(goals);
 };
 
 export const useActiveRoutine = () => {

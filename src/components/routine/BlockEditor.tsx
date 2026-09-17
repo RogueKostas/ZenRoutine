@@ -13,6 +13,7 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { getDayName, formatDuration } from '../../core/utils/time';
 import { useActivityTypes, useGoals, useAppStore } from '../../store';
 import { validateRoutineBlock, findOverlappingBlocks } from '../../core/engine/validation';
+import { goalProgressPercent } from '../../core/engine/goalList';
 import { TimeRangePicker } from './TimePicker';
 import { findNextAvailableSlot, timeDraftMessage, type TimeDrafts } from './timeFields';
 import { ActivityPicker } from '../activity/ActivityPicker';
@@ -287,7 +288,7 @@ export function BlockEditor({
               {typeGoals.length > 0 ? (
                 <View accessibilityRole="list">
                   {typeGoals.map((goal) => {
-                    const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
+                    const progress = goalProgressPercent(goal) ?? 0;
                     return (
                       <View key={goal.id} style={styles.goalRow}>
                         <Text style={styles.goalRowText} numberOfLines={1}>

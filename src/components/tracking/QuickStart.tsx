@@ -13,6 +13,7 @@ import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes, useGoals, useCurrentTracking, useAppStore } from '../../store';
 import type { ActivityType, Goal } from '../../core/types';
 import { formatGoalTimeLabel } from '../../core/utils/time';
+import { goalAcceptsTrackingFor, goalProgressPercent } from '../../core/engine/goalList';
 
 interface QuickStartProps {
   onTrackingStarted?: (entryId: string) => void;
@@ -40,13 +41,17 @@ export function QuickStart({
     return activityTypes.slice(0, maxActivities);
   }, [activityTypes, maxActivities]);
 
-  // Get goals matching selected activity
+  // Only goals of the tracked type can take its time, so a goal with no type is never listed.
   const matchingGoals = useMemo(() => {
     if (!selectedActivity) return [];
     return goals.filter(
-      (g) => g.activityTypeId === selectedActivity.id && g.status === 'active'
+      (g) => goalAcceptsTrackingFor(g, selectedActivity.id) && g.status === 'active'
     );
   }, [selectedActivity, goals]);
+  const untypedGoalCount = useMemo(
+    () => goals.filter((g) => g.activityTypeId === undefined && g.status === 'active').length,
+    [goals]
+  );
 
   const handleActivityPress = useCallback((activity: ActivityType) => {
     if (activeTracking) {
@@ -55,7 +60,7 @@ export function QuickStart({
     }
 
     const activityGoals = goals.filter(
-      (g) => g.activityTypeId === activity.id && g.status === 'active'
+      (g) => goalAcceptsTrackingFor(g, activity.id) && g.status === 'active'
     );
 
     if (showGoalSelection && activityGoals.length > 0) {
@@ -199,7 +204,7 @@ export function QuickStart({
                       style={[
                         styles.goalProgressFill,
                         {
-                          width: `${goal.estimatedMinutes > 0 ? Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100) : 0}%`,
+                          width: `${goalProgressPercent(goal) ?? 0}%`,
                           backgroundColor: selectedActivity?.color || colors.primary,
                         },
                       ]}
@@ -207,6 +212,13 @@ export function QuickStart({
                   </View>
                 </TouchableOpacity>
               ))}
+              {untypedGoalCount > 0 && (
+                <Text style={[styles.goalDesc, { color: themeColors.textSecondary }]}>
+                  {untypedGoalCount === 1 ? '1 goal has' : `${untypedGoalCount} goals have`} no
+                  activity type, so {untypedGoalCount === 1 ? 'it isn’t' : 'they aren’t'} listed. Give a
+                  goal a type on the Goals tab to track time to it.
+                </Text>
+              )}
             </ScrollView>
           </View>
         </View>

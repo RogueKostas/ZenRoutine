@@ -1,0 +1,261 @@
+{
+  "state": {
+    "activityTypes": [
+      {
+        "name": "Work",
+        "color": "#E53935",
+        "icon": "💼",
+        "isDefault": true,
+        "sortOrder": 0,
+        "id": "generated-1",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Side Project",
+        "color": "#FF9800",
+        "icon": "🚀",
+        "isDefault": true,
+        "sortOrder": 1,
+        "id": "generated-2",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Family Time",
+        "color": "#E91E63",
+        "icon": "❤️",
+        "isDefault": true,
+        "sortOrder": 2,
+        "id": "generated-3",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Fitness",
+        "color": "#4CAF50",
+        "icon": "💪",
+        "isDefault": true,
+        "sortOrder": 3,
+        "id": "generated-4",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Personal Development",
+        "color": "#FFEB3B",
+        "icon": "📚",
+        "isDefault": true,
+        "sortOrder": 4,
+        "id": "generated-5",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Entertainment",
+        "color": "#2196F3",
+        "icon": "📺",
+        "isDefault": true,
+        "sortOrder": 5,
+        "id": "generated-6",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Social",
+        "color": "#9C27B0",
+        "icon": "👥",
+        "isDefault": true,
+        "sortOrder": 6,
+        "id": "generated-7",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Commute",
+        "color": "#607D8B",
+        "icon": "🚗",
+        "isDefault": true,
+        "sortOrder": 7,
+        "id": "generated-8",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Food",
+        "color": "#795548",
+        "icon": "🍴",
+        "isDefault": true,
+        "sortOrder": 8,
+        "id": "generated-9",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Hygiene",
+        "color": "#00BCD4",
+        "icon": "💧",
+        "isDefault": true,
+        "sortOrder": 9,
+        "id": "generated-10",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      },
+      {
+        "name": "Sleep",
+        "color": "#3F51B5",
+        "icon": "🌙",
+        "isDefault": true,
+        "sortOrder": 10,
+        "id": "generated-11",
+        "createdAt": "2026-09-17T16:36:49.461Z",
+        "updatedAt": "2026-09-17T16:36:49.461Z"
+      }
+    ],
+    "goals": [
+      {
+        "id": "goal-report",
+        "name": "Finish the quarterly report",
+        "description": "",
+        "estimatedMinutes": 600,
+        "loggedMinutes": 90,
+        "activityTypeId": "generated-1",
+        "status": "active",
+        "order": 0,
+        "createdAt": "2026-09-12T08:00:00.000Z",
+        "updatedAt": "2026-09-15T10:30:00.000Z"
+      },
+      {
+        "id": "goal-launch",
+        "name": "Launch the beta",
+        "description": "Top of the list",
+        "estimatedMinutes": 900,
+        "loggedMinutes": 0,
+        "activityTypeId": "generated-1",
+        "status": "active",
+        "order": 1,
+        "createdAt": "2026-09-11T08:00:00.000Z",
+        "updatedAt": "2026-09-11T08:00:00.000Z"
+      },
+      {
+        "id": "goal-run",
+        "name": "Run a 10k",
+        "description": "",
+        "estimatedMinutes": 120,
+        "loggedMinutes": 120,
+        "activityTypeId": "generated-4",
+        "status": "completed",
+        "order": 2,
+        "createdAt": "2026-09-11T09:00:00.000Z",
+        "updatedAt": "2026-09-14T11:00:00.000Z",
+        "completedAt": "2026-09-14T11:00:00.000Z"
+      },
+      {
+        "id": "goal-paused",
+        "name": "Rewrite onboarding",
+        "description": "",
+        "estimatedMinutes": 300,
+        "loggedMinutes": 0,
+        "activityTypeId": "generated-1",
+        "status": "paused",
+        "order": 3,
+        "createdAt": "2026-09-13T08:00:00.000Z",
+        "updatedAt": "2026-09-13T08:00:00.000Z"
+      },
+      {
+        "id": "goal-read",
+        "name": "Read 'Deep Work'",
+        "description": "One chapter a night",
+        "estimatedMinutes": 480,
+        "loggedMinutes": 0,
+        "activityTypeId": "generated-5",
+        "status": "active",
+        "order": 4,
+        "createdAt": "2026-09-12T08:00:00.000Z",
+        "updatedAt": "2026-09-14T08:00:00.000Z"
+      }
+    ],
+    "routines": [
+      {
+        "id": "generated-12",
+        "name": "My Week",
+        "isActive": false,
+        "blocks": [],
+        "createdAt": "2026-09-10T08:00:00.000Z",
+        "updatedAt": "2026-09-14T08:00:00.000Z",
+        "capacityChangedAt": {}
+      },
+      {
+        "id": "routine-week",
+        "name": "My Week",
+        "isActive": true,
+        "blocks": [
+          {
+            "id": "block-work-mon",
+            "dayOfWeek": 1,
+            "startMinutes": 540,
+            "endMinutes": 780,
+            "activityTypeId": "generated-1"
+          },
+          {
+            "id": "block-read-late",
+            "dayOfWeek": 3,
+            "startMinutes": 1380,
+            "endMinutes": 60,
+            "activityTypeId": "generated-5"
+          }
+        ],
+        "createdAt": "2026-09-14T08:00:00.000Z",
+        "updatedAt": "2026-09-14T08:00:00.000Z",
+        "capacityChangedAt": {
+          "generated-1": "2026-09-14T08:00:00.000Z",
+          "generated-5": "2026-09-14T08:00:00.000Z"
+        }
+      }
+    ],
+    "trackingEntries": [
+      {
+        "id": "entry-run",
+        "date": "2026-09-14",
+        "startTime": "2026-09-14T09:00:00.000Z",
+        "endTime": "2026-09-14T11:00:00.000Z",
+        "activityTypeId": "generated-4",
+        "goalId": "goal-run",
+        "source": "manual",
+        "createdAt": "2026-09-14T09:00:00.000Z",
+        "updatedAt": "2026-09-14T11:00:00.000Z"
+      },
+      {
+        "id": "entry-report",
+        "date": "2026-09-15",
+        "startTime": "2026-09-15T09:00:00.000Z",
+        "endTime": "2026-09-15T10:30:00.000Z",
+        "activityTypeId": "generated-1",
+        "goalId": "goal-report",
+        "routineBlockId": "block-work-mon",
+        "source": "scheduled",
+        "createdAt": "2026-09-15T09:00:00.000Z",
+        "updatedAt": "2026-09-15T10:30:00.000Z"
+      },
+      {
+        "id": "entry-running",
+        "date": "2026-09-16",
+        "startTime": "2026-09-16T09:00:00.000Z",
+        "activityTypeId": "generated-1",
+        "goalId": "goal-launch",
+        "source": "manual",
+        "notes": "still going",
+        "createdAt": "2026-09-16T09:00:00.000Z",
+        "updatedAt": "2026-09-16T09:00:00.000Z"
+      }
+    ],
+    "activeRoutineId": "routine-week",
+    "currentTrackingEntryId": "entry-running",
+    "hasCompletedOnboarding": true,
+    "preferences": {
+      "weekStartsOn": 1
+    },
+    "schemaVersion": 7
+  },
+  "version": 7
+}

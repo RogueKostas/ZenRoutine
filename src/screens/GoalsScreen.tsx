@@ -1,831 +1,452 @@
-import React, { useState } from 'react';
-import {
-  View,
-  Text,
-  StyleSheet,
-  ScrollView,
-  TouchableOpacity,
-  TextInput,
-  Modal,
-} from 'react-native';
+import React, { useMemo, useRef, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, TextInput, View } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
-import { useGoals, useActivityTypes, useActiveRoutine, useAppStore } from '../store';
+import { useActiveRoutine, useActivityTypes, useAppStore, useGoals } from '../store';
+import { GOAL_FORECAST_EXPLAINER, predictAllGoals } from '../core/engine/prediction';
 import {
-  GOAL_FORECAST_EXPLAINER,
-  describeGoalQueue,
-  predictAllGoals,
-} from '../core/engine/prediction';
-import { formatDuration, parseDuration } from '../core/utils/time';
-import { chipRowContentStyle, chipRowStyle } from '../components/common/chipRow';
+  dropIndexForDrag,
+  goalIdsWithLinkedTracking,
+  goalRowHint,
+  goalsInList,
+  moveTargetForDrop,
+  moveTargetForStep,
+  newGoalFromAddRow,
+  resolveGoalListFilter,
+  rowShiftDuringDrag,
+  showsTypeColumn,
+  type GoalListFilter,
+  type RowLayout,
+} from '../core/engine/goalList';
+import { toLocalDateKey } from '../core/utils/time';
+import { GoalRow, Popover, PopoverItem, TypeIcon, measureAnchor, type Rect } from '../components/goals';
+import { useDialog } from '../components/common/Dialog';
 import type { TabScreenProps } from '../navigation/types';
-import type { GoalStatus } from '../core/types';
+import type { Goal } from '../core/types';
 
-type FilterStatus = 'all' | GoalStatus;
+type Anchored = { goalId: string; anchor: Rect };
+type DragState = { goalId: string; from: number; dy: number };
 
-export function GoalsScreen({ navigation }: TabScreenProps<'Goals'>) {
+/**
+ * The goals list (design §4.4): a ruled list with a filter box, an add line at the bottom, and
+ * rows that are edited in place and dragged to reprioritise. Everything else is a small popover.
+ */
+export function GoalsScreen(_props: TabScreenProps<'Goals'>) {
   const { colors } = useTheme();
-  const [statusFilter, setStatusFilter] = useState<FilterStatus>('all');
-  const [activityFilter, setActivityFilter] = useState<string | null>(null);
-  const [showAddModal, setShowAddModal] = useState(false);
-  const [newGoalName, setNewGoalName] = useState('');
-  const [newGoalEstimate, setNewGoalEstimate] = useState('');
-  const [newGoalDescription, setNewGoalDescription] = useState('');
-  const [selectedActivityId, setSelectedActivityId] = useState<string | null>(null);
-  const [goalError, setGoalError] = useState<string | null>(null);
-
+  const dialog = useDialog();
   const goals = useGoals();
   const activityTypes = useActivityTypes();
   const activeRoutine = useActiveRoutine();
-  const { addGoal, setGoalStatus, deleteGoal, trackingEntries } = useAppStore();
+  const trackingEntries = useAppStore((state) => state.trackingEntries);
+  const { addGoal, updateGoal, setGoalStatus, deleteGoal, moveGoal } = useAppStore();
 
-  // `goals` is already in list order (#49); filtering keeps it.
-  let filteredGoals = statusFilter === 'all'
-    ? goals
-    : goals.filter((g) => g.status === statusFilter);
+  const [filterChoice, setFilterChoice] = useState<GoalListFilter>(null);
+  const [showArchived, setShowArchived] = useState(false);
+  const [addText, setAddText] = useState('');
+  const [addError, setAddError] = useState<string | null>(null);
+  const [filterAnchor, setFilterAnchor] = useState<Rect | null>(null);
+  const [infoAnchor, setInfoAnchor] = useState<Rect | null>(null);
+  const [typePicker, setTypePicker] = useState<Anchored | null>(null);
+  const [menu, setMenu] = useState<Anchored | null>(null);
+  const [notes, setNotes] = useState<(Anchored & { text: string }) | null>(null);
+  const [drag, setDrag] = useState<DragState | null>(null);
+  const layouts = useRef(new Map<string, RowLayout>());
+  const filterRef = useRef<View>(null);
+  const infoRef = useRef<View>(null);
+  const addInputRef = useRef<TextInput>(null);
 
-  // Filter by activity type
-  if (activityFilter) {
-    filteredGoals = filteredGoals.filter((g) => g.activityTypeId === activityFilter);
-  }
+  const filter = resolveGoalListFilter(filterChoice, activityTypes);
+  const filterType = activityTypes.find((type) => type.id === filter);
+  const rows = goalsInList(goals, filter, showArchived);
+  const rowIds = rows.map((goal) => goal.id);
+  const archivedCount = goalsInList(goals, filter, true).length - goalsInList(goals, filter).length;
+  const lockedTypes = useMemo(() => goalIdsWithLinkedTracking(trackingEntries), [trackingEntries]);
+  const forecastDays = useMemo(() => {
+    const days = new Map<string, string | null>();
+    if (!activeRoutine) return days;
+    for (const prediction of predictAllGoals(goals, activeRoutine, trackingEntries)) {
+      days.set(prediction.goalId, prediction.predictedCompletionDate);
+    }
+    return days;
+  }, [goals, activeRoutine, trackingEntries]);
+  const todayKey = toLocalDateKey();
 
-  const predictions = activeRoutine
-    ? predictAllGoals(goals, activeRoutine, trackingEntries)
-    : [];
+  const rowLayouts = rows.map((goal) => layouts.current.get(goal.id) ?? { y: 0, height: 0 });
+  const dropIndex = drag ? dropIndexForDrag(rowLayouts, drag.from, drag.dy) : -1;
+  const draggedHeight = drag ? rowLayouts[drag.from]?.height ?? 0 : 0;
 
-  const estimate = newGoalEstimate.trim() ? parseDuration(newGoalEstimate) : null;
-  const canSaveGoal = Boolean(newGoalName.trim() && selectedActivityId && estimate && 'minutes' in estimate);
+  const goalById = (goalId: string | undefined): Goal | undefined =>
+    goals.find((goal) => goal.id === goalId);
 
-  const handleAddGoal = () => {
-    if (!newGoalName.trim()) {
-      setGoalError('Enter a name for the goal.');
+  const submitNewGoal = () => {
+    const result = newGoalFromAddRow(addText, filter);
+    if (!result.ok) {
+      setAddError(result.error);
       return;
     }
-    if (!selectedActivityId) {
-      setGoalError('Choose an activity type.');
+    if (!addGoal(result.goal)) {
+      setAddError('The goal could not be saved. Try again.');
       return;
     }
-    // The parse error is already shown under the estimate field.
-    if (!estimate || !('minutes' in estimate)) return;
+    setAddText('');
+    setAddError(null);
+    // Stay in the add line for the next one (p49: type, Enter, type again).
+    requestAnimationFrame(() => addInputRef.current?.focus());
+  };
 
-    const goalId = addGoal({
-      name: newGoalName.trim(),
-      description: newGoalDescription.trim(),
-      estimatedMinutes: estimate.minutes,
-      activityTypeId: selectedActivityId,
+  const finishDrag = (goalId: string, dy: number) => {
+    const from = rowIds.indexOf(goalId);
+    setDrag(null);
+    if (from < 0) return;
+    const target = moveTargetForDrop(rowIds, from, dropIndexForDrag(rowLayouts, from, dy));
+    if (target) moveGoal(goalId, target);
+  };
+
+  const step = (goalId: string, direction: -1 | 1) => {
+    const target = moveTargetForStep(rowIds, goalId, direction);
+    if (target) moveGoal(goalId, target);
+  };
+
+  const confirmDelete = async (goal: Goal) => {
+    const confirmed = await dialog.confirm({
+      title: `Delete “${goal.name}”?`,
+      message: 'Time already tracked stays in your history, no longer linked to a goal.',
+      confirmLabel: 'Delete',
+      destructive: true,
     });
-    if (!goalId) {
-      setGoalError('The goal could not be saved. Check the details and try again.');
-      return;
-    }
-
-    setNewGoalName('');
-    setNewGoalEstimate('');
-    setNewGoalDescription('');
-    setSelectedActivityId(null);
-    setGoalError(null);
-    setShowAddModal(false);
+    if (confirmed) deleteGoal(goal.id);
   };
 
-  const getStatusCounts = () => ({
-    all: goals.length,
-    active: goals.filter((g) => g.status === 'active').length,
-    completed: goals.filter((g) => g.status === 'completed').length,
-    paused: goals.filter((g) => g.status === 'paused').length,
-    archived: goals.filter((g) => g.status === 'archived').length,
-  });
-
-  const counts = getStatusCounts();
-
-  const getStatusBadgeStyle = (status: GoalStatus) => {
-    switch (status) {
-      case 'active': return { backgroundColor: colors.success + '20' };
-      case 'completed': return { backgroundColor: colors.primary + '20' };
-      case 'paused': return { backgroundColor: colors.warning + '20' };
-      case 'archived': return { backgroundColor: colors.textMuted + '20' };
-      default: return {};
-    }
-  };
+  const menuGoal = goalById(menu?.goalId);
+  const menuIndex = menuGoal ? rowIds.indexOf(menuGoal.id) : -1;
+  const pickerGoal = goalById(typePicker?.goalId);
+  const pickerLocked = pickerGoal ? lockedTypes.has(pickerGoal.id) : false;
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
       <View style={styles.header}>
-        <Text style={[styles.title, { color: colors.text }]}>Goals</Text>
-        <TouchableOpacity
-          style={[styles.addButton, { backgroundColor: colors.primary }]}
-          onPress={() => {
-            setGoalError(null);
-            setShowAddModal(true);
-          }}
-          accessibilityRole="button"
-          accessibilityLabel="Add goal"
-        >
-          <Text style={styles.addButtonText}>+ Add</Text>
-        </TouchableOpacity>
+        <View ref={infoRef} collapsable={false} style={styles.headerSide}>
+          <Pressable
+            onPress={() => measureAnchor(infoRef.current, setInfoAnchor)}
+            accessibilityRole="button"
+            accessibilityLabel="How forecasts work"
+            style={[styles.infoButton, { borderColor: colors.textSecondary }]}
+          >
+            <Text style={[styles.infoGlyph, { color: colors.textSecondary }]}>i</Text>
+          </Pressable>
+        </View>
+        <Text accessibilityRole="header" style={[styles.title, { color: colors.text }]}>Goals</Text>
+        <View ref={filterRef} collapsable={false} style={[styles.headerSide, styles.headerRight]}>
+          <Pressable
+            onPress={() => measureAnchor(filterRef.current, setFilterAnchor)}
+            accessibilityRole="button"
+            accessibilityLabel={
+              filterType ? `Showing ${filterType.name} goals. Change filter` : 'Showing all goals. Filter by activity type'
+            }
+            style={[styles.filterBox, { borderColor: colors.text }]}
+          >
+            {filterType ? (
+              <TypeIcon type={filterType} size={28} />
+            ) : (
+              <Text style={[styles.filterAll, { color: colors.textSecondary }]}>All</Text>
+            )}
+          </Pressable>
+        </View>
       </View>
 
-      {/* Status Filter Tabs */}
       <ScrollView
-        horizontal
-        style={styles.filterRow}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRowContent}
+        style={styles.list}
+        contentContainerStyle={styles.listContent}
+        scrollEnabled={!drag}
+        keyboardShouldPersistTaps="handled"
       >
-        {(['all', 'active', 'completed', 'paused', 'archived'] as FilterStatus[]).map((status) => (
-          <TouchableOpacity
-            key={status}
-            style={[
-              styles.filterTab,
-              { backgroundColor: colors.backgroundSecondary },
-              statusFilter === status && { backgroundColor: colors.primary },
-            ]}
-            onPress={() => setStatusFilter(status)}
-            accessibilityRole="tab"
-            accessibilityLabel={`${status} goals, ${counts[status]}`}
-            accessibilityState={{ selected: statusFilter === status }}
-          >
-            <Text style={[
-              styles.filterText,
-              { color: colors.textSecondary },
-              statusFilter === status && styles.filterTextActive,
-            ]}>
-              {status.charAt(0).toUpperCase() + status.slice(1)}
-            </Text>
-            <Text style={[
-              styles.filterCount,
-              { color: colors.textMuted },
-              statusFilter === status && styles.filterCountActive,
-            ]}>
-              {counts[status]}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {/* Activity Type Filter */}
-      <ScrollView
-        horizontal
-        style={[styles.filterRow, styles.activityFilterRow, { borderBottomColor: colors.border }]}
-        showsHorizontalScrollIndicator={false}
-        contentContainerStyle={styles.filterRowContent}
-      >
-        <TouchableOpacity
-          style={[
-            styles.activityFilterTab,
-            { backgroundColor: colors.backgroundSecondary },
-            !activityFilter && { backgroundColor: colors.primary },
-          ]}
-          onPress={() => setActivityFilter(null)}
-          accessibilityRole="button"
-          accessibilityLabel="Show all activity types"
-          accessibilityState={{ selected: !activityFilter }}
-        >
-          <Text style={[
-            styles.filterText,
-            { color: colors.textSecondary },
-            !activityFilter && styles.filterTextActive,
-          ]}>
-            All types
-          </Text>
-        </TouchableOpacity>
-        {activityTypes.map((at) => (
-          <TouchableOpacity
-            key={at.id}
-            style={[
-              styles.activityFilterTab,
-              { backgroundColor: colors.backgroundSecondary },
-              activityFilter === at.id && { backgroundColor: at.color + '30', borderColor: at.color, borderWidth: 1 },
-            ]}
-            onPress={() => setActivityFilter(activityFilter === at.id ? null : at.id)}
-            accessibilityRole="button"
-            accessibilityLabel={`Filter by ${at.name}`}
-            accessibilityState={{ selected: activityFilter === at.id }}
-          >
-            <Text style={styles.activityFilterIcon}>{at.icon}</Text>
-            <Text style={[
-              styles.activityFilterText,
-              { color: colors.text },
-              activityFilter === at.id && { fontWeight: '600' },
-            ]} numberOfLines={1}>
-              {at.name}
-            </Text>
-          </TouchableOpacity>
-        ))}
-      </ScrollView>
-
-      {activeRoutine && predictions.length > 0 && (
-        <View style={[styles.forecastNotice, { backgroundColor: colors.backgroundSecondary }]}>
-          <Text style={[styles.forecastNoticeTitle, { color: colors.text }]}>How forecasts work</Text>
-          <Text style={[styles.forecastNoticeText, { color: colors.textSecondary }]}>
-            {GOAL_FORECAST_EXPLAINER}
-          </Text>
-        </View>
-      )}
-
-      {/* Goals List */}
-      <ScrollView style={styles.goalsList} showsVerticalScrollIndicator={false}>
-        {filteredGoals.length > 0 ? (
-          filteredGoals.map((goal) => {
-            const activity = activityTypes.find((a) => a.id === goal.activityTypeId);
-            const prediction = predictions.find((p) => p.goalId === goal.id);
-            const progress = Math.min(100, (goal.loggedMinutes / goal.estimatedMinutes) * 100);
-
+        <View accessibilityRole="list">
+          {rows.map((goal, index) => {
+            const type = activityTypes.find((candidate) => candidate.id === goal.activityTypeId);
             return (
-              <View
+              <GoalRow
                 key={goal.id}
-                style={[styles.goalCard, { backgroundColor: colors.surface, borderColor: colors.border }]}
-              >
-                <View style={styles.goalHeader}>
-                  <View style={[styles.goalColor, { backgroundColor: activity?.color || '#666' }]} />
-                  <View style={styles.goalInfo}>
-                    <Text style={[styles.goalName, { color: colors.text }]}>{goal.name}</Text>
-                    <View style={styles.goalMeta}>
-                      <Text style={[styles.goalActivity, { color: colors.textSecondary }]}>{activity?.name}</Text>
-                    </View>
-                  </View>
-                  <View style={[styles.statusBadge, getStatusBadgeStyle(goal.status)]}>
-                    <Text style={[styles.statusText, { color: colors.text }]}>{goal.status}</Text>
-                  </View>
-                </View>
-
-                {goal.description ? (
-                  <Text style={[styles.goalDescription, { color: colors.textSecondary }]} numberOfLines={2}>
-                    {goal.description}
-                  </Text>
-                ) : null}
-
-                <View style={styles.progressSection}>
-                  <View style={[styles.progressBar, { backgroundColor: colors.borderLight }]}>
-                    <View style={[styles.progressFill, { width: `${progress}%`, backgroundColor: colors.primary }]} />
-                  </View>
-                  <View style={styles.progressStats}>
-                    <Text style={[styles.progressText, { color: colors.textSecondary }]}>
-                      {formatDuration(goal.loggedMinutes)} / {formatDuration(goal.estimatedMinutes)}
-                    </Text>
-                    <Text style={[styles.progressPercent, { color: colors.primary }]}>{progress.toFixed(0)}%</Text>
-                  </View>
-                </View>
-
-                {prediction && goal.status === 'active' && (
-                  <View style={[styles.predictionSection, { borderTopColor: colors.borderLight }]}>
-                    <View style={styles.predictionHeader}>
-                      <View>
-                        <Text style={[styles.predictionLabel, { color: colors.textSecondary }]}>Estimated completion</Text>
-                        <Text style={[styles.predictionDate, { color: colors.primary }]}>
-                          {prediction.predictedCompletionDate || 'No available routine time'}
-                        </Text>
-                      </View>
-                      <View style={[styles.confidenceBadge, { backgroundColor: colors.backgroundSecondary }]}>
-                        <Text style={[styles.confidenceText, { color: colors.textSecondary }]}>
-                          {prediction.confidenceLevel} confidence
-                        </Text>
-                      </View>
-                    </View>
-                    <Text style={[styles.predictionCapacity, { color: colors.text }]}>
-                      {formatDuration(prediction.weeklyMinutesAllocated)} in the next 7 days, of{' '}
-                      {formatDuration(prediction.activityWeeklyCapacity)}/week scheduled for this type
-                    </Text>
-                    <Text style={[styles.predictionReason, { color: colors.textSecondary }]}>
-                      {describeGoalQueue(prediction)}{' '}
-                      {prediction.confidenceReason}
-                    </Text>
-                  </View>
-                )}
-
-                <View style={[styles.goalActions, { borderTopColor: colors.borderLight }]}>
-                  {goal.status === 'active' && (
-                    <>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => setGoalStatus(goal.id, 'paused')}
-                      >
-                        <Text style={[styles.actionButtonText, { color: colors.textSecondary }]}>Pause</Text>
-                      </TouchableOpacity>
-                      <TouchableOpacity
-                        style={styles.actionButton}
-                        onPress={() => setGoalStatus(goal.id, 'completed')}
-                      >
-                        <Text style={[styles.actionButtonText, { color: colors.success }]}>
-                          Complete
-                        </Text>
-                      </TouchableOpacity>
-                    </>
-                  )}
-                  {goal.status === 'paused' && (
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => setGoalStatus(goal.id, 'active')}
-                    >
-                      <Text style={[styles.actionButtonText, { color: colors.primary }]}>
-                        Resume
-                      </Text>
-                    </TouchableOpacity>
-                  )}
-                  {goal.status === 'completed' && (
-                    <TouchableOpacity
-                      style={styles.actionButton}
-                      onPress={() => setGoalStatus(goal.id, 'archived')}
-                    >
-                      <Text style={[styles.actionButtonText, { color: colors.textSecondary }]}>Archive</Text>
-                    </TouchableOpacity>
-                  )}
-                </View>
-              </View>
+                goal={goal}
+                activityType={type}
+                showType={showsTypeColumn(filter)}
+                hint={goalRowHint(goal, forecastDays.get(goal.id), todayKey)}
+                onToggleDone={() => setGoalStatus(goal.id, goal.status === 'completed' ? 'active' : 'completed')}
+                onRename={(name) => updateGoal(goal.id, { name })}
+                onSetEstimate={(draft) =>
+                  updateGoal(goal.id, { estimatedMinutes: draft.kind === 'set' ? draft.minutes : null })
+                }
+                onOpenTypePicker={(anchor) => setTypePicker({ goalId: goal.id, anchor })}
+                onOpenMenu={(anchor) => setMenu({ goalId: goal.id, anchor })}
+                drag={{
+                  onStart: () => setDrag({ goalId: goal.id, from: index, dy: 0 }),
+                  onMove: (dy) => setDrag((current) => (current?.goalId === goal.id ? { ...current, dy } : current)),
+                  onEnd: (dy) => finishDrag(goal.id, dy),
+                  onCancel: () => setDrag(null),
+                }}
+                onLayout={(event) => {
+                  const { y, height } = event.nativeEvent.layout;
+                  layouts.current.set(goal.id, { y, height });
+                }}
+                isDragging={drag?.goalId === goal.id}
+                offsetY={
+                  !drag ? 0 : drag.goalId === goal.id ? drag.dy : rowShiftDuringDrag(index, drag.from, dropIndex, draggedHeight)
+                }
+              />
             );
-          })
-        ) : (
-          <View style={styles.emptyState}>
-            <Text style={styles.emptyIcon}>🎯</Text>
-            <Text style={[styles.emptyTitle, { color: colors.text }]}>No {statusFilter !== 'all' ? statusFilter : ''} goals</Text>
-            <Text style={[styles.emptySubtitle, { color: colors.textSecondary }]}>
-              {statusFilter === 'all'
-                ? 'Create your first goal to start tracking progress'
-                : `You don't have any ${statusFilter} goals`}
+          })}
+        </View>
+
+        {rows.length === 0 && (
+          <Text style={[styles.empty, { color: colors.textSecondary }]}>
+            {filterType ? `No ${filterType.name} goals yet.` : 'No goals yet.'} Tap the line below to add one.
+          </Text>
+        )}
+
+        <View style={[styles.addRow, { borderBottomColor: colors.border }]}>
+          <Text style={[styles.addPlus, { color: colors.textMuted }]}>+</Text>
+          <TextInput
+            ref={addInputRef}
+            value={addText}
+            onChangeText={(text) => {
+              setAddText(text);
+              setAddError(null);
+            }}
+            onSubmitEditing={submitNewGoal}
+            submitBehavior="submit"
+            blurOnSubmit={false}
+            returnKeyType="done"
+            placeholder={filterType ? `Add a ${filterType.name} goal…` : 'Add a goal…'}
+            placeholderTextColor={colors.textMuted}
+            accessibilityLabel={
+              filterType ? `Add a goal. It will be a ${filterType.name} goal` : 'Add a goal. Press Enter to save'
+            }
+            style={[styles.addInput, { color: colors.text }]}
+          />
+        </View>
+        {addError && (
+          <Text accessibilityLiveRegion="polite" style={[styles.addError, { color: colors.error }]}>
+            {addError}
+          </Text>
+        )}
+        <View style={[styles.ruledLine, { borderBottomColor: colors.borderLight }]} />
+        <View style={[styles.ruledLine, { borderBottomColor: colors.borderLight }]} />
+
+        {(archivedCount > 0 || showArchived) && (
+          <Pressable
+            onPress={() => setShowArchived(!showArchived)}
+            accessibilityRole="button"
+            style={styles.archivedToggle}
+          >
+            <Text style={[styles.archivedText, { color: colors.textSecondary }]}>
+              {showArchived ? 'Hide archived goals' : `Show ${archivedCount} archived`}
             </Text>
-            {statusFilter === 'all' && (
-              <TouchableOpacity
-                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-                onPress={() => setShowAddModal(true)}
-              >
-                <Text style={styles.emptyButtonText}>Create Goal</Text>
-              </TouchableOpacity>
+          </Pressable>
+        )}
+      </ScrollView>
+
+      <Popover
+        anchor={filterAnchor}
+        onClose={() => setFilterAnchor(null)}
+        width={64}
+        accessibilityLabel="Filter by activity type"
+      >
+        <PopoverItem
+          label="All"
+          accessibilityLabel="All goals"
+          selected={filter === null}
+          icon={<Text style={[styles.filterAll, { color: colors.text }]}>All</Text>}
+          hideLabel
+          onPress={() => {
+            setFilterChoice(null);
+            setFilterAnchor(null);
+          }}
+        />
+        {activityTypes.map((type) => (
+          <PopoverItem
+            key={type.id}
+            label={type.name}
+            accessibilityLabel={`Only ${type.name} goals`}
+            selected={filter === type.id}
+            icon={<TypeIcon type={type} size={30} />}
+            hideLabel
+            onPress={() => {
+              setFilterChoice(type.id);
+              setFilterAnchor(null);
+            }}
+          />
+        ))}
+      </Popover>
+
+      <Popover
+        anchor={typePicker?.anchor ?? null}
+        onClose={() => setTypePicker(null)}
+        width={230}
+        accessibilityLabel="Activity type"
+      >
+        {pickerLocked && (
+          <Text style={[styles.popoverNote, { color: colors.textSecondary }]}>
+            Tracked time is linked to this goal, so its type can’t change.
+          </Text>
+        )}
+        {pickerGoal &&
+          [undefined, ...activityTypes].map((type) => (
+            <PopoverItem
+              key={type?.id ?? 'none'}
+              label={type?.name ?? 'No type'}
+              icon={<TypeIcon type={type} size={26} />}
+              selected={pickerGoal.activityTypeId === type?.id}
+              disabled={pickerLocked}
+              onPress={() => {
+                updateGoal(pickerGoal.id, { activityTypeId: type?.id ?? null });
+                setTypePicker(null);
+              }}
+            />
+          ))}
+      </Popover>
+
+      <Popover anchor={menu?.anchor ?? null} onClose={() => setMenu(null)} width={210} accessibilityLabel="Goal actions">
+        {menu && menuGoal && (
+          <>
+            <PopoverItem label="Move up" disabled={menuIndex <= 0} onPress={() => step(menuGoal.id, -1)} />
+            <PopoverItem
+              label="Move down"
+              disabled={menuIndex < 0 || menuIndex >= rowIds.length - 1}
+              onPress={() => step(menuGoal.id, 1)}
+            />
+            {menuGoal.status === 'active' && (
+              <PopoverItem label="Pause" onPress={() => { setGoalStatus(menuGoal.id, 'paused'); setMenu(null); }} />
             )}
+            {menuGoal.status === 'paused' && (
+              <PopoverItem label="Resume" onPress={() => { setGoalStatus(menuGoal.id, 'active'); setMenu(null); }} />
+            )}
+            {menuGoal.status === 'archived' ? (
+              <PopoverItem label="Restore" onPress={() => { setGoalStatus(menuGoal.id, 'active'); setMenu(null); }} />
+            ) : (
+              <PopoverItem label="Archive" onPress={() => { setGoalStatus(menuGoal.id, 'archived'); setMenu(null); }} />
+            )}
+            <PopoverItem
+              label={menuGoal.description ? 'Notes…' : 'Add notes…'}
+              onPress={() => {
+                setNotes({ goalId: menuGoal.id, anchor: menu.anchor, text: menuGoal.description });
+                setMenu(null);
+              }}
+            />
+            <PopoverItem
+              label="Delete"
+              destructive
+              onPress={() => {
+                setMenu(null);
+                void confirmDelete(menuGoal);
+              }}
+            />
+          </>
+        )}
+      </Popover>
+
+      <Popover anchor={notes?.anchor ?? null} onClose={() => setNotes(null)} width={300} accessibilityLabel="Notes">
+        {notes && (
+          <View style={styles.notes}>
+            <TextInput
+              value={notes.text}
+              onChangeText={(text) => setNotes({ ...notes, text })}
+              multiline
+              autoFocus
+              placeholder="Notes for this goal"
+              placeholderTextColor={colors.textMuted}
+              accessibilityLabel="Notes"
+              style={[styles.notesInput, { color: colors.text, borderColor: colors.border }]}
+            />
+            <Pressable
+              onPress={() => {
+                updateGoal(notes.goalId, { description: notes.text.trim() });
+                setNotes(null);
+              }}
+              accessibilityRole="button"
+              style={[styles.notesSave, { backgroundColor: colors.primary }]}
+            >
+              <Text style={styles.notesSaveText}>Save notes</Text>
+            </Pressable>
           </View>
         )}
-        <View style={{ height: 40 }} />
-      </ScrollView>
+      </Popover>
 
-      {/* Add Goal Modal */}
-      <Modal
-        visible={showAddModal}
-        animationType="slide"
-        presentationStyle="pageSheet"
-        onRequestClose={() => setShowAddModal(false)}
+      <Popover
+        anchor={infoAnchor}
+        onClose={() => setInfoAnchor(null)}
+        width={300}
+        align="left"
+        accessibilityLabel="How forecasts work"
       >
-        <SafeAreaView style={[styles.modalContainer, { backgroundColor: colors.background }]}>
-          <View style={[styles.modalHeader, { borderBottomColor: colors.border }]}>
-            <TouchableOpacity
-              onPress={() => setShowAddModal(false)}
-              accessibilityRole="button"
-              accessibilityLabel="Cancel new goal"
-            >
-              <Text style={[styles.modalCancel, { color: colors.textSecondary }]}>Cancel</Text>
-            </TouchableOpacity>
-            <Text style={[styles.modalTitle, { color: colors.text }]}>New Goal</Text>
-            <TouchableOpacity
-              onPress={handleAddGoal}
-              disabled={!canSaveGoal}
-              accessibilityRole="button"
-              accessibilityLabel="Save goal"
-              accessibilityState={{ disabled: !canSaveGoal }}
-            >
-              <Text
-                style={[
-                  styles.modalSave,
-                  { color: colors.primary },
-                  !canSaveGoal && { color: colors.textMuted },
-                ]}
-              >
-                Save
-              </Text>
-            </TouchableOpacity>
-          </View>
-
-          <ScrollView style={styles.modalContent}>
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Goal Name</Text>
-            <TextInput
-              style={[styles.input, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholder="e.g., Complete TypeScript Course"
-              value={newGoalName}
-              onChangeText={(value) => {
-                setNewGoalName(value);
-                setGoalError(null);
-              }}
-              placeholderTextColor={colors.textMuted}
-              accessibilityLabel="Goal name"
-              autoFocus
-            />
-
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Description (optional)</Text>
-            <TextInput
-              style={[styles.input, styles.inputMultiline, { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text }]}
-              placeholder="Add details about your goal..."
-              value={newGoalDescription}
-              onChangeText={setNewGoalDescription}
-              multiline
-              numberOfLines={3}
-              placeholderTextColor={colors.textMuted}
-              accessibilityLabel="Goal description"
-            />
-
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Estimated Time</Text>
-            <TextInput
-              style={[
-                styles.input,
-                { backgroundColor: colors.surface, borderColor: colors.border, color: colors.text },
-                estimate && 'error' in estimate && { borderColor: colors.error },
-              ]}
-              placeholder="e.g., 12h, 90m or 1h30 (a plain number is hours)"
-              value={newGoalEstimate}
-              onChangeText={(value) => {
-                setNewGoalEstimate(value);
-                setGoalError(null);
-              }}
-              onSubmitEditing={handleAddGoal}
-              autoCapitalize="none"
-              autoCorrect={false}
-              placeholderTextColor={colors.textMuted}
-              accessibilityLabel="Estimated time, for example 12h or 90m"
-            />
-            {estimate && (
-              <Text
-                accessibilityLiveRegion="polite"
-                style={[styles.inputHint, { color: 'minutes' in estimate ? colors.primary : colors.error }]}
-              >
-                {'minutes' in estimate ? `= ${formatDuration(estimate.minutes)}` : estimate.error}
-              </Text>
-            )}
-
-            <Text style={[styles.inputLabel, { color: colors.text }]}>Activity Type</Text>
-            <View style={styles.activityGrid}>
-              {activityTypes.map((at) => (
-                <TouchableOpacity
-                  key={at.id}
-                  style={[
-                    styles.activityOption,
-                    { backgroundColor: colors.backgroundSecondary },
-                    selectedActivityId === at.id && { borderColor: colors.primary, backgroundColor: colors.primary + '10' },
-                  ]}
-                  onPress={() => {
-                    setSelectedActivityId(at.id);
-                    setGoalError(null);
-                  }}
-                  accessibilityRole="radio"
-                  accessibilityLabel={at.name}
-                  accessibilityState={{ checked: selectedActivityId === at.id }}
-                >
-                  <View style={[styles.activityDot, { backgroundColor: at.color }]} />
-                  <Text
-                    style={[
-                      styles.activityName,
-                      { color: colors.text },
-                      selectedActivityId === at.id && styles.activityNameSelected,
-                    ]}
-                    numberOfLines={1}
-                  >
-                    {at.name}
-                  </Text>
-                </TouchableOpacity>
-              ))}
-            </View>
-
-            {goalError && (
-              <Text accessibilityLiveRegion="assertive" style={[styles.formError, { color: colors.error }]}>
-                {goalError}
-              </Text>
-            )}
-          </ScrollView>
-        </SafeAreaView>
-      </Modal>
+        <View style={styles.info}>
+          <Text style={[styles.infoTitle, { color: colors.text }]}>How forecasts work</Text>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>{GOAL_FORECAST_EXPLAINER}</Text>
+          <Text style={[styles.infoText, { color: colors.textSecondary }]}>
+            Drag a row by its handle to change the order. A goal with no type or no estimate is a plain
+            to-do item: it is never scheduled or forecast.
+          </Text>
+        </View>
+      </Popover>
     </SafeAreaView>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   header: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
-  },
-  title: {
-    fontSize: 28,
-    fontWeight: 'bold',
-  },
-  addButton: {
     paddingHorizontal: 16,
-    paddingVertical: 8,
-    borderRadius: 8,
+    paddingVertical: 10,
   },
-  addButtonText: {
-    color: '#fff',
-    fontWeight: '600',
-    fontSize: 14,
-  },
-  filterRow: {
-    ...chipRowStyle,
-    paddingHorizontal: 16,
-    paddingVertical: 8,
-  },
-  filterRowContent: {
-    ...chipRowContentStyle,
-    paddingRight: 16,
-  },
-  activityFilterRow: {
-    paddingTop: 4,
-    paddingBottom: 12,
-    borderBottomWidth: 1,
-  },
-  filterTab: {
-    flexDirection: 'row',
+  headerSide: { width: 56 },
+  headerRight: { alignItems: 'flex-end' },
+  title: { flex: 1, textAlign: 'center', fontSize: 30, fontWeight: '600' },
+  infoButton: {
+    width: 28,
+    height: 28,
+    borderRadius: 14,
+    borderWidth: 1.5,
     alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 4,
-    marginRight: 6,
-    borderRadius: 12,
-    minHeight: 44,
-  },
-  filterText: {
-    fontSize: 12,
-    marginRight: 4,
-  },
-  filterTextActive: {
-    color: '#fff',
-  },
-  filterCount: {
-    fontSize: 11,
-    fontWeight: '600',
-  },
-  filterCountActive: {
-    color: 'rgba(255,255,255,0.8)',
-  },
-  activityFilterTab: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 10,
-    paddingVertical: 5,
-    marginRight: 6,
-    borderRadius: 12,
-    minHeight: 44,
-  },
-  activityFilterIcon: {
-    fontSize: 14,
-    marginRight: 4,
-  },
-  activityFilterText: {
-    fontSize: 12,
-    maxWidth: 80,
-  },
-  goalsList: {
-    flex: 1,
-    padding: 20,
-  },
-  goalCard: {
-    borderRadius: 12,
-    padding: 16,
-    marginBottom: 12,
-    borderWidth: 1,
-  },
-  goalHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginBottom: 12,
-  },
-  goalColor: {
-    width: 12,
-    height: 12,
-    borderRadius: 6,
-    marginRight: 12,
-  },
-  goalInfo: {
-    flex: 1,
-  },
-  goalName: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  goalActivity: {
-    fontSize: 12,
-  },
-  goalMeta: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    marginTop: 2,
-    flexWrap: 'wrap',
-    gap: 6,
-  },
-  statusBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 4,
-  },
-  statusText: {
-    fontSize: 10,
-    fontWeight: '600',
-    textTransform: 'uppercase',
-  },
-  goalDescription: {
-    fontSize: 14,
-    marginBottom: 12,
-  },
-  progressSection: {
-    marginBottom: 12,
-  },
-  progressBar: {
-    height: 8,
-    borderRadius: 4,
-    overflow: 'hidden',
-    marginBottom: 8,
-  },
-  progressFill: {
-    height: '100%',
-    borderRadius: 4,
-  },
-  progressStats: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-  },
-  progressText: {
-    fontSize: 12,
-  },
-  progressPercent: {
-    fontSize: 12,
-    fontWeight: '600',
-  },
-  predictionSection: {
-    paddingTop: 12,
-    borderTopWidth: 1,
-    marginBottom: 12,
-  },
-  predictionHeader: {
-    flexDirection: 'row',
-    justifyContent: 'space-between',
-    alignItems: 'flex-start',
-    gap: 8,
-  },
-  predictionLabel: {
-    fontSize: 12,
-  },
-  predictionValue: {
-    fontSize: 12,
-    fontWeight: '500',
-  },
-  goalActions: {
-    flexDirection: 'row',
-    justifyContent: 'flex-end',
-    borderTopWidth: 1,
-    paddingTop: 12,
-  },
-  actionButton: {
-    paddingHorizontal: 12,
-    paddingVertical: 6,
-    marginLeft: 8,
-    minHeight: 44,
     justifyContent: 'center',
   },
-  actionButtonText: {
-    fontSize: 14,
-    fontWeight: '500',
-  },
-  predictionDate: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginTop: 2,
-  },
-  predictionCapacity: {
-    fontSize: 13,
-    fontWeight: '600',
-    marginTop: 10,
-  },
-  predictionReason: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-  confidenceBadge: {
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-    borderRadius: 999,
-  },
-  confidenceText: {
-    fontSize: 11,
-    fontWeight: '600',
-    textTransform: 'capitalize',
-  },
-  forecastNotice: {
-    marginHorizontal: 16,
-    marginBottom: 12,
-    padding: 12,
-    borderRadius: 10,
-  },
-  forecastNoticeTitle: {
-    fontSize: 14,
-    fontWeight: '700',
-  },
-  forecastNoticeText: {
-    fontSize: 12,
-    lineHeight: 17,
-    marginTop: 4,
-  },
-  formError: {
-    marginTop: 16,
-    fontSize: 14,
-    lineHeight: 20,
-  },
-  emptyState: {
+  infoGlyph: { fontSize: 15, fontWeight: '700', fontStyle: 'italic' },
+  filterBox: {
+    width: 46,
+    height: 46,
+    borderWidth: 3,
+    borderRadius: 6,
     alignItems: 'center',
-    paddingVertical: 60,
+    justifyContent: 'center',
   },
-  emptyIcon: {
-    fontSize: 48,
-    marginBottom: 16,
+  filterAll: { fontSize: 13, fontWeight: '600' },
+  list: { flex: 1 },
+  listContent: {
+    width: '100%',
+    maxWidth: 820,
+    alignSelf: 'center',
+    paddingHorizontal: 12,
+    paddingBottom: 48,
   },
-  emptyTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-    marginBottom: 8,
-  },
-  emptySubtitle: {
-    fontSize: 14,
-    textAlign: 'center',
-    marginBottom: 20,
-    paddingHorizontal: 40,
-  },
-  emptyButton: {
-    paddingHorizontal: 24,
-    paddingVertical: 12,
-    borderRadius: 8,
-  },
-  emptyButtonText: {
-    color: '#fff',
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalContainer: {
-    flex: 1,
-  },
-  modalHeader: {
+  empty: { fontSize: 14, paddingVertical: 16, paddingLeft: 28 },
+  addRow: {
     flexDirection: 'row',
-    justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: 20,
-    paddingVertical: 16,
+    minHeight: 52,
     borderBottomWidth: 1,
   },
-  modalCancel: {
-    fontSize: 16,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: '600',
-  },
-  modalSave: {
-    fontSize: 16,
-    fontWeight: '600',
-  },
-  modalContent: {
-    padding: 20,
-  },
-  inputLabel: {
-    fontSize: 14,
-    fontWeight: '600',
-    marginBottom: 8,
-    marginTop: 16,
-  },
-  input: {
-    borderWidth: 1,
-    borderRadius: 8,
-    padding: 12,
-    fontSize: 16,
-  },
-  inputMultiline: {
-    minHeight: 80,
-    textAlignVertical: 'top',
-  },
-  inputHint: {
-    fontSize: 12,
-    marginTop: 4,
-  },
-  activityGrid: {
-    flexDirection: 'row',
-    flexWrap: 'wrap',
-    marginTop: 8,
-  },
-  activityOption: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    paddingHorizontal: 12,
-    paddingVertical: 8,
-    borderRadius: 8,
-    marginRight: 8,
-    marginBottom: 8,
-    borderWidth: 2,
-    borderColor: 'transparent',
-  },
-  activityDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    marginRight: 8,
-  },
-  activityName: {
-    fontSize: 14,
-  },
-  activityNameSelected: {
-    fontWeight: '600',
-  },
+  addPlus: { width: 28, textAlign: 'center', fontSize: 18 },
+  // Lines the typed name up with the names above it (after the handle and the checkbox).
+  addInput: { flex: 1, fontSize: 17, paddingVertical: 10, marginLeft: 34 },
+  addError: { fontSize: 12, paddingLeft: 62, paddingTop: 4 },
+  ruledLine: { height: 44, borderBottomWidth: 1, marginLeft: 62, marginRight: 72 },
+  archivedToggle: { alignSelf: 'flex-start', paddingVertical: 14, paddingLeft: 28 },
+  archivedText: { fontSize: 13, textDecorationLine: 'underline' },
+  popoverNote: { fontSize: 12, lineHeight: 16, paddingHorizontal: 12, paddingVertical: 6 },
+  notes: { padding: 10, gap: 8 },
+  notesInput: { minHeight: 90, borderWidth: 1, borderRadius: 6, padding: 8, fontSize: 14, textAlignVertical: 'top' },
+  notesSave: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6 },
+  notesSaveText: { color: '#fff', fontWeight: '600' },
+  info: { padding: 12, gap: 8 },
+  infoTitle: { fontSize: 15, fontWeight: '700' },
+  infoText: { fontSize: 13, lineHeight: 18 },
 });

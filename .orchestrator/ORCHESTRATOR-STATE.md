@@ -928,3 +928,58 @@ laneTimeoutMin 75 -> 110 (UI-surface lanes are the largest of the iteration).
 | forecast-calendar | #52 part 2 | Analytics Calendar segment -> "Forecast" |
 Persistence chain from here: goals-list (v8) -> tracking-states #54 -> sidecar #38. Then current-activity #53
 (after #54). Then review readiness.
+
+
+## Pass 14 - 2026-09-17 ~17:40-18:05 local - Wave C screens landing
+
+### Landed (CI read green before each merge; every UI change RENDERED before merge)
+| PR | lane | issues | tests | rendered evidence |
+|---|---|---|---|---|
+| #79 | routine-surface | #63 (closed), #58 part | 425 | 1280: week strip, labelled ribbon, pie+legend; tap segment -> dark centred dialog, Fitness saved; real mouse click on empty 6pm -> New activity 18:00-19:00; 500: dialog fits |
+| #80 | forecast-calendar | #52 (closed, with #75) | 454 | 1280: Forecast month grid Mon-first, completions with type dots/ticks; milestones; day view with goal-labelled ribbon + "which goal fills each block" |
+| #81 | home-today | #55, #56 (closed) | 472 | 500: clock line, ribbon, NEXT AT 19:00 card with goal + Start early, goal-named rows, past greyed; Start early -> entry linked to the goal, source scheduled |
+My merge work: #79 deletions (3 files) and #80 deletion (ActivityCalendar.tsx, done by me - lane could not git rm)
+pushed with the new exact-match `-ExpectDeletions` gate; #81 union-resolved src/core/engine/index.ts.
+
+### Tooling added
+- lane-push.ps1 `-ExpectDeletions <paths>`: a push with deletions proceeds only when the deletion set EQUALS the list.
+  Negative control run: a 2-of-3 list was refused, the exact list passed.
+- C:\CoworkBridge\tools\cdp-shot.js: headless Edge over the DevTools protocol (Node 22 WebSocket, no deps).
+  Plan JSON: seed, `eval` steps (in-page async JS), `click` [x,y] (real mouse events), `shot`. This reaches every
+  tab (click the tab link) and makes real pointer clicks, which RNW Pressables honour where synthetic DOM clicks
+  do not always. Replaces the in-app pane for rendered checks while the window is hidden.
+
+### Director decisions surfaced (none blocking)
+1. Copy day direction: design p29 "Copy from other day" vs shipped copy-to (#79).
+2. Calendar naming: segment "Calendar", heading "Forecast" (#80).
+3. Earlier: "Activity calendar" naming is moot - replaced by Forecast.
+
+### In flight
+goals-list (#50 #51 #49-UI #45-half; schema v8), ribbon-drag (#58 remainder: edge drag + zoom).
+Next: current-activity (#54 + #53; schema v9) after goals-list; then sidecar #38; then review readiness.
+
+
+## Pass 15 - 2026-09-17 ~18:00-18:15 local - WAVE B GATE PASSED ON THE DEPLOYED BUILD
+
+### Landed
+| PR | lane | issues | tests | rendered evidence (real keyboard/mouse via CDP) |
+|---|---|---|---|---|
+| #82 | goals-list | #45 #49 #50 #51 (closed) | 543 | list matches p60-62; "Buy milk"+Enter stored with no type/estimate; filter Work -> "Add a Work goal…" -> Draft slides stored as Work; real mouse drag of the handle -> order 0 Draft slides, hidden goals kept order |
+Merge work: took main's BlockEditor/HomeScreen (restructured by #79/#81) and re-applied the lane's tolerance edits;
+deleted unused GoalCard.tsx at the lane's request (-ExpectDeletions).
+
+### Wave B exit criteria - LIVE build (bundle contains #82), fresh profile, Skip -> "Try it with example data", 1280px
+1. Goals screen is p51/p67: list, filter box, drag - PASS (list + filter box + handles live; drag observed on #82's merged build)
+2. goal with a name alone - PASS ("Call the dentist" stored with no type/estimate, schema v8, row visible)
+3. no block offers a goal picker - PASS (Edit activity dialog: no "Link to Goal"; "Goals for this activity type" instead)
+4. Home names today's goals - PASS (rows "Ship the analytics dashboard 45/80h", NEXT card names the goal)
+5. explainer no longer claims dedicated blocks - PASS ("…worked in list order: the top one gets all of the time first…")
+Wave B issues: #48 #49 #50 #51 #55 #60 closed.
+
+### Director decisions surfaced (none blocking)
+- "1hr" on a new goal is a DISPLAY default, not stored (to-do items claim no forecast time); Block Editor
+  quick-add still stores 60 min.
+
+### In flight
+current-activity (#54 + #53; schema v9), ribbon-drag (#58 remainder).
+Then: sidecar #38 (after current-activity), then Wave C gate + review readiness.
