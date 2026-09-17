@@ -11,6 +11,11 @@ describe('popoverPosition', () => {
     expect(popoverPosition(anchor, size, phone)).toEqual({ left: 176, top: 70, maxHeight: 784 });
   });
 
+  it('prefers below when it would fit either side', () => {
+    const anchor = { x: 300, y: 400, width: 40, height: 40 };
+    expect(popoverPosition(anchor, size, phone).top).toBe(444);
+  });
+
   it('lines up left edges when asked', () => {
     const anchor = { x: 16, y: 20, width: 28, height: 28 };
     expect(popoverPosition(anchor, size, phone, 'left').left).toBe(16);
