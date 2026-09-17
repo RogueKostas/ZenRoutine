@@ -9,6 +9,7 @@ import {
   TextInputProps,
 } from 'react-native';
 import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 
 interface InputProps extends Omit<TextInputProps, 'style'> {
@@ -32,13 +33,16 @@ export function Input({
   ...textInputProps
 }: InputProps) {
   const [isFocused, setIsFocused] = useState(false);
+  // Colours follow the app theme; the static sheet below only sets layout and light defaults.
+  const { colors: theme } = useTheme();
 
   return (
     <View style={[styles.container, containerStyle]}>
-      {label && <Text style={styles.label}>{label}</Text>}
+      {label && <Text style={[styles.label, { color: theme.text }]}>{label}</Text>}
       <View
         style={[
           styles.inputContainer,
+          { backgroundColor: theme.surface, borderColor: theme.border },
           isFocused && styles.inputContainerFocused,
           error && styles.inputContainerError,
         ]}
@@ -47,11 +51,12 @@ export function Input({
         <TextInput
           style={[
             styles.input,
+            { color: theme.text },
             leftIcon ? styles.inputWithLeftIcon : undefined,
             rightIcon ? styles.inputWithRightIcon : undefined,
             inputStyle,
           ]}
-          placeholderTextColor={colors.textMuted}
+          placeholderTextColor={theme.textMuted}
           onFocus={() => setIsFocused(true)}
           onBlur={() => setIsFocused(false)}
           {...textInputProps}
@@ -59,7 +64,7 @@ export function Input({
         {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
       </View>
       {error && <Text style={styles.error}>{error}</Text>}
-      {hint && !error && <Text style={styles.hint}>{hint}</Text>}
+      {hint && !error && <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text>}
     </View>
   );
 }
