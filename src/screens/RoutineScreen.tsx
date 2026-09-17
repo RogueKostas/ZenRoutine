@@ -1,5 +1,5 @@
 import React, { useState, useCallback } from 'react';
-import { View, Text, StyleSheet, ScrollView, TouchableOpacity, Alert } from 'react-native';
+import { View, Text, StyleSheet, ScrollView, TouchableOpacity } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
@@ -11,6 +11,7 @@ import {
   minutesToTimeString,
 } from '../core/utils/time';
 import { BlockEditor, SimpleBlockList } from '../components/routine';
+import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { DayOfWeek, RoutineBlock } from '../core/types';
 
@@ -26,6 +27,7 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
   const activityTypes = useActivityTypes();
   const goals = useGoals();
   const { addRoutine, setActiveRoutine, copyDayBlocks } = useAppStore();
+  const dialog = useDialog();
 
   const dayBlocks = activeRoutine?.blocks
     .filter((b) => b.dayOfWeek === selectedDay)
@@ -51,31 +53,23 @@ export function RoutineScreen({ navigation }: TabScreenProps<'Routine'>) {
     setEditingBlock(undefined);
   }, []);
 
-  const handleCopyDay = useCallback((targetDay: DayOfWeek) => {
+  const handleCopyDay = useCallback(async (targetDay: DayOfWeek) => {
     if (!activeRoutine) return;
 
     const targetBlocks = activeRoutine.blocks.filter((b) => b.dayOfWeek === targetDay);
 
     if (targetBlocks.length > 0) {
-      Alert.alert(
-        'Replace existing blocks?',
-        `${getDayName(targetDay)} already has ${targetBlocks.length} block${targetBlocks.length > 1 ? 's' : ''}. This will replace them.`,
-        [
-          { text: 'Cancel', style: 'cancel' },
-          {
-            text: 'Replace',
-            style: 'destructive',
-            onPress: () => {
-              copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
-            },
-          },
-        ]
-      );
-    } else {
-      copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
-      Alert.alert('Copied', `Blocks copied to ${getDayName(targetDay)}`);
+      const confirmed = await dialog.confirm({
+        title: 'Replace existing blocks?',
+        message: `${getDayName(targetDay)} already has ${targetBlocks.length} block${targetBlocks.length > 1 ? 's' : ''}. This will replace them.`,
+        confirmLabel: 'Replace',
+        destructive: true,
+      });
+      if (!confirmed) return;
     }
-  }, [activeRoutine, selectedDay, copyDayBlocks]);
+    copyDayBlocks(activeRoutine.id, selectedDay, [targetDay]);
+    void dialog.notify({ title: 'Copied', message: `Blocks copied to ${getDayName(targetDay)}` });
+  }, [activeRoutine, selectedDay, copyDayBlocks, dialog]);
 
   return (
     <SafeAreaView style={[styles.container, { backgroundColor: colors.background }]} edges={['top']}>
