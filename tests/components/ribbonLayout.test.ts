@@ -263,6 +263,22 @@ describe('ribbon labels', () => {
     expect(labels.map((l) => l.key)).toContain('p24-6');
   });
 
+  it("lifts a label over its neighbour's box instead of dropping it (example Thursday at 400px)", () => {
+    // src/store/sampleData.ts on a Thursday: Side Project 19–21 then Personal Development 21:30–22.
+    const segments = layoutRibbonSegments(
+      [block('side', '19:00', '21:00', 4), block('dev', '21:30', '22:00', 4)],
+      { day: 4 }
+    );
+    const text: Record<string, string> = { side: 'Side Project', dev: 'Personal Development' };
+    const labels = layoutRibbonLabels(
+      segments.map((s) => ({ key: s.key, text: text[s.key], anchorPx: (s.x + s.width / 2) * NARROW_PX })),
+      { widthPx: NARROW_PX }
+    );
+    expect(labels.map((l) => l.key)).toEqual(['side', 'dev']);
+    expect(labels[1].tier).toBeGreaterThan(labels[0].tier);
+    expectNoCollisions(labels, NARROW_PX);
+  });
+
   it('is deterministic regardless of input order', () => {
     const inputs = p24LabelInputs(NARROW_PX);
     const forward = layoutRibbonLabels(inputs, { widthPx: NARROW_PX });

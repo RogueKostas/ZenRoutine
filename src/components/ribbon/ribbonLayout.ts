@@ -379,10 +379,9 @@ function freeIntervalAround(
   const obstacles: Array<[number, number]> = [];
   for (const other of placed) {
     if (other.tier < tier) {
-      // Our leader would pass through this lower label.
-      const boxLeft = other.leftPx - opts.leaderClearancePx;
-      const boxRight = other.leftPx + other.widthPx + opts.leaderClearancePx;
-      if (anchor >= boxLeft && anchor <= boxRight) return null;
+      // Our leader would pass through this lower label. (That label already kept its
+      // clearance from our anchor when it was placed, so the raw box is the test.)
+      if (anchor >= other.leftPx && anchor <= other.leftPx + other.widthPx) return null;
     } else if (other.tier === tier) {
       obstacles.push([other.leftPx - opts.gapPx, other.leftPx + other.widthPx + opts.gapPx]);
     } else {
