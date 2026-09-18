@@ -7,3 +7,4 @@ export { DebugScreen } from './DebugScreen';
 export { ActivityTypesScreen } from './ActivityTypesScreen';
 export { CurrentActivityScreen } from './CurrentActivityScreen';
 export { OnboardingScreen } from './OnboardingScreen';
+export { AccountScreen } from './AccountScreen';

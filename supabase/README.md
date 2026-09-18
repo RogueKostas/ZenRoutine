@@ -24,6 +24,9 @@ Migrations are applied through the Supabase Management API (`POST /v1/projects/{
 
 - `hook_before_user_created` → `pg-functions://postgres/public/hook_before_user_created` (invite-only sign-up)
 - `site_url` → `https://zenroutine-web.onrender.com`
+- `mailer_otp_length` → 6, `mailer_otp_exp` → 900 (15 minutes), `password_min_length` → 8
+
+**Email templates cannot be changed yet.** On the Free plan with Supabase's built-in email, the API refuses: *"Email template modification is not available for free tier projects using the default email provider."* The default templates carry a link, not a code, so sign-in and reset by code stay off (`cloudConfig.emailCodesEnabled`) until the project has its own email provider (K2) or is on Pro (K3). Sign-up still works: the confirmation link confirms the account wherever it opens. Built-in email also only reaches members of the Supabase org (today, kostas@roguesun.com), about 2 an hour.
 
 ## Inviting someone
 

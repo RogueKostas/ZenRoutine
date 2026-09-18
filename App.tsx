@@ -26,6 +26,9 @@ import {
   type QuarantineReport,
   type RepairReport,
 } from './src/components/common';
+import { cloudConfig } from './src/config/cloud';
+import { startAccount } from './src/cloud/accountStore';
+import { consumeAuthRedirect } from './src/cloud/authRedirect';
 
 // Custom navigation themes
 const LightNavigationTheme = {
@@ -87,6 +90,15 @@ function AppContent() {
   useEffect(() => {
     void initializeAppStore();
   }, []);
+
+  // Accounts (Iteration 2): follow the session, and explain a confirmation link opened here.
+  const isReady = hydration.status !== 'idle' && hydration.status !== 'loading' && hydration.status !== 'error';
+  useEffect(() => {
+    if (!isReady || !cloudConfig.accountsEnabled) return;
+    startAccount();
+    const notice = consumeAuthRedirect();
+    if (notice) void dialog.notify(notice);
+  }, [isReady]);
 
   if (hydration.status === 'idle' || hydration.status === 'loading') {
     return (

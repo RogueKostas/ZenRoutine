@@ -21,6 +21,8 @@ export type RootStackParamList = {
   /** The Pomodoro timer for the running entry (#53). */
   CurrentActivity: undefined;
   Debug: undefined;
+  /** Sign in, sign out and saved copies (Iteration 2). Only reachable while accounts are on. */
+  Account: undefined;
 };
 
 // Screen props types

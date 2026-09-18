@@ -126,6 +126,9 @@ const SAMPLE_GOALS: readonly SampleGoal[] = [
   },
 ];
 
+/** The example goals' names: how account sign-in tells example data from the user's own. */
+export const SAMPLE_GOAL_NAMES: readonly string[] = SAMPLE_GOALS.map((goal) => goal.name);
+
 /**
  * Which scheduled blocks in the history were actually tracked, and which goal
  * each session was linked to. Work mornings count towards the dashboard and
