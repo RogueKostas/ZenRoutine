@@ -2,6 +2,8 @@
 
 Last reviewed: 2026-09-03
 
+> **Amended 18 Sep 2026** by `docs/ITERATION-2-PLAN.md`: the backend is **Supabase** (Auth plus Postgres with row-level security), not an own API on Render Postgres. Sign-in starts with email and password plus email codes. Everything else here — guest mode, explicit transfer, owner scoping, conflict handling, the tester gate — still stands.
+
 ## Why
 
 Make the R1-R3 prototype testable on phones, tablets, and other computers without weakening ZenRoutine's offline-first core or risking existing local data. Web deployment and native distribution are separate, complementary test lanes.

@@ -87,6 +87,8 @@ The offline-first guest core stays: the app must work signed out, and signing in
 silently upload, replace or merge existing device data. The ownership, transfer and conflict
 rules already written in `docs/CLOUD_BETA_TASK.md` stand.
 
+*18 Sep 2026:* built on Supabase, starting with email sign-in (password or emailed code); Google and Apple follow. Planned as Iteration 2, ahead of the catch-up queue. See `docs/ITERATION-2-PLAN.md`.
+
 ### D7 — Monetisation: AI is the paid tier
 
 Everything in the loop above is free. The paid subscription is **AI assistance** — suggestions
