@@ -66,6 +66,10 @@ describe('goal and tracking actions', () => {
   });
 
   it('starts and stops a timed entry and logs its rounded duration to the linked goal', () => {
+    // 09:00 local, not UTC: the entry's `date` is the local day, and 09:00Z is the day before
+    // west of UTC−9.
+    const start = new Date(2026, 2, 2, 9, 0);
+    vi.setSystemTime(start);
     const activityTypeId = useAppStore.getState().activityTypes[0].id;
     const goalId = useAppStore.getState().addGoal({
       name: 'Focused session',
@@ -85,7 +89,7 @@ describe('goal and tracking actions', () => {
     expect(useAppStore.getState().trackingEntries[0]).toMatchObject({
       id: entryId,
       date: '2026-03-02',
-      startTime: frozenTime,
+      startTime: start.toISOString(),
       endTime: undefined,
       goalId: goalId!,
     });
@@ -95,7 +99,7 @@ describe('goal and tracking actions', () => {
 
     expect(useAppStore.getState().currentTrackingEntryId).toBeNull();
     expect(useAppStore.getState().trackingEntries[0].endTime).toBe(
-      '2026-03-02T10:30:00.000Z'
+      new Date(2026, 2, 2, 10, 30).toISOString()
     );
     expect(useAppStore.getState().goals[0]).toMatchObject({
       loggedMinutes: 90,

@@ -89,7 +89,15 @@ describe('tracked time is (end − start) − paused time (#54)', () => {
 
 describe('every duration consumer leaves paused time out', () => {
   it('analytics: the week\'s tracked breakdown', () => {
-    const breakdown = getTrackedBreakdown([pausedEntry], '2026-03-02', [makeActivityType()]);
+    // `pausedEntry` at local times: the week is local days, and 09:00Z is still Sunday west of
+    // UTC−9.
+    const local = (hours: number, minutes = 0) => new Date(2026, 2, 2, hours, minutes).toISOString();
+    const entry = makeTrackingEntry({
+      startTime: local(9),
+      endTime: local(10),
+      pauses: [{ start: local(9, 15), end: local(9, 35) }],
+    });
+    const breakdown = getTrackedBreakdown([entry], '2026-03-02', [makeActivityType()]);
     expect(breakdown).toHaveLength(1);
     expect(breakdown[0].actualMinutes).toBe(40);
   });

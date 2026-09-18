@@ -24,3 +24,25 @@ jobs:
           cache-dependency-path: package-lock.json
       - run: npm ci
       - run: npm run verify
+
+  # `verify` runs in UTC, where a UTC instant and a local day always agree. Run the tests again
+  # where they do not: the farthest zones east and west of UTC, and one with DST in the fixtures'
+  # March weeks.
+  test-time-zones:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        tz: [Pacific/Kiritimati, Pacific/Pago_Pago, America/Los_Angeles]
+    env:
+      TZ: ${{ matrix.tz }}
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: .node-version
+          cache: npm
+          cache-dependency-path: package-lock.json
+      - run: npm ci
+      - run: npm test
