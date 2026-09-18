@@ -20,9 +20,14 @@ function walk(dir: string, out: string[] = []): string[] {
 describe('cloud client', () => {
   afterEach(() => resetCloudClientForTests());
 
-  it('is off in this build: no client, so no connection and no token refresh', () => {
-    expect(cloudConfig.accountsEnabled).toBe(false);
-    expect(getCloudClient()).toBeNull();
+  it('switched off, there is no client: no connection and no token refresh', () => {
+    const off = { ...cloudConfig, accountsEnabled: false };
+    expect(getCloudClient(off)).toBeNull();
+  });
+
+  it('accounts are on in this build, email codes off until the project has its own email provider', () => {
+    expect(cloudConfig.accountsEnabled).toBe(true);
+    expect(cloudConfig.emailCodesEnabled).toBe(false);
   });
 
   it('is created once when accounts are on', () => {
@@ -41,11 +46,12 @@ describe('cloud client', () => {
     expect(cloudConfig.publishableKey).toMatch(/^sb_publishable_/);
   });
 
-  it('nothing outside src/cloud imports supabase-js, so the app is unchanged while accounts are off', () => {
+  it('only src/cloud talks to supabase-js directly; screens go through it', () => {
     const importers = walk(join(ROOT, 'src'))
       .filter((f) => /@supabase\/supabase-js/.test(readFileSync(f, 'utf8')))
       .map((f) => relative(ROOT, f).replace(/\\/g, '/'));
-    expect(importers).toEqual(['src/cloud/client.ts']);
+    expect(importers).toContain('src/cloud/client.ts');
+    expect(importers.filter((f) => !f.startsWith('src/cloud/'))).toEqual([]);
   });
 });
 

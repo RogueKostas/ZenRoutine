@@ -17,6 +17,8 @@ import { useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { ThemeMode } from '../theme';
 import type { WeekStartsOn } from '../core/types';
+import { cloudConfig } from '../config/cloud';
+import { useAccountStore } from '../cloud/accountStore';
 
 interface SettingItemProps {
   title: string;
@@ -93,6 +95,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   const weekStartsOn = useWeekStartsOn();
   const pomodoroEnabled = usePomodoroEnabled();
   const dialog = useDialog();
+  const account = useAccountStore();
 
   const handleThemeChange = async () => {
     const choice = await dialog.choose({
@@ -219,6 +222,24 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
       </View>
 
       <ScrollView style={styles.content} showsVerticalScrollIndicator={false}>
+        {/* Account Section (Iteration 2): only while accounts are switched on */}
+        {cloudConfig.accountsEnabled && (
+          <View style={styles.section}>
+            <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Account</Text>
+            <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+              <SettingItem
+                title={account.status === 'signedIn' ? (account.email ?? 'Signed in') : 'Sign in or create an account'}
+                subtitle={
+                  account.status === 'signedIn'
+                    ? 'Signed in on this device'
+                    : 'Keep your data safe, and soon on all your devices'
+                }
+                onPress={() => navigation.navigate('Account')}
+              />
+            </View>
+          </View>
+        )}
+
         {/* Activity Types Section */}
         <View style={styles.section}>
           <Text style={[styles.sectionTitle, { color: colors.textSecondary }]}>Activity Types</Text>
@@ -323,7 +344,13 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
             <SettingItem
               title="Privacy Policy"
               onPress={() =>
-                void dialog.notify({ title: 'Privacy', message: 'Your data stays on your device.' })
+                void dialog.notify({
+                  title: 'Privacy',
+                  message:
+                    account.status === 'signedIn'
+                      ? 'Your data is kept on this device and saved to your ZenRoutine account (stored with Supabase in London). Only you can read it through the app.'
+                      : 'Your data stays on this device. Nothing is uploaded unless you sign in to an account.',
+                })
               }
             />
           </View>
