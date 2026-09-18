@@ -1,9 +1,9 @@
 import type { Goal, Routine, TrackingEntry } from '../types';
 import {
   addDaysToDateKey,
+  differenceInCalendarDays,
   getRoutineBlockDurationMinutes,
   getTrackingEntryDurationMinutes,
-  parseLocalDateKey,
   toLocalDateKey,
 } from '../utils/time';
 import { forecastGoals, type ForecastPoint } from './forecast';
@@ -146,11 +146,14 @@ function remainingMinutesOf(goal: SchedulableGoal): number {
   return Math.max(0, goal.estimatedMinutes - goal.loggedMinutes);
 }
 
-/** Local wall-clock instant of a forecast point. `minutes` may pass 1440 in an overnight block. */
-function pointToDate(point: ForecastPoint): Date {
-  const at = parseLocalDateKey(point.date);
-  at.setHours(0, point.minutes, 0, 0);
-  return at;
+/**
+ * Wall-clock minutes from `now` to a forecast point. `minutes` may pass 1440 in an overnight
+ * block. Counted on the local clock, not in elapsed milliseconds, so a DST change in between
+ * does not add or remove an hour from a forecast the routine lays out in wall-clock time.
+ */
+function wallClockMinutesUntil(point: ForecastPoint, now: Date): number {
+  const nowMinutes = now.getHours() * 60 + now.getMinutes() + now.getSeconds() / 60;
+  return differenceInCalendarDays(toLocalDateKey(now), point.date) * 1440 + point.minutes - nowMinutes;
 }
 
 /**
@@ -235,7 +238,7 @@ export function predictAllGoals(
       goalsAhead: aheadCount.get(goal.id) ?? 0,
       remainingMinutes: remainingMinutesOf(goal),
       weeksRemaining: completion
-        ? Math.max(0, (pointToDate(completion).getTime() - now.getTime()) / 60000) / MINUTES_PER_WEEK
+        ? Math.max(0, wallClockMinutesUntil(completion, now)) / MINUTES_PER_WEEK
         : null,
       ...getForecastEvidence(
         trackingHistory,
