@@ -2,7 +2,7 @@
 
 Last reviewed: 2026-09-03
 
-> **Amended 18 Sep 2026** by `docs/ITERATION-2-PLAN.md`: the backend is **Supabase** (Auth plus Postgres with row-level security), not an own API on Render Postgres. Sign-in starts with email and password plus email codes. Everything else here — guest mode, explicit transfer, owner scoping, conflict handling, the tester gate — still stands.
+> **Amended 18 Sep 2026** by `docs/ITERATION-2-PLAN.md`: the backend is **Supabase** (Auth plus Postgres with row-level security), not an own API on Render Postgres. Sign-in starts with email and password plus email codes. Sync is automatic, newest wins, and it asks only when both sides changed since they last agreed; a first sign-in asks only when both the device and the account have data. Guest mode, owner scoping, never silently overwriting concurrent edits, and the tester gate still stand.
 
 ## Why
 

@@ -2,11 +2,11 @@
 
 **Goal.** Kostas, and then a few friends and family, can use ZenRoutine as real users: sign in, keep their data safe, and pick it up on another device, while the app still works fully signed out and offline.
 
-The test is simple. Kostas plans and tracks on his iPhone for a week, opens his iPad, and his week is there. Nothing was lost, and nothing was uploaded, overwritten or merged without him choosing it.
+The test is simple. Kostas plans and tracks on his iPhone for a week, opens his iPad, and his week is there. Nothing was lost, and he was never asked a question that had an obvious answer.
 
 Iteration 1 made the app match the design. On 18 Sep Kostas tried it on iPad and iPhone: *"it is like the exact thing i had in my brain has been replicated on the screen(s)."* What it could not do was keep his data. Data lives in one browser on one device, Safari clears it after 7 days of not visiting, and there is no account. This iteration fixes that, so real use can show whether the product delivers the value it is meant to.
 
-Read `docs/CLOUD_BETA_TASK.md` first. Its ownership, transfer and conflict rules still stand. This plan replaces only its choice of backend (see decision 1).
+Read `docs/CLOUD_BETA_TASK.md` first. Its guest-first and ownership rules still stand. This plan replaces its choice of backend (decision 1) and its always-ask transfer rule (decisions 5 and 7).
 
 ---
 
@@ -14,20 +14,21 @@ Read `docs/CLOUD_BETA_TASK.md` first. Its ownership, transfer and conflict rules
 
 | # | Decision | Source |
 |---|---|---|
-| 1 | **A hosted service, Supabase, not our own API.** Supabase Auth plus Supabase Postgres with row-level security replaces `CLOUD_BETA_TASK.md`'s "own strict-TypeScript API on Render Postgres". The rest of that contract stands: guest mode first, explicit transfer, owner-scoped data, no silent last-write-wins. | Kostas, 18 Sep |
+| 1 | **A hosted service, Supabase, not our own API.** Supabase Auth plus Supabase Postgres with row-level security replaces `CLOUD_BETA_TASK.md`'s "own strict-TypeScript API on Render Postgres". The rest of that contract stands: guest mode first, owner-scoped data, and concurrent edits are never silently overwritten. | Kostas, 18 Sep |
 | 2 | **Sign-in at launch: email with a password, and email without a password.** Google, Apple and other social sign-ins come later, and nothing here may make them harder to add. | Kostas, 18 Sep |
 | 3 | **Accounts come before the catch-up queue.** [#57](https://github.com/RogueKostas/ZenRoutine/issues/57) moves to Iteration 3. | Kostas, 18 Sep |
 | 4 | **The app always works signed out.** Signing in is an offer, never a gate. Local data on the device stays the source of truth while offline. | `PRODUCT.md` D6 · `CLOUD_BETA_TASK.md` |
-| 5 | **No silent transfer.** A first sign-in with data on the device offers *upload this device* / *keep local-only* / *cancel*. If the account already has data, it also offers *use the account's data*, and the device's data is backed up first. | `CLOUD_BETA_TASK.md` |
+| 5 | **First sign-in follows decision 7: ask only when ambiguous.** Signing in *is* the choice to sync. A device with no data takes the account's data. A device with data and an empty account uploads it. Only a device with its own data signing in to an account that also has data asks which to keep (or to keep this device local-only), and whichever loses is backed up first. Example data is never uploaded without asking. | Kostas, 18 Sep (amends `CLOUD_BETA_TASK.md`'s always-ask rule) |
 | 6 | **Web first.** The deployed web build, installed to the Home Screen, is the beta client. Native (EAS) builds stay out of scope unless [#15](https://github.com/RogueKostas/ZenRoutine/issues/15) is picked up. | 18 Sep: Kostas uses the Home Screen web app on iPhone and iPad |
+| 7 | **Sync is automatic and the newest version wins.** Ask which version to keep *only* when it is genuinely ambiguous, which with a working connection it never should be. The app catches up with the account before accepting edits. | Kostas, 18 Sep |
 
 ---
 
-## Recommendations waiting on Kostas
+## Recommendations — accepted by Kostas, 18 Sep
 
-Each has a recommended answer. The wave that needs an answer is named; nothing earlier waits for it.
+Kostas: *"go with your recommendations."* Each row is now a decision. K2, K3 and K7 still need him to act (an email account and domain, a plan upgrade, a token rotation), at the wave named. K8 fixes an order, not an answer: #34 itself is still his to decide.
 
-| # | Question | Recommendation | Needed by |
+| # | Question | Decision | Needed by |
 |---|---|---|---|
 | K1 | **Email codes instead of magic links.** On iPhone and iPad a link in an email opens in Safari, not in the Home Screen app, so the sign-in would land in the wrong app. A 6-digit code typed into the app has no such trap. It covers passwordless sign-in, sign-up confirmation and password reset. | **Codes.** To the user it's the same "no password" experience. | Wave B |
 | K2 | **An email service for sending those codes.** Supabase's built-in email only reaches members of your Supabase team, at about 2 emails an hour, with no guarantee. Friends and family need a real provider (Resend's free tier is 3,000 a month) and a domain you control to send from, e.g. `zenroutine@hypersoniclabs.co`. | **Resend, from a domain you own.** You create the account and add the DNS records. Until then, only your own address can sign in, which is enough for Waves A–C. | Wave D |
@@ -55,17 +56,19 @@ It does **not** authorise: touching the existing `pCloud Helper` project; creati
 
 ## How data will sync
 
-Deliberately simple for this iteration, as `CLOUD_BETA_TASK.md` asks: **whole snapshots first, entity-level merging later.**
+**Automatic, and the newest version wins** (decision 7). You are asked only when the answer is genuinely ambiguous, and with a working connection that should not happen.
 
-- **One row per user:** `snapshots(user_id, revision, schema_version, data, device_id, updated_at)`. Row-level security lets a user read only their own row. Writes go through one database function that does **compare-and-swap**: "save this if the account is still at revision *n*." If another device has saved in the meantime, the write is refused as a conflict rather than overwriting.
-- **The device stays in charge.** Every change saves locally first, exactly as today. The device remembers which account revision its data started from and whether it has unsynced changes.
-- **When it syncs:** a few seconds after a change, when the app comes back to the foreground, and when the network returns. Never while you're mid-edit.
-- **Pulling:** if the account has moved on and this device has no unsynced changes, the account's data is applied **through the same validation, migration and quarantine path that loading from storage uses**. Remote data is treated as untrusted input.
-- **Conflict:** both devices changed since they last agreed. The app shows both ("iPhone, changed 14:02 — 3 goals, 41 entries" and "this iPad, changed 14:10 — …") and asks which to keep. The other version is saved as a backup, never discarded.
-- **A running timer on two devices** is always a conflict the user resolves; it is never extended implicitly.
-- **Version skew:** a device running an older build that finds newer data refuses to apply it and asks for a reload. On web, the reload fetches the new build.
+- **One row per user:** `snapshots(user_id, revision, schema_version, data, device_id, updated_at)`, whole snapshots for this iteration. Row-level security lets a user read only their own row.
+- **Catch up first.** On launch, on returning to the foreground and when the network comes back, the app fetches the account's latest state **before** it accepts edits, showing a quiet "Syncing…" for at most about 3 seconds. If the account is newer, it is applied at once. With no answer in time, the app carries on offline.
+- **Push fast.** Every change saves locally first, exactly as today, and is sent to the account within a second or two.
+- **So the normal case never asks.** You edit on the iPhone and it is pushed. You open the iPad, it catches up, then you edit. When only one side has changed, the direction is obvious and the app just does it.
+- **The only ambiguous case:** both this device and the account changed since they last agreed, i.e. at least one device edited while offline (or two devices were edited within the same second or two). Only then does the app show both versions ("iPhone, changed 14:02" / "this iPad, changed 14:10", with what differs) and ask which to keep. The other one is saved as a backup, never discarded.
+- **"Newest" means the server's order, not the device clocks.** Device clocks drift, so each save gets a revision number and a server timestamp, and a save based on an out-of-date revision is refused (compare-and-swap) rather than silently overwriting. Timestamps are what you see; revisions are what keep it safe.
+- **Remote data is untrusted input.** It is applied through the same validation, migration and quarantine path that loading from storage uses.
+- **Running timers** follow the same rule. A timer started on the iPhone is running on the iPad once it catches up. Two different timers can only arise offline, which is the ambiguous case.
+- **Version skew:** a device running an older build that finds newer data waits for a reload instead of applying it. On web, the reload fetches the new build.
 
-A ticking timer writes nothing (entries store a start time), so a single person moving between devices will rarely conflict. Conflicts need two devices edited offline.
+*Later, if the question ever appears in real use:* merging per goal or entry, so that even offline edits to different things combine automatically and you'd only be asked about the same item edited on two devices. Out of scope for now.
 
 ---
 
@@ -90,27 +93,28 @@ A ticking timer writes nothing (entries store a start time), so a single person 
 |---|---|
 | B1 | **Settings → Account:** sign up (email + password, confirmed by code), sign in (password, or email code only), forgot password (code), sign out (K5). |
 | B2 | **The invite gate (K4):** a clear message when an email isn't on the list, not a generic failure. |
-| B3 | **First sign-in transfer** (decision 5): the three- or four-way choice, with a backup of the device's data taken before anything is replaced. |
+| B3 | **First sign-in** (decision 5): automatic when one side is empty; the choice dialog only when both have data, with a backup of the losing side first. |
 | B4 | Every network failure shown in words, with the app still usable signed out. |
 
 ### Exit criteria
 - On the deployed build, Kostas's own address can sign up, sign out, sign in with a password and sign in with a code.
 - Signed out, every Iteration 1 review-script step still passes.
-- A first sign-in with local data uploads nothing until "Upload this device" is chosen.
+- A first sign-in uploads automatically only when the account is empty, asks when both sides have data, and never uploads example data without asking.
 
 ## Wave C — Sync
 
 | Item | What |
 |---|---|
-| C1 | Unsynced-change tracking and the push, pull and conflict flow described above. |
-| C2 | **Sync status:** a quiet line in Settings ("Synced 2 min ago", "Offline — changes saved on this device", "Needs your choice"). No badges, no nagging. |
-| C3 | The conflict dialog, keeping both versions. |
-| C4 | Version skew and the running-timer conflict. |
+| C1 | **Catch up first, push fast:** fetch before accepting edits on launch, foreground and reconnect; push within a second or two of a change; compare-and-swap on every save. |
+| C2 | **Sync status:** a quiet line in Settings ("Synced just now", "Offline — changes saved on this device", "Needs your choice"). No badges, no nagging. |
+| C3 | The ambiguous-case dialog, shown only when both sides changed, keeping the other version as a backup. |
+| C4 | Version skew. |
 
 ### Exit criteria — two real devices
-1. Sign in on iPhone and iPad. A goal added on one appears on the other after it is brought to the foreground.
-2. Put one device in flight mode, edit on both, reconnect: the conflict dialog appears, and the version not chosen is recoverable as a backup.
-3. Start a timer on one device and a different timer on the other: a conflict, never a silent merge.
+1. Sign in on iPhone and iPad. A goal added on one is on the other as soon as it comes to the foreground, **with no question asked**.
+2. Edit back and forth between the two devices, online, for ten minutes: **never asked**, nothing lost.
+3. Start a timer on the iPhone; open the iPad: the same timer is running there.
+4. Put one device in flight mode, edit on both, reconnect: now, and only now, you are asked, and the version not chosen is recoverable as a backup.
 4. Uninstall the Home Screen app, reinstall it, sign in: everything is back.
 
 ## Wave D — Ready for friends and family
@@ -135,7 +139,7 @@ A ticking timer writes nothing (entries store a start time), so a single person 
 Iteration 1's invariants still apply: the gate runs on the merged tree, the test count never decreases (it stands at **725**), no data loss on upgrade, web is first-class, no new `@ts-ignore`, and the design is the tiebreaker for anything visible. In addition:
 
 1. **Guest mode is never broken.** With accounts off, or signed out, or offline, everything in Iteration 1 works.
-2. **Nothing leaves the device without an explicit choice.**
+2. **Nothing leaves the device unless you are signed in**, and nothing is overwritten without a backup when both sides had changed.
 3. **Remote data is untrusted input.** It goes through the same validation, migration and quarantine as local storage. There is no second, weaker path.
 4. **Tests never touch the real project.** Unit and database tests run on PGlite. Anything that must hit Supabase is a manual, recorded check.
 5. **Secrets stay out.** The access token is used only on Kostas's machine, by the orchestrator, for setup. No service or secret key is needed by the app at all.
@@ -149,7 +153,7 @@ Iteration 1's invariants still apply: the gate runs on the merged tree, the test
 3. Plan a real week and track a real block.
 4. On iPad: install from the Home Screen, sign in with a code. Your week is there.
 5. Change something on the iPad; bring the iPhone app forward. It is there.
-6. Flight mode on one, edit both, reconnect. Choose a version. Find the other one in backups.
+6. Flight mode on one, edit both, reconnect. This is the only time you're asked. Choose a version; find the other one in backups.
 7. Sign out on the iPad and choose "Remove from this device". Sign back in. Everything returns.
 8. Add a friend's email to the invite list. They sign up unaided.
 
