@@ -18,7 +18,7 @@ const SUPABASE_STUB = `
   create role supabase_auth_admin nologin;
 
   create schema auth;
-  create table auth.users (id uuid primary key, email text);
+  create table auth.users (id uuid primary key, email text, created_at timestamptz not null default now(), encrypted_password text);
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(
       coalesce(
@@ -51,7 +51,8 @@ export const USER_B = '00000000-0000-4000-8000-00000000000b';
 export type Caller =
   | { role: 'anon' }
   | { role: 'authenticated'; sub: string | null }
-  | { role: 'supabase_auth_admin' };
+  | { role: 'supabase_auth_admin' }
+  | { role: 'zr_backup' };
 
 export interface CloudDb {
   db: PGlite;

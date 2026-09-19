@@ -31,3 +31,30 @@ Migrations are applied through the Supabase Management API (`POST /v1/projects/{
 ## Inviting someone
 
 In the Supabase dashboard's Table Editor, add a row to `public.invites` with their email in **lower case**. They can then sign up.
+
+## Backups
+
+The project is on the Free plan, which keeps no backups (Kostas, 19 Sep). Instead, `.github/workflows/backup.yml` runs every day at 03:17 UTC (and on demand from the Actions tab). It:
+
+1. Connects as `zr_backup`, a read-only login (`…_backup_reader.sql`, `…_backup_users.sql`). It can read `snapshots`, `invites`, and each user's id, email and sign-up date through `backup_users()`, and nothing else: no password hashes, no writes, no app functions.
+2. Runs `scripts/backup-export.sql`, one JSON document: `{ format: "zenroutine-server-backup", taken_at, users, snapshots, invites }`.
+3. Encrypts it with AES-256 (`openssl enc -pbkdf2`, 200,000 iterations) before it leaves the runner, and keeps it as a workflow artifact for 30 days. **The repository is public, so this encryption is what keeps the data private.**
+
+It needs two repository secrets:
+
+| Secret | Holds | Kept in |
+|---|---|---|
+| `SUPABASE_BACKUP_DB_URL` | The `zr_backup` connection string, via the London session pooler | `OneDrive\Zen Routine\Secrets\zenroutine-backup-db-url.txt` |
+| `BACKUP_PASSPHRASE` | The encryption passphrase. **Without it, no backup can be opened.** Keep a copy in a password manager too | `OneDrive\Zen Routine\Secrets\zenroutine-backup-passphrase.txt` |
+
+The daily read also counts as activity, so the Free project isn't paused in a quiet week.
+
+**Opening a backup.** Download the artifact from the workflow run, unzip it, then (Git Bash):
+
+```bash
+openssl enc -d -aes-256-cbc -pbkdf2 -iter 200000 -pass "file:C:/Users/kzari/OneDrive/Zen Routine/Secrets/zenroutine-backup-passphrase.txt" -in zenroutine-backup-<stamp>.json.enc -out backup.json
+```
+
+**Restoring one person's data.** Each entry in `snapshots` has a `data` field that is an ordinary ZenRoutine backup (`"format": "zenroutine-backup"`). Paste it into Settings → Import Data on their device. If they are signed in, sync then uploads it to their account like any other change.
+
+**Restoring the whole database** (the project was lost): recreate the project, apply `supabase/migrations/` in order, let each person sign up again, then import their snapshot as above. User ids change on a new project, so rows can't be copied back directly. Matching is by the email in `users`.
