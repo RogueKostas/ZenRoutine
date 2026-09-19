@@ -344,16 +344,9 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
             />
             <View style={[styles.separator, { backgroundColor: colors.border }]} />
             <SettingItem
-              title="Privacy Policy"
-              onPress={() =>
-                void dialog.notify({
-                  title: 'Privacy',
-                  message:
-                    account.status === 'signedIn'
-                      ? 'Your data is kept on this device and saved to your ZenRoutine account (stored with Supabase in London). Only you can read it through the app.'
-                      : 'Your data stays on this device. Nothing is uploaded unless you sign in to an account.',
-                })
-              }
+              title="Privacy"
+              subtitle="What's kept, where, who can see it, and how to delete it"
+              onPress={() => navigation.navigate('Privacy')}
             />
           </View>
         </View>

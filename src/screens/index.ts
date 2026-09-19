@@ -8,3 +8,4 @@ export { ActivityTypesScreen } from './ActivityTypesScreen';
 export { CurrentActivityScreen } from './CurrentActivityScreen';
 export { OnboardingScreen } from './OnboardingScreen';
 export { AccountScreen } from './AccountScreen';
+export { PrivacyScreen } from './PrivacyScreen';

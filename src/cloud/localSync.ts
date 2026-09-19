@@ -1,7 +1,7 @@
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import type { AppState } from '../core/types';
 import { selectPersistedAppState } from '../store/persistence';
-import { SAMPLE_GOAL_NAMES, SAMPLE_ROUTINE_NAME } from '../store/sampleData';
+import { isExampleDataOnly, isFirstRunEmpty } from '../store/sampleData';
 
 /**
  * What this device remembers about syncing, kept apart from the app's own data so that a backup,
@@ -80,15 +80,8 @@ export type LocalDataKind = 'empty' | 'exampleOnly' | 'userData';
  * - userData: anything else, including example data mixed with the user's own.
  */
 export function classifyLocalData(state: Pick<AppState, 'goals' | 'routines' | 'trackingEntries'>): LocalDataKind {
-  const hasBlocks = state.routines.some((routine) => routine.blocks.length > 0);
-  if (state.goals.length === 0 && state.trackingEntries.length === 0 && !hasBlocks) return 'empty';
-  const sampleGoals = new Set(SAMPLE_GOAL_NAMES);
-  const onlySampleRoutines = state.routines.every(
-    (routine) => routine.name === SAMPLE_ROUTINE_NAME || routine.blocks.length === 0
-  );
-  const hasSampleRoutine = state.routines.some((routine) => routine.name === SAMPLE_ROUTINE_NAME);
-  const onlySampleGoals = state.goals.every((goal) => sampleGoals.has(goal.name));
-  return hasSampleRoutine && onlySampleRoutines && onlySampleGoals ? 'exampleOnly' : 'userData';
+  if (isFirstRunEmpty(state)) return 'empty';
+  return isExampleDataOnly(state) ? 'exampleOnly' : 'userData';
 }
 
 /** "3 goals, 41 time entries": what a version holds, for the choice dialogs. */

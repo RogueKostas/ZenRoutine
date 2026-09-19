@@ -295,3 +295,20 @@ export function isFirstRunEmpty(
     state.routines.every((routine) => routine.blocks.length === 0)
   );
 }
+
+/**
+ * True when everything of the user's is the example set: only the example week (or empty
+ * routines) and only example goals. One goal or routine of their own makes it false, so offering
+ * to clear the example data can never take their own work with it.
+ */
+export function isExampleDataOnly(
+  state: Pick<AppState, 'goals' | 'routines' | 'trackingEntries'>
+): boolean {
+  if (isFirstRunEmpty(state)) return false;
+  const sampleGoals = new Set(SAMPLE_GOAL_NAMES);
+  return (
+    state.routines.some((routine) => routine.name === SAMPLE_ROUTINE_NAME) &&
+    state.routines.every((routine) => routine.name === SAMPLE_ROUTINE_NAME || routine.blocks.length === 0) &&
+    state.goals.every((goal) => sampleGoals.has(goal.name))
+  );
+}

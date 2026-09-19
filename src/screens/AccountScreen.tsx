@@ -14,11 +14,12 @@ import {
   signInWithPassword,
   signOut,
   signUp,
+  deleteAccount,
   verifySignInCode,
   type AccountResult,
 } from '../cloud/account';
 import { resolveFirstSignIn } from '../cloud/firstSignIn';
-import { flushSync, stopSync, storeApp, syncNow } from '../cloud/syncRuntime';
+import { flushSync, startSync, stopSync, storeApp, syncNow } from '../cloud/syncRuntime';
 import { describeSyncStatus, useSyncStore } from '../cloud/syncEngine';
 import { supabaseSnapshotApi } from '../cloud/remoteSnapshots';
 import {
@@ -166,6 +167,42 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
       if (!result.ok) void dialog.notify({ title: 'Sign out', message: result.message });
     };
 
+    const handleDeleteAccount = async () => {
+      const choice = await dialog.choose({
+        title: 'Delete your ZenRoutine account?',
+        message:
+          `Your account (${account.email}) and the copy of your data saved with it are deleted straight away, ` +
+          'on every device. This cannot be undone.\n\nWhat should happen to the data on this device?',
+        options: [
+          { label: 'Delete my account, keep my data on this device', value: 'keep' },
+          { label: "Delete my account and this device's data", value: 'remove' },
+        ],
+        cancelLabel: 'Cancel',
+      });
+      if (!choice) return;
+      setBusy(true);
+      // Stop sync first, so no push can land between the deletion and the sign-out.
+      stopSync();
+      const result = await deleteAccount(client);
+      if (!result.ok) {
+        setBusy(false);
+        if (account.userId) void startSync({ userId: account.userId, client, ask: (request) => dialog.choose(request) });
+        void dialog.notify({ title: "Couldn't delete your account", message: `${result.message} Nothing was deleted.` });
+        return;
+      }
+      await clearSyncMeta();
+      if (choice === 'remove') await useAppStore.getState().resetState();
+      setBusy(false);
+      refreshCopies();
+      void dialog.notify({
+        title: 'Your account is deleted',
+        message:
+          choice === 'remove'
+            ? 'Your account and all its data are gone, from the server and from this device.'
+            : 'Your account and its server copy are gone. Your data is still on this device, and ZenRoutine keeps working without an account.',
+      });
+    };
+
     return (
       <Shell title="Account" onClose={() => navigation.goBack()}>
         <View style={[styles.card, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -180,6 +217,15 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
         </View>
         <Button title="Sign out" variant="outline" onPress={handleSignOut} loading={busy} fullWidth />
         <SavedCopies copies={copies} onChanged={refreshCopies} />
+        <TouchableOpacity
+          accessibilityRole="button"
+          accessibilityLabel="Delete my account"
+          onPress={() => void handleDeleteAccount()}
+          disabled={busy}
+          style={styles.deleteLink}
+        >
+          <Text style={[styles.linkText, { color: colors.error }]}>Delete my account</Text>
+        </TouchableOpacity>
       </Shell>
     );
   }
@@ -508,6 +554,7 @@ const styles = StyleSheet.create({
   linkText: { fontSize: 15, fontWeight: '600' },
   copies: { marginTop: 16, gap: 8 },
   statusRow: { marginTop: 12, gap: 4, alignItems: 'flex-start' },
+  deleteLink: { marginTop: 24, paddingVertical: 8, alignSelf: 'center' },
   statusText: { fontSize: 14, lineHeight: 20 },
   sectionTitle: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   copyRow: { paddingVertical: 10 },

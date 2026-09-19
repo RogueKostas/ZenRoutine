@@ -13,7 +13,9 @@ import {
   useTrackingEntries,
   useAppStore,
 } from '../store';
-import { isFirstRunEmpty } from '../store/sampleData';
+import { isExampleDataOnly, isFirstRunEmpty } from '../store/sampleData';
+import { createInitialState, encodeBackup } from '../store/persistence';
+import { useDialog } from '../components/common';
 import { formatDuration, formatGoalTimeLabel, getTrackingEntryDurationMinutes } from '../core/utils/time';
 import { goalProgressPercent } from '../core/engine/goalList';
 import {
@@ -46,6 +48,23 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
   const addSampleData = useAppStore((state) => state._addSampleData);
   const [trackingStatus, setTrackingStatus] = useState('');
   const showExampleDataOffer = isFirstRunEmpty({ goals, routines, trackingEntries });
+  const exampleOnly = isExampleDataOnly({ goals, routines, trackingEntries });
+  const dialog = useDialog();
+
+  // One step from the example week to a clean start (Iteration 2, D3). Only offered while nothing
+  // on the device is the user's own, so it can never remove their work.
+  const startWithOwnData = async () => {
+    const confirmed = await dialog.confirm({
+      title: 'Start with your own data?',
+      message: 'This removes the example week, its goals and its tracked time, so you can set up your own. Your settings stay as they are.',
+      confirmLabel: 'Remove example data',
+    });
+    if (!confirmed) return;
+    const current = useAppStore.getState();
+    const fresh = { ...createInitialState(), hasCompletedOnboarding: true, preferences: current.preferences };
+    const result = await current.importData(encodeBackup(fresh));
+    if (!result.ok) void dialog.notify({ title: "Couldn't remove the example data", message: result.error });
+  };
   const now = useNow(60_000);
 
   const overviewRows = useMemo(
@@ -83,6 +102,17 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
 
         {/* Grey where today's scheduled time was not tracked (#54) */}
         <TrackedDayRibbon testID="today-ribbon" />
+
+        {exampleOnly && (
+          <View style={[styles.exampleNotice, { backgroundColor: colors.surface, borderColor: colors.border }]}>
+            <Text style={[styles.exampleNoticeText, { color: colors.textSecondary }]}>
+              You're looking at the example week.
+            </Text>
+            <TouchableOpacity accessibilityRole="button" onPress={() => void startWithOwnData()}>
+              <Text style={[styles.exampleNoticeAction, { color: colors.primary }]}>Start with my own data</Text>
+            </TouchableOpacity>
+          </View>
+        )}
 
         {showExampleDataOffer && (
           <View style={[styles.exampleCard, { backgroundColor: colors.surface, borderColor: colors.border }]}>
@@ -288,6 +318,25 @@ const styles = StyleSheet.create({
   },
   scrollView: {
     flex: 1,
+  },
+  exampleNotice: {
+    flexDirection: 'row',
+    flexWrap: 'wrap',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    gap: spacing.sm,
+    borderWidth: 1,
+    borderRadius: borderRadius.md,
+    paddingVertical: spacing.sm,
+    paddingHorizontal: spacing.md,
+    marginBottom: spacing.md,
+  },
+  exampleNoticeText: {
+    fontSize: 14,
+  },
+  exampleNoticeAction: {
+    fontSize: 14,
+    fontWeight: '600',
   },
   exampleCard: {
     marginHorizontal: spacing.lg,

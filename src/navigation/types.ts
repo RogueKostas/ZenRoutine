@@ -23,6 +23,8 @@ export type RootStackParamList = {
   Debug: undefined;
   /** Sign in, sign out and saved copies (Iteration 2). Only reachable while accounts are on. */
   Account: undefined;
+  /** What is kept, where, who can see it, and how to delete it (Iteration 2, D1). */
+  Privacy: undefined;
 };
 
 // Screen props types

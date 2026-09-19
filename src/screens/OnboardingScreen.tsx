@@ -24,9 +24,11 @@ import {
 
 interface OnboardingScreenProps {
   onComplete: () => void;
+  /** Accounts on: finish onboarding and open Settings → Account. */
+  onSignIn?: () => void;
 }
 
-export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
+export function OnboardingScreen({ onComplete, onSignIn }: OnboardingScreenProps) {
   const { colors } = useTheme();
   const addSampleData = useAppStore((state) => state._addSampleData);
   const [currentIndex, setCurrentIndex] = useState(0);
@@ -143,6 +145,18 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
         >
           <Text style={[styles.buttonText, { color: colors.onPrimary }]}>{primaryButtonLabel(currentIndex)}</Text>
         </TouchableOpacity>
+        {lastSlide && onSignIn && (
+          <TouchableOpacity
+            style={styles.signInLink}
+            onPress={onSignIn}
+            accessibilityRole="button"
+            accessibilityLabel="Sign in or create an account"
+          >
+            <Text style={[styles.signInText, { color: colors.primary }]}>
+              Have an account, or want one? Sign in or create an account
+            </Text>
+          </TouchableOpacity>
+        )}
       </View>
     </SafeAreaView>
   );
@@ -248,6 +262,15 @@ const styles = StyleSheet.create({
     paddingHorizontal: spacing.md,
     borderRadius: borderRadius.lg,
     alignItems: 'center',
+  },
+  signInLink: {
+    paddingVertical: spacing.sm,
+    alignItems: 'center',
+  },
+  signInText: {
+    fontSize: 15,
+    fontWeight: '600',
+    textAlign: 'center',
   },
   secondaryButton: {
     borderWidth: 2,
