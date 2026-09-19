@@ -12,13 +12,15 @@ export type { BadgeVariant, BadgeSize } from './Badge';
 
 export {
   QuarantineNotice,
+  RecoveredActivityNotice,
   RepairNotice,
   isHydrationNoticeVisible,
   isQuarantineNoticeVisible,
   quarantineNoticeMessage,
+  recoveredActivityNoticeMessage,
   repairNoticeMessage,
 } from './QuarantineNotice';
-export type { QuarantineReport, RepairReport } from './QuarantineNotice';
+export type { QuarantineReport, RecoveredActivityReport, RepairReport } from './QuarantineNotice';
 
 export { DialogProvider, useDialog } from './Dialog';
 export { cancelResult, createDialogApi, createDialogQueue, dialogActions } from './dialogQueue';

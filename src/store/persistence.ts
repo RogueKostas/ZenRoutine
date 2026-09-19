@@ -150,6 +150,31 @@ export interface RepairedTrackingEntry {
   record: unknown;
 }
 
+/**
+ * An activity type hydration had to recreate (#34), because a goal or routine block still named it
+ * after it had gone from the stored blob.
+ *
+ * A third channel, separate from quarantine and repair: nothing was set aside and no tracking entry
+ * was altered. What changed is that the store now holds an activity type the user did not make,
+ * standing in for one they did, and they need to be told so they can rename it or move its goals
+ * and blocks. The placeholder keeps the missing id, so no reference anywhere was rewritten.
+ */
+export interface RecoveredActivityType {
+  /** The id goals and blocks were pointing at, now the placeholder's own id. */
+  id: string;
+  /** The name the placeholder was given ("Recovered activity", "Recovered activity 2", ...). */
+  name: string;
+  /** How many goals named the missing type. */
+  goalCount: number;
+  /** How many routine blocks, across every routine, named the missing type. */
+  routineBlockCount: number;
+}
+
+/** The placeholder's look: a neutral grey and a question mark, so it reads as "needs attention". */
+export const RECOVERED_ACTIVITY_NAME = 'Recovered activity';
+export const RECOVERED_ACTIVITY_COLOR = '#8A8F8C';
+export const RECOVERED_ACTIVITY_ICON = '❓';
+
 export const QUARANTINE_ARCHIVE_FORMAT = 'zenroutine-quarantine-archive';
 /**
  * Cap on retained generations, so a device that somehow quarantines on every launch cannot grow
@@ -257,6 +282,14 @@ export interface MigrationOptions {
    * this: a legacy backup still imports, it just has no UI to announce the repair to.
    */
   repairs?: RepairedTrackingEntry[];
+  /**
+   * When supplied, every placeholder activity type this read had to create is pushed here (#34).
+   *
+   * Like `repairs`, this sink only decides whether anybody is told; it does not switch the
+   * recovery on. The recovery is switched on by `quarantine`: without a quarantine sink a goal or
+   * block naming a missing activity type still throws, which keeps backup import strict.
+   */
+  recoveredActivityTypes?: RecoveredActivityType[];
 }
 
 export function createDefaultPreferences(): Preferences {
@@ -800,6 +833,79 @@ function closeStrandedOpenEntry(
   return { endTime: entry.updatedAt, evidence: 'lastUpdated' };
 }
 
+/**
+ * Placeholder activity types for every id a goal or routine block names that `activityTypes`
+ * does not hold (#34), in order of first reference: goals first, then each routine's blocks.
+ *
+ * Each placeholder takes the missing id itself, so every goal, block and tracking entry that named
+ * it resolves again without a single reference being rewritten. Names skip any already in use,
+ * compared without case or surrounding space, so the placeholder can always be told apart in the
+ * Activity Types list. Returns nothing when every reference resolves, which is what makes a second
+ * read of the result create nothing.
+ */
+function recoverMissingActivityTypes(
+  activityTypes: readonly ActivityType[],
+  goals: readonly Goal[],
+  routines: readonly Routine[],
+  now: string
+): { placeholders: ActivityType[]; reports: RecoveredActivityType[] } {
+  const known = new Set(activityTypes.map((activity) => activity.id));
+  const counts = new Map<string, { goalCount: number; routineBlockCount: number }>();
+  const countFor = (id: string) => {
+    let count = counts.get(id);
+    if (!count) {
+      count = { goalCount: 0, routineBlockCount: 0 };
+      counts.set(id, count);
+    }
+    return count;
+  };
+  for (const goal of goals) {
+    if (goal.activityTypeId !== undefined && !known.has(goal.activityTypeId)) {
+      countFor(goal.activityTypeId).goalCount += 1;
+    }
+  }
+  for (const routine of routines) {
+    for (const block of routine.blocks) {
+      if (!known.has(block.activityTypeId)) countFor(block.activityTypeId).routineBlockCount += 1;
+    }
+  }
+  if (counts.size === 0) return { placeholders: [], reports: [] };
+
+  const usedNames = new Set(activityTypes.map((activity) => activity.name.trim().toLowerCase()));
+  const nextName = () => {
+    for (let suffix = 1; ; suffix += 1) {
+      const name = suffix === 1 ? RECOVERED_ACTIVITY_NAME : `${RECOVERED_ACTIVITY_NAME} ${suffix}`;
+      if (!usedNames.has(name.toLowerCase())) {
+        usedNames.add(name.toLowerCase());
+        return name;
+      }
+    }
+  };
+  let sortOrder = activityTypes.reduce(
+    (highest, activity) => Math.max(highest, activity.sortOrder),
+    -1
+  );
+
+  const placeholders: ActivityType[] = [];
+  const reports: RecoveredActivityType[] = [];
+  for (const [id, count] of counts) {
+    sortOrder += 1;
+    const name = nextName();
+    placeholders.push({
+      id,
+      name,
+      color: RECOVERED_ACTIVITY_COLOR,
+      icon: RECOVERED_ACTIVITY_ICON,
+      isDefault: false,
+      sortOrder,
+      createdAt: now,
+      updatedAt: now,
+    });
+    reports.push({ id, name, ...count });
+  }
+  return { placeholders, reports };
+}
+
 export function migratePersistedState(
   persistedState: unknown,
   version: number,
@@ -910,6 +1016,35 @@ export function migratePersistedState(
     const staleIds = new Set(stale.map((entry) => entry.id));
     trackingEntries = trackingEntries.filter((entry) => !staleIds.has(entry.id));
   };
+
+  /**
+   * A goal or routine block naming an activity type the blob no longer holds (#34).
+   *
+   * This used to throw on every launch, leaving "reset all data" as the only way back in. Goals
+   * and blocks cannot be quarantined like a tracking entry: they are the skeleton the rest of the
+   * state hangs off, and their activityTypeId is required (a typed goal's, and every block's).
+   * So hydration puts the skeleton back instead: one visible, labelled placeholder per missing
+   * id, *with that id*. Nothing is rewritten or lost, a tracking entry naming the same id resolves
+   * with it, and the user can rename the placeholder or move its goals and blocks.
+   *
+   * Gated on the quarantine sink, which is what marks a hydration: backup import and account
+   * downloads pass none and still refuse, leaving local data untouched, because the user chose
+   * that file and can choose another. Done before any reference check, so those checks see the
+   * recovered types; a tracking entry naming some *other* missing id is still quarantined below.
+   */
+  if (quarantine) {
+    const { placeholders, reports } = recoverMissingActivityTypes(
+      activityTypes,
+      goals,
+      routines,
+      new Date().toISOString()
+    );
+    for (const placeholder of placeholders) {
+      activityTypes.push(placeholder);
+      activityIds.add(placeholder.id);
+    }
+    options?.recoveredActivityTypes?.push(...reports);
+  }
 
   // A goal with no type (#50, v8 on) references nothing; one with a type must name a real one.
   if (goals.some((goal) => goal.activityTypeId !== undefined && !activityIds.has(goal.activityTypeId))) {
