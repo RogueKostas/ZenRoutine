@@ -24,6 +24,7 @@ import {
   useDialog,
   isHydrationNoticeVisible,
   ShellMark,
+  CloudSync,
   type QuarantineReport,
   type RepairReport,
 } from './src/components/common';
@@ -207,6 +208,7 @@ function AppContent() {
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <RootNavigator />
       </NavigationContainer>
+      {cloudConfig.accountsEnabled ? <CloudSync /> : null}
     </View>
   );
 }

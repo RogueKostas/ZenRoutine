@@ -184,3 +184,30 @@ export async function saveCopy(
   await storage.setItem(SAVED_COPIES_KEY, JSON.stringify(copies));
   return copy;
 }
+
+/**
+ * What differs between two versions, in words, for the "which version do you want to keep?"
+ * question: goals only one side has, by name, then whatever else changed in counts. Counts alone
+ * ("3 goals" against "3 goals") don't help anyone choose.
+ */
+export function describeDifference(
+  mine: Pick<AppState, 'goals' | 'trackingEntries' | 'routines'>,
+  theirs: Pick<AppState, 'goals' | 'trackingEntries' | 'routines'>
+): { mine: string; theirs: string } {
+  const names = (goals: AppState['goals'], others: AppState['goals']) => {
+    const otherIds = new Set(others.map((g) => g.id));
+    return goals.filter((g) => !otherIds.has(g.id)).map((g) => `“${g.name}”`);
+  };
+  const list = (items: string[]) =>
+    items.length <= 3 ? items.join(', ') : `${items.slice(0, 3).join(', ')} and ${items.length - 3} more`;
+  const side = (a: typeof mine, b: typeof mine) => {
+    const parts: string[] = [];
+    const onlyHere = names(a.goals, b.goals);
+    if (onlyHere.length) parts.push(`${onlyHere.length === 1 ? 'goal' : 'goals'} ${list(onlyHere)}`);
+    const entries = a.trackingEntries.length - b.trackingEntries.length;
+    if (entries > 0) parts.push(`${entries} more time ${entries === 1 ? 'entry' : 'entries'}`);
+    return parts.length ? `has ${parts.join(' and ')}` : null;
+  };
+  const fallback = (s: typeof mine) => `has ${describeData(s)}, with other edits`;
+  return { mine: side(mine, theirs) ?? fallback(mine), theirs: side(theirs, mine) ?? fallback(theirs) };
+}

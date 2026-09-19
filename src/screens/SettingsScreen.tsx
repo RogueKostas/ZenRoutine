@@ -19,6 +19,7 @@ import type { ThemeMode } from '../theme';
 import type { WeekStartsOn } from '../core/types';
 import { cloudConfig } from '../config/cloud';
 import { useAccountStore } from '../cloud/accountStore';
+import { describeSyncStatus, useSyncStore } from '../cloud/syncEngine';
 
 interface SettingItemProps {
   title: string;
@@ -96,6 +97,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
   const pomodoroEnabled = usePomodoroEnabled();
   const dialog = useDialog();
   const account = useAccountStore();
+  const syncStatus = useSyncStore();
 
   const handleThemeChange = async () => {
     const choice = await dialog.choose({
@@ -231,8 +233,8 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
                 title={account.status === 'signedIn' ? (account.email ?? 'Signed in') : 'Sign in or create an account'}
                 subtitle={
                   account.status === 'signedIn'
-                    ? 'Signed in on this device'
-                    : 'Keep your data safe, and soon on all your devices'
+                    ? describeSyncStatus(syncStatus, new Date())
+                    : 'Keep your data safe and on all your devices'
                 }
                 onPress={() => navigation.navigate('Account')}
               />

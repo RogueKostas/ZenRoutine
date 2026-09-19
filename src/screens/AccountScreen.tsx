@@ -18,6 +18,8 @@ import {
   type AccountResult,
 } from '../cloud/account';
 import { resolveFirstSignIn } from '../cloud/firstSignIn';
+import { flushSync, stopSync, storeApp, syncNow } from '../cloud/syncRuntime';
+import { describeSyncStatus, useSyncStore } from '../cloud/syncEngine';
 import { supabaseSnapshotApi } from '../cloud/remoteSnapshots';
 import {
   clearSyncMeta,
@@ -29,7 +31,6 @@ import {
   type SavedCopy,
 } from '../cloud/localSync';
 import { MIN_PASSWORD_LENGTH } from '../cloud/authErrors';
-import { createInitialState, encodeBackup } from '../store/persistence';
 import type { RootStackScreenProps } from '../navigation/types';
 
 /**
@@ -96,17 +97,7 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
       userId: data.user.id,
       deviceId: await getDeviceId(),
       api: supabaseSnapshotApi(client, data.user.id),
-      app: {
-        getState: () => useAppStore.getState(),
-        exportData: () => useAppStore.getState().exportData(),
-        importData: (serialized) => useAppStore.getState().importData(serialized),
-        startFresh: async () => {
-          const current = useAppStore.getState();
-          const fresh = { ...createInitialState(), hasCompletedOnboarding: true, preferences: current.preferences };
-          const result = await current.importData(encodeBackup(fresh));
-          if (!result.ok) throw new Error(result.error);
-        },
-      },
+      app: storeApp,
       ask: (request) => dialog.choose(request),
     });
     setBusy(false);
@@ -125,6 +116,8 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
       inSync: 'This device and your account already match.',
     } as const;
     void dialog.notify({ title: 'Signed in', message: messages[result.kind] });
+    // From here on sync is automatic; start it now rather than at the next trigger.
+    void syncNow();
   };
 
   if (!client) {
@@ -140,6 +133,10 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
 
   if (account.status === 'signedIn') {
     const handleSignOut = async () => {
+      // Send anything unsynced first, so "remove from this device" is offered whenever it is safe.
+      setBusy(true);
+      await flushSync();
+      setBusy(false);
       const meta = await readSyncMeta();
       const synced =
         meta !== null && meta.userId === account.userId && meta.syncedHash === contentHash(useAppStore.getState());
@@ -147,7 +144,7 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
         title: 'Sign out of this device?',
         message: synced
           ? 'Your data is saved to your account. Keep a copy on this device too, or remove it?'
-          : "This device has changes that aren't in your account yet, so they stay on this device. Automatic sync comes in the next update.",
+          : "This device has changes that haven't reached your account yet (it may be offline), so they stay on this device.",
         options: synced
           ? [
               { label: 'Keep a copy on this device', value: 'keep' },
@@ -161,6 +158,7 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
         await saveCopy(useAppStore.getState().exportData(), 'This device, when you signed out and removed it').catch(() => undefined);
         await useAppStore.getState().resetState();
       }
+      stopSync();
       const result = await signOut(client);
       await clearSyncMeta();
       setBusy(false);
@@ -176,9 +174,9 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
             {account.email}
           </Text>
           <Text style={[styles.body, { color: colors.textSecondary }]}>
-            Your data was saved to your account when you signed in. Automatic sync between your devices comes in the next
-            update.
+            Your changes sync automatically with your other signed-in devices.
           </Text>
+          <SyncStatusLine />
         </View>
         <Button title="Sign out" variant="outline" onPress={handleSignOut} loading={busy} fullWidth />
         <SavedCopies copies={copies} onChanged={refreshCopies} />
@@ -385,11 +383,34 @@ export function AccountScreen({ navigation }: RootStackScreenProps<'Account'>) {
   return (
     <Shell title={step === 'signUp' ? 'Create an account' : 'Sign in'} onClose={() => navigation.goBack()}>
       <Text style={[styles.body, { color: colors.textSecondary }]}>
-        An account keeps your data safe and, soon, on all your devices. ZenRoutine works the same without one.
+        An account keeps your data safe and in sync across your devices. ZenRoutine works the same without one.
       </Text>
       {body}
       <SavedCopies copies={copies} onChanged={refreshCopies} />
     </Shell>
+  );
+}
+
+/** "Synced just now", "Offline…", or the question waiting for you, with the action that fits. */
+function SyncStatusLine() {
+  const { colors } = useTheme();
+  const status = useSyncStore();
+  const line = describeSyncStatus(status, new Date());
+  const action = status.phase === 'conflict' ? 'Choose a version' : status.phase === 'offline' || status.phase === 'error' ? 'Try again' : null;
+  return (
+    <View style={styles.statusRow}>
+      <Text
+        accessibilityLiveRegion="polite"
+        style={[styles.statusText, { color: status.phase === 'error' || status.phase === 'conflict' ? colors.error : colors.textSecondary }]}
+      >
+        {line}
+      </Text>
+      {action ? (
+        <TouchableOpacity accessibilityRole="button" onPress={() => void syncNow()} style={styles.link}>
+          <Text style={[styles.linkText, { color: colors.primary }]}>{action}</Text>
+        </TouchableOpacity>
+      ) : null}
+    </View>
   );
 }
 
@@ -486,6 +507,8 @@ const styles = StyleSheet.create({
   link: { paddingVertical: 6, alignSelf: 'center' },
   linkText: { fontSize: 15, fontWeight: '600' },
   copies: { marginTop: 16, gap: 8 },
+  statusRow: { marginTop: 12, gap: 4, alignItems: 'flex-start' },
+  statusText: { fontSize: 14, lineHeight: 20 },
   sectionTitle: { fontSize: 13, fontWeight: '600', textTransform: 'uppercase', letterSpacing: 0.5 },
   copyRow: { paddingVertical: 10 },
   copyReason: { fontSize: 15 },
