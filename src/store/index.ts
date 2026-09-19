@@ -13,6 +13,7 @@ export {
   isPomodoroEnabled,
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
+  getRecoveredActivityTypes,
   getRepairedTrackingEntries,
   initializeAppStore,
   resetAppStoreAfterHydrationError,
@@ -24,6 +25,7 @@ export type { AppStore, GoalUpdate, HydrationSnapshot, ImportResult } from './us
 export type { GoalMoveTarget } from '../core/engine/goalOrder';
 export type {
   QuarantinedTrackingEntry,
+  RecoveredActivityType,
   RepairEvidence,
   RepairedTrackingEntry,
 } from './persistence';

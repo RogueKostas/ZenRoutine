@@ -3,10 +3,12 @@ import { describe, expect, it } from 'vitest';
 import type { AppState } from '../../src/core/types';
 import type {
   QuarantinedTrackingEntry,
+  RecoveredActivityType,
   RepairedTrackingEntry,
 } from '../../src/store/persistence';
 import {
   CURRENT_SCHEMA_VERSION,
+  RECOVERED_ACTIVITY_NAME,
   STRICT_SCHEMA_VERSION,
   createDefaultPreferences,
   hydratePersistedState,
@@ -53,14 +55,20 @@ interface ReadResult {
   state: AppState;
   quarantine: QuarantinedTrackingEntry[];
   repairs: RepairedTrackingEntry[];
+  recovered: RecoveredActivityType[];
 }
 
 /** The versioned read, exactly as zustand's `migrate` stage performs it. */
 function readAtVersion(stored: unknown, version: number): ReadResult {
   const quarantine: QuarantinedTrackingEntry[] = [];
   const repairs: RepairedTrackingEntry[] = [];
-  const state = migratePersistedState(stored, version, { quarantine, repairs });
-  return { state, quarantine, repairs };
+  const recovered: RecoveredActivityType[] = [];
+  const state = migratePersistedState(
+    stored,
+    version,
+    { quarantine, repairs, recoveredActivityTypes: recovered }
+  );
+  return { state, quarantine, repairs, recovered };
 }
 
 /**
@@ -398,6 +406,42 @@ const REPAIR_CASES: RepairCase[] = [
     },
   },
   {
+    name: 'a goal and a block naming a missing activity type get a placeholder type (#34)',
+    version: 8,
+    stored: storedState({
+      goals: [makeGoal({ activityTypeId: 'activity-vanished' })],
+      routines: [makeRoutine({
+        blocks: [makeRoutineBlock({ activityTypeId: 'activity-other-gone' })],
+      })],
+      trackingEntries: [makeTrackingEntry({ activityTypeId: 'activity-vanished' })],
+    }),
+    expectRepaired: ({ state, recovered, quarantine }) => {
+      expect(recovered.map((entry) => [entry.id, entry.name])).toEqual([
+        ['activity-vanished', RECOVERED_ACTIVITY_NAME],
+        ['activity-other-gone', `${RECOVERED_ACTIVITY_NAME} 2`],
+      ]);
+      expect(state.activityTypes.map((activity) => activity.id)).toEqual([
+        'activity-focus',
+        'activity-vanished',
+        'activity-other-gone',
+      ]);
+      // The entry on the recovered id resolves rather than being set aside.
+      expect(state.trackingEntries.map((entry) => entry.id)).toEqual(['entry-focus']);
+      expect(quarantine).toEqual([]);
+    },
+  },
+  {
+    name: 'a pre-v4 goal naming a missing activity type gets a placeholder type (#34)',
+    version: LEGACY,
+    stored: storedState({
+      goals: [makeLegacyGoal({ activityTypeId: 'activity-vanished' })],
+    }),
+    expectRepaired: ({ state, recovered }) => {
+      expect(recovered).toEqual([expect.objectContaining({ id: 'activity-vanished', goalCount: 1 })]);
+      expect(state.activityTypes.some((activity) => activity.id === 'activity-vanished')).toBe(true);
+    },
+  },
+  {
     name: 'every legacy repair at once still composes',
     version: 1,
     stored: (() => {
@@ -476,13 +520,16 @@ describe('every repair emits output the strict read accepts (#38)', () => {
       // `initializeAppStore` that is allowed to fail silently.
       const quarantine: QuarantinedTrackingEntry[] = [];
       const repairs: RepairedTrackingEntry[] = [];
+      const recovered: RecoveredActivityType[] = [];
       const strict = migratePersistedState(
         read.state,
         CURRENT_SCHEMA_VERSION,
-        { quarantine, repairs }
+        { quarantine, repairs, recoveredActivityTypes: recovered }
       );
       expect(quarantine).toEqual([]);
       expect(repairs).toEqual([]);
+      // A placeholder the versioned read created is already there, so nothing is recovered twice.
+      expect(recovered).toEqual([]);
       // Trap 2: accepted *unchanged*, not merely accepted.
       expect(strict).toEqual(read.state);
 
@@ -533,6 +580,15 @@ describe('the strict read is idempotent', () => {
         })],
       }),
       LEGACY
+    ).state as unknown as Record<string, unknown>],
+    ['a store with a recovered activity type (#34)', readAtVersion(
+      storedState({
+        goals: [makeGoal({ activityTypeId: 'activity-vanished' })],
+        routines: [makeRoutine({
+          blocks: [makeRoutineBlock({ activityTypeId: 'activity-vanished' })],
+        })],
+      }),
+      CURRENT_SCHEMA_VERSION
     ).state as unknown as Record<string, unknown>],
   ];
 

@@ -56,6 +56,7 @@ import {
 import type {
   QuarantineArchive,
   QuarantinedTrackingEntry,
+  RecoveredActivityType,
   RepairedTrackingEntry,
 } from './persistence';
 
@@ -104,6 +105,14 @@ const NO_REPAIRS: readonly RepairedTrackingEntry[] = [];
 let repairedTrackingEntries: readonly RepairedTrackingEntry[] = NO_REPAIRS;
 let pendingRepairs: RepairedTrackingEntry[] = [];
 
+// The recovered-skeleton channel (#34), separate from both of the above: nothing was set aside and
+// no entry was altered, but the store now holds a placeholder activity type the user did not make.
+// Not written to the side-car: there is no original record to preserve, since the placeholder
+// only fills a gap and every reference to it is exactly as stored.
+const NO_RECOVERED: readonly RecoveredActivityType[] = [];
+let recoveredActivityTypes: readonly RecoveredActivityType[] = NO_RECOVERED;
+let pendingRecovered: RecoveredActivityType[] = [];
+
 /**
  * Tracking entries the last hydration could not read and therefore left out of live state.
  * Deliberately kept off HydrationSnapshot so the existing hydration contract is unchanged.
@@ -122,15 +131,30 @@ export function getRepairedTrackingEntries(): readonly RepairedTrackingEntry[] {
 }
 
 /**
- * Drop both reports after the state they described has been replaced wholesale (reset or import).
- * The durable QUARANTINE_STORAGE_KEY copy is left alone — this clears the notices, not the data.
+ * Activity types the last hydration had to recreate as placeholders, because a goal or routine
+ * block still named them after they had gone from the stored blob (#34). They are in live state
+ * under their original ids; this report is what keeps their appearance from being silent.
+ */
+export function getRecoveredActivityTypes(): readonly RecoveredActivityType[] {
+  return recoveredActivityTypes;
+}
+
+/**
+ * Drop every hydration report after the state they described has been replaced wholesale (reset
+ * or import). The durable QUARANTINE_STORAGE_KEY copy is left alone — this clears the notices, not
+ * the data.
  */
 function clearHydrationReports(): void {
-  if (quarantinedTrackingEntries === NO_QUARANTINE && repairedTrackingEntries === NO_REPAIRS) {
+  if (
+    quarantinedTrackingEntries === NO_QUARANTINE &&
+    repairedTrackingEntries === NO_REPAIRS &&
+    recoveredActivityTypes === NO_RECOVERED
+  ) {
     return;
   }
   quarantinedTrackingEntries = NO_QUARANTINE;
   repairedTrackingEntries = NO_REPAIRS;
+  recoveredActivityTypes = NO_RECOVERED;
   hydrationListeners.forEach((listener) => listener());
 }
 
@@ -1668,7 +1692,11 @@ export const useAppStore = create<AppStore>()(
         const migrated = hydratePersistedState(
           persistedState,
           version,
-          { quarantine: pendingQuarantine, repairs: pendingRepairs }
+          {
+            quarantine: pendingQuarantine,
+            repairs: pendingRepairs,
+            recoveredActivityTypes: pendingRecovered,
+          }
         );
         // Only the migrate path rewrites the app blob during hydration, and it does so with the
         // quarantined record already stripped out. Measured order before this await existed
@@ -1721,7 +1749,11 @@ export const useAppStore = create<AppStore>()(
         const migrated = migratePersistedState(
           persistedState,
           CURRENT_SCHEMA_VERSION,
-          { quarantine: pendingQuarantine, repairs: pendingRepairs }
+          {
+            quarantine: pendingQuarantine,
+            repairs: pendingRepairs,
+            recoveredActivityTypes: pendingRecovered,
+          }
         );
         quarantinedTrackingEntries =
           pendingQuarantine.length > 0 ? pendingQuarantine : NO_QUARANTINE;
@@ -1730,14 +1762,20 @@ export const useAppStore = create<AppStore>()(
         // Publishing from `merge` anyway is what carries a migrate-stage repair to the screen,
         // since `merge` is the later of the two stages and the sink is shared across both.
         repairedTrackingEntries = pendingRepairs.length > 0 ? pendingRepairs : NO_REPAIRS;
+        // Recovered placeholders come from whichever read first saw the gap: migrate on the
+        // migrate path (this re-read then finds every reference resolving and adds nothing), or
+        // this call on the pure merge path. Published here for the same reason as repairs.
+        recoveredActivityTypes = pendingRecovered.length > 0 ? pendingRecovered : NO_RECOVERED;
         return { ...currentState, ...migrated };
       },
       onRehydrateStorage: () => {
         hydrationFailure = null;
         pendingQuarantine = [];
         pendingRepairs = [];
+        pendingRecovered = [];
         quarantinedTrackingEntries = NO_QUARANTINE;
         repairedTrackingEntries = NO_REPAIRS;
+        recoveredActivityTypes = NO_RECOVERED;
         return (_state, error) => {
           hydrationFailure = error ?? null;
         };

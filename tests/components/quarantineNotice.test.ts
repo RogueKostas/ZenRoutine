@@ -15,13 +15,16 @@ vi.mock('react-native', () => ({
 
 import {
   QuarantineNotice,
+  RecoveredActivityNotice,
   RepairNotice,
+  recoveredActivityNoticeMessage,
   isHydrationNoticeVisible,
   isQuarantineNoticeVisible,
   type QuarantineReport,
 } from '../../src/components/common/QuarantineNotice';
 import {
   getQuarantinedTrackingEntries,
+  getRecoveredActivityTypes,
   getRepairedTrackingEntries,
   initializeAppStore,
   useAppStore,
@@ -32,7 +35,7 @@ import {
   STRICT_SCHEMA_VERSION,
   createInitialState,
 } from '../../src/store/persistence';
-import { makeAppState, makeTrackingEntry } from '../helpers/builders';
+import { makeAppState, makeGoal, makeTrackingEntry } from '../helpers/builders';
 
 const noticeColors = { surface: '#FFFFFF', text: '#111111', primary: '#2F6FED' };
 
@@ -234,5 +237,44 @@ describe('the quarantine notice itself', () => {
 
     // A 44pt target is the smallest thing a thumb can reliably hit.
     expect(propsOf(elementsOfType(tree, 'Pressable')[0]).style).toMatchObject({ minHeight: 44 });
+  });
+});
+
+describe('the recovered activity notice (#34)', () => {
+  it('names the placeholder and where to fix it', () => {
+    expect(recoveredActivityNoticeMessage(['Recovered activity'])).toBe(
+      '1 activity type was missing. Its goals and routine blocks were kept under ‘Recovered activity’. Rename it, or move them, in Settings → Activity Types.'
+    );
+    expect(recoveredActivityNoticeMessage(['Recovered activity', 'Recovered activity 2'])).toBe(
+      '2 activity types were missing. Their goals and routine blocks were kept under ‘Recovered activity’ and ‘Recovered activity 2’. Rename them, or move what they hold, in Settings → Activity Types.'
+    );
+  });
+
+  it('renders from the store report, in theme colours, and can be dismissed', async () => {
+    await AsyncStorage.setItem(APP_STORAGE_KEY, JSON.stringify({
+      state: makeAppState({ goals: [makeGoal({ activityTypeId: 'activity-vanished' })] }),
+      version: CURRENT_SCHEMA_VERSION,
+    }));
+    await initializeAppStore({ force: true });
+    const report = getRecoveredActivityTypes();
+    expect(report.map((recovered) => recovered.id)).toEqual(['activity-vanished']);
+    expect(isHydrationNoticeVisible(report, null)).toBe(true);
+    // Its own channel: the other two notices stay hidden.
+    expect(isHydrationNoticeVisible(getQuarantinedTrackingEntries(), null)).toBe(false);
+    expect(isHydrationNoticeVisible(getRepairedTrackingEntries(), null)).toBe(false);
+
+    const onDismiss = vi.fn();
+    const tree = RecoveredActivityNotice({ report, colors: noticeColors, onDismiss });
+    expect(propsOf(tree).accessibilityLiveRegion).toBe('polite');
+    const texts = elementsOfType(tree, 'Text');
+    expect(textOf(texts[0])).toContain('‘Recovered activity’');
+    expect(propsOf(texts[0]).style).toEqual(
+      expect.arrayContaining([{ color: noticeColors.text }])
+    );
+    const [button] = elementsOfType(tree, 'Pressable');
+    expect(propsOf(button).accessibilityRole).toBe('button');
+    (propsOf(button).onPress as () => void)();
+    expect(onDismiss).toHaveBeenCalledTimes(1);
+    expect(isHydrationNoticeVisible(report, report)).toBe(false);
   });
 });

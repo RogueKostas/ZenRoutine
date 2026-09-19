@@ -1,6 +1,10 @@
 import React from 'react';
 import { Pressable, StyleSheet, Text, View } from 'react-native';
-import type { QuarantinedTrackingEntry, RepairedTrackingEntry } from '../../store/persistence';
+import type {
+  QuarantinedTrackingEntry,
+  RecoveredActivityType,
+  RepairedTrackingEntry,
+} from '../../store/persistence';
 import type { ThemeColors } from '../../theme';
 
 /**
@@ -17,6 +21,14 @@ export type QuarantineReport = readonly QuarantinedTrackingEntry[];
  * entries are in the user's history right now, which is the opposite of being set aside.
  */
 export type RepairReport = readonly RepairedTrackingEntry[];
+
+/**
+ * One hydration's worth of activity types recreated as placeholders (#34), from
+ * getRecoveredActivityTypes(). Same reference-stability contract as the two reports above, and a
+ * third separate report: nothing was set aside or altered, but the user now has an activity type
+ * they did not make and should rename it or move what it holds.
+ */
+export type RecoveredActivityReport = readonly RecoveredActivityType[];
 
 /**
  * Whether a hydration notice should be on screen.
@@ -54,6 +66,25 @@ export function repairNoticeMessage(count: number): string {
     : `${count} timers from an older version were still running, so we ended them at the last activity we have a record of. Check those entries’ end times.`;
 }
 
+/** "‘A’", "‘A’ and ‘B’", "‘A’, ‘B’ and ‘C’". */
+function listNames(names: readonly string[]): string {
+  const quoted = names.map((name) => `‘${name}’`);
+  return quoted.length <= 1
+    ? quoted.join('')
+    : `${quoted.slice(0, -1).join(', ')} and ${quoted[quoted.length - 1]}`;
+}
+
+/**
+ * The recovered-activity sentence (#34). Says what happened (a type was missing), that nothing was
+ * lost (its goals and blocks were kept), where they are (the placeholder's name) and what to do
+ * about it (rename, or move them, in the Activity Types screen under Settings).
+ */
+export function recoveredActivityNoticeMessage(names: readonly string[]): string {
+  return names.length === 1
+    ? `1 activity type was missing. Its goals and routine blocks were kept under ${listNames(names)}. Rename it, or move them, in Settings → Activity Types.`
+    : `${names.length} activity types were missing. Their goals and routine blocks were kept under ${listNames(names)}. Rename them, or move what they hold, in Settings → Activity Types.`;
+}
+
 interface NoticeProps {
   count: number;
   colors: Pick<ThemeColors, 'surface' | 'text' | 'primary'>;
@@ -88,6 +119,20 @@ export function QuarantineNotice({ count, colors, onDismiss }: NoticeProps) {
 
 export function RepairNotice({ count, colors, onDismiss }: NoticeProps) {
   return renderNotice(repairNoticeMessage(count), colors, onDismiss);
+}
+
+interface RecoveredActivityNoticeProps {
+  report: RecoveredActivityReport;
+  colors: NoticeProps['colors'];
+  onDismiss: () => void;
+}
+
+export function RecoveredActivityNotice({ report, colors, onDismiss }: RecoveredActivityNoticeProps) {
+  return renderNotice(
+    recoveredActivityNoticeMessage(report.map((recovered) => recovered.name)),
+    colors,
+    onDismiss
+  );
 }
 
 const styles = StyleSheet.create({

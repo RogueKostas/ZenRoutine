@@ -4,6 +4,9 @@ import {
   BACKUP_FORMAT,
   BACKUP_FORMAT_VERSION,
   CURRENT_SCHEMA_VERSION,
+  RECOVERED_ACTIVITY_COLOR,
+  RECOVERED_ACTIVITY_ICON,
+  RECOVERED_ACTIVITY_NAME,
   STRICT_SCHEMA_VERSION,
   decodeBackup,
   encodeBackup,
@@ -12,6 +15,7 @@ import {
 } from '../../src/store/persistence';
 import type {
   QuarantinedTrackingEntry,
+  RecoveredActivityType,
   RepairedTrackingEntry,
 } from '../../src/store/persistence';
 import {
@@ -332,11 +336,19 @@ describe('persisted-state migrations, continued', () => {
       CURRENT_SCHEMA_VERSION,
       { quarantine: [] }
     )).toThrow('Invalid trackingEntries');
+    // A goal naming a missing activity type used to be the second example here. Since #34 a
+    // hydration recovers that with a placeholder type (see "recovering a missing activity type"),
+    // so the skeleton-level corruption that is still refused is a malformed goals list itself.
     expect(() => migratePersistedState(
-      { ...makeAppState(), goals: [makeGoal({ activityTypeId: 'missing-activity' })] },
+      { ...makeAppState(), goals: 'nope' },
       CURRENT_SCHEMA_VERSION,
       { quarantine: [] }
     )).toThrow('Invalid goals');
+    expect(() => migratePersistedState(
+      { ...makeAppState(), goals: [makeGoal(), makeGoal({ order: 1 })] },
+      CURRENT_SCHEMA_VERSION,
+      { quarantine: [] }
+    )).toThrow('Invalid goals: duplicate ids');
   });
 
   it('clears a dangling timer pointer when the open entry it names had an unreadable id', () => {
@@ -597,14 +609,13 @@ describe('stale reference linkage', () => {
     ]);
   });
 
-  it('still rejects a goal or routine block whose activity type went missing', () => {
-    // Not softened here, and deliberately so: goals and routines are the skeleton the rest of
-    // the state hangs off, their activityTypeId cannot be cleared either, and there is no
-    // side-car for those record types to be set aside into. Still a live brick route.
+  it('still rejects a goal or routine block whose activity type went missing when there is no sink', () => {
+    // The negative control for #34. Without a quarantine sink — backup import, and account copies,
+    // which go through import — nothing is recovered: the user chose that file and can choose
+    // another, so it refuses loudly and leaves local data untouched.
     expect(() => migratePersistedState(
       { ...makeAppState(), goals: [makeGoal({ activityTypeId: 'activity-vanished' })] },
-      CURRENT_SCHEMA_VERSION,
-      { quarantine: [] }
+      CURRENT_SCHEMA_VERSION
     )).toThrow('Invalid goals: referenced activity type does not exist');
 
     expect(() => migratePersistedState(
@@ -614,12 +625,192 @@ describe('stale reference linkage', () => {
           blocks: [makeRoutineBlock({ activityTypeId: 'activity-vanished' })],
         })],
       },
-      CURRENT_SCHEMA_VERSION,
-      { quarantine: [] }
+      CURRENT_SCHEMA_VERSION
     )).toThrow('Invalid routines: referenced activity type does not exist');
+
+    // A repairs or recovered sink alone does not switch recovery on either: only quarantine does.
+    const recovered: RecoveredActivityType[] = [];
+    expect(() => migratePersistedState(
+      { ...makeAppState(), goals: [makeGoal({ activityTypeId: 'activity-vanished' })] },
+      CURRENT_SCHEMA_VERSION,
+      { repairs: [], recoveredActivityTypes: recovered }
+    )).toThrow('Invalid goals: referenced activity type does not exist');
+    expect(recovered).toEqual([]);
+  });
+
+  it('still rejects a backup whose goal or block names a missing activity type', () => {
+    const goalBackup = encodeBackup(
+      makeAppState({ goals: [makeGoal({ activityTypeId: 'activity-vanished' })] })
+    );
+    expect(() => decodeBackup(goalBackup))
+      .toThrow('Invalid goals: referenced activity type does not exist');
+
+    const blockBackup = encodeBackup(makeAppState({
+      routines: [makeRoutine({
+        blocks: [makeRoutineBlock({ activityTypeId: 'activity-vanished' })],
+      })],
+    }));
+    expect(() => decodeBackup(blockBackup))
+      .toThrow('Invalid routines: referenced activity type does not exist');
   });
 });
 
+describe('recovering a missing activity type on hydration (#34)', () => {
+  function hydrate(stored: unknown, version = CURRENT_SCHEMA_VERSION) {
+    const quarantine: QuarantinedTrackingEntry[] = [];
+    const recovered: RecoveredActivityType[] = [];
+    const state = migratePersistedState(stored, version, {
+      quarantine,
+      recoveredActivityTypes: recovered,
+    });
+    return { state, quarantine, recovered };
+  }
+
+  it('puts back the type a goal and a routine block both name, under the same id', () => {
+    const goal = makeGoal({ activityTypeId: 'activity-vanished' });
+    const block = makeRoutineBlock({ activityTypeId: 'activity-vanished' });
+
+    const { state, quarantine, recovered } = hydrate(makeAppState({
+      goals: [goal],
+      routines: [makeRoutine({ blocks: [block] })],
+    }));
+
+    const placeholder = state.activityTypes.find((activity) => activity.id === 'activity-vanished');
+    expect(placeholder).toEqual({
+      id: 'activity-vanished',
+      name: RECOVERED_ACTIVITY_NAME,
+      color: RECOVERED_ACTIVITY_COLOR,
+      icon: RECOVERED_ACTIVITY_ICON,
+      isDefault: false,
+      sortOrder: 1,
+      createdAt: expect.any(String),
+      updatedAt: expect.any(String),
+    });
+    expect(Number.isFinite(Date.parse(placeholder!.createdAt))).toBe(true);
+    expect(placeholder!.createdAt).toContain('T');
+    // Nothing rewritten: the goal and block are exactly as stored, and still name the old id.
+    expect(state.goals).toEqual([goal]);
+    expect(state.routines[0].blocks).toEqual([block]);
+    // The existing type is untouched and comes first.
+    expect(state.activityTypes.map((activity) => activity.id))
+      .toEqual(['activity-focus', 'activity-vanished']);
+    expect(recovered).toEqual([{
+      id: 'activity-vanished',
+      name: RECOVERED_ACTIVITY_NAME,
+      goalCount: 1,
+      routineBlockCount: 1,
+    }]);
+    expect(quarantine).toEqual([]);
+  });
+
+  it('recovers a goal-only and a block-only gap, at a legacy version too', () => {
+    const goalOnly = hydrate(makeAppState({
+      goals: [makeGoal({ activityTypeId: 'activity-vanished' })],
+    }));
+    expect(goalOnly.recovered).toEqual([
+      expect.objectContaining({ id: 'activity-vanished', goalCount: 1, routineBlockCount: 0 }),
+    ]);
+
+    const blockOnly = hydrate({
+      ...makeAppState(),
+      goals: [],
+      routines: [makeRoutine({
+        blocks: [
+          makeRoutineBlock({ id: 'block-a', activityTypeId: 'activity-vanished' }),
+          makeRoutineBlock({ id: 'block-b', dayOfWeek: 2, activityTypeId: 'activity-vanished' }),
+        ],
+      })],
+    }, STRICT_SCHEMA_VERSION - 1);
+    expect(blockOnly.recovered).toEqual([
+      expect.objectContaining({ id: 'activity-vanished', goalCount: 0, routineBlockCount: 2 }),
+    ]);
+    expect(blockOnly.state.activityTypes.map((activity) => activity.id))
+      .toContain('activity-vanished');
+  });
+
+  it('gives two missing ids two placeholders with distinct names that clash with nothing', () => {
+    const { state, recovered } = hydrate(makeAppState({
+      // A type the user already called "Recovered activity" keeps its name; the placeholders
+      // step around it, case-insensitively.
+      activityTypes: [
+        makeActivityType(),
+        makeActivityType({ id: 'activity-mine', name: 'recovered Activity ', sortOrder: 7 }),
+      ],
+      goals: [makeGoal({ activityTypeId: 'activity-gone-a' })],
+      routines: [makeRoutine({
+        blocks: [makeRoutineBlock({ activityTypeId: 'activity-gone-b' })],
+      })],
+    }));
+
+    expect(recovered.map((entry) => [entry.id, entry.name])).toEqual([
+      ['activity-gone-a', 'Recovered activity 2'],
+      ['activity-gone-b', 'Recovered activity 3'],
+    ]);
+    const placeholders = state.activityTypes.filter((activity) => activity.id.startsWith('activity-gone'));
+    expect(placeholders.map((activity) => [activity.name, activity.sortOrder])).toEqual([
+      ['Recovered activity 2', 8],
+      ['Recovered activity 3', 9],
+    ]);
+    expect(new Set(state.activityTypes.map((activity) => activity.name.trim().toLowerCase())).size)
+      .toBe(state.activityTypes.length);
+  });
+
+  it('keeps a tracking entry on the recovered type and quarantines one on another missing type', () => {
+    const onRecovered = makeTrackingEntry({
+      id: 'entry-recovered',
+      activityTypeId: 'activity-vanished',
+      goalId: 'goal-focus',
+    });
+    const onOther = makeTrackingEntry({
+      id: 'entry-elsewhere',
+      activityTypeId: 'activity-never-referenced',
+    });
+
+    const { state, quarantine, recovered } = hydrate(makeAppState({
+      goals: [makeGoal({ activityTypeId: 'activity-vanished' })],
+      trackingEntries: [onRecovered, onOther],
+    }));
+
+    // Only goals and blocks earn a placeholder; an entry's missing type is still a stale entry.
+    expect(recovered.map((entry) => entry.id)).toEqual(['activity-vanished']);
+    expect(state.activityTypes.map((activity) => activity.id))
+      .not.toContain('activity-never-referenced');
+    expect(state.trackingEntries).toEqual([onRecovered]);
+    expect(quarantine).toEqual([{
+      index: 1,
+      id: 'entry-elsewhere',
+      reason: 'Invalid tracking entry: referenced activity type does not exist',
+      record: onOther,
+    }]);
+  });
+
+  it('creates nothing new when the recovered state is hydrated again', () => {
+    const first = hydrate(makeAppState({
+      goals: [makeGoal({ activityTypeId: 'activity-vanished' })],
+      routines: [makeRoutine({
+        blocks: [makeRoutineBlock({ activityTypeId: 'activity-other-gone' })],
+      })],
+    }));
+    expect(first.recovered).toHaveLength(2);
+
+    // Through JSON, as the store would write and read it back.
+    const again = hydrate(JSON.parse(JSON.stringify(first.state)) as unknown);
+    expect(again.recovered).toEqual([]);
+    expect(again.quarantine).toEqual([]);
+    expect(again.state).toEqual(first.state);
+    // And the result is a store the strict, sinkless read (a backup of it) accepts.
+    expect(migratePersistedState(first.state, CURRENT_SCHEMA_VERSION)).toEqual(first.state);
+  });
+
+  it('recovers nothing when every reference resolves', () => {
+    const { state, recovered } = hydrate(makeAppState({
+      goals: [makeGoal()],
+      routines: [makeRoutine({ blocks: [makeRoutineBlock()] })],
+    }));
+    expect(recovered).toEqual([]);
+    expect(state.activityTypes.map((activity) => activity.id)).toEqual(['activity-focus']);
+  });
+});
 describe('schema 5: the week-start preference (#44)', () => {
   it('carries a real v4 store forward untouched and gives it a Monday week', () => {
     const v4 = v4PersistedState();
