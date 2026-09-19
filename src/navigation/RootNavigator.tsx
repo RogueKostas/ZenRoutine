@@ -2,7 +2,7 @@ import React from 'react';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { useTheme } from '../theme';
 import { TabNavigator } from './TabNavigator';
-import { DebugScreen, ActivityTypesScreen, CurrentActivityScreen, AccountScreen } from '../screens';
+import { DebugScreen, ActivityTypesScreen, CurrentActivityScreen, AccountScreen, PrivacyScreen } from '../screens';
 import type { RootStackParamList } from './types';
 
 const Stack = createNativeStackNavigator<RootStackParamList>();
@@ -43,6 +43,11 @@ export function RootNavigator() {
         name="CurrentActivity"
         component={CurrentActivityScreen}
         options={{ headerShown: false, title: 'Current Activity' }}
+      />
+      <Stack.Screen
+        name="Privacy"
+        component={PrivacyScreen}
+        options={{ headerShown: false, presentation: 'modal', title: 'Privacy' }}
       />
       <Stack.Screen
         name="Account"

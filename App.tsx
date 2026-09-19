@@ -3,7 +3,9 @@ import { StatusBar } from 'expo-status-bar';
 import { ActivityIndicator, Pressable, StyleSheet, Text, View } from 'react-native';
 import { SafeAreaProvider } from 'react-native-safe-area-context';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { NavigationContainer, DefaultTheme, DarkTheme } from '@react-navigation/native';
+import { NavigationContainer, DefaultTheme, DarkTheme, createNavigationContainerRef } from '@react-navigation/native';
+import type { RootStackParamList } from './src/navigation/types';
+import { requestRoute, takePendingRoute } from './src/navigation/pendingRoute';
 import { RootNavigator } from './src/navigation';
 import {
   getHydrationSnapshot,
@@ -61,6 +63,8 @@ const DarkNavigationTheme = {
     notification: darkColors.error,
   },
 };
+
+const navigationRef = createNavigationContainerRef<RootStackParamList>();
 
 function AppContent() {
   const completeOnboarding = useAppStore((state) => state.completeOnboarding);
@@ -185,7 +189,17 @@ function AppContent() {
     return (
       <View style={[styles.container, { backgroundColor: themeColors.background }]}>
         <StatusBar style={isDark ? 'light' : 'dark'} />
-        <OnboardingScreen onComplete={completeOnboarding} />
+        <OnboardingScreen
+          onComplete={completeOnboarding}
+          onSignIn={
+            cloudConfig.accountsEnabled
+              ? () => {
+                  requestRoute('Account');
+                  completeOnboarding();
+                }
+              : undefined
+          }
+        />
       </View>
     );
   }
@@ -226,7 +240,14 @@ function AppContent() {
           onDismiss={() => setDismissedRecoveredReport(recovered)}
         />
       ) : null}
-      <NavigationContainer theme={isDark ? DarkNavigationTheme : LightNavigationTheme}>
+      <NavigationContainer
+        ref={navigationRef}
+        theme={isDark ? DarkNavigationTheme : LightNavigationTheme}
+        onReady={() => {
+          const route = takePendingRoute();
+          if (route && navigationRef.isReady()) navigationRef.navigate(route);
+        }}
+      >
         <StatusBar style={isDark ? 'light' : 'dark'} />
         <RootNavigator />
       </NavigationContainer>

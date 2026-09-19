@@ -127,6 +127,8 @@ It does **not** authorise: touching the existing `pCloud Helper` project; creati
 | D4 | **Email from your own domain (K2)**, with branded code emails. |
 | D5 | Pro plan in place (K3) before the first invite. |
 
+*19 Sep:* D1, D2 and D3 are built and verified (privacy screen; delete my account, checked on the live database; onboarding sign-in link and one-step "Start with my own data"). D4 and D5 wait on Kostas: an email provider on his own domain (K2) and the Pro plan (K3).
+
 ### Exit criteria
 - A friend's address, added to the invite list, can sign up from a fresh device with no help.
 - Deleting that account removes its server row (checked in the database, not assumed).

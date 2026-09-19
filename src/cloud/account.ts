@@ -107,3 +107,17 @@ export async function signOut(client: SupabaseClient): Promise<AccountResult> {
   const r = await attempt(() => client.auth.signOut({ scope: 'local' }));
   return typeof r.error === 'string' ? fail(r.error) : ok(undefined);
 }
+
+/**
+ * Deletes the signed-in account and, through the database cascade, its saved copy on the server
+ * (supabase/migrations/…_delete_my_account.sql). Immediate and final. The local session is dropped
+ * afterwards; data on this device is the caller's decision (docs/ITERATION-2-PLAN.md, K6).
+ */
+export async function deleteAccount(client: SupabaseClient): Promise<AccountResult> {
+  const r = await attempt(async () => await client.rpc('delete_my_account'));
+  if (typeof r.error === 'string') return fail(r.error);
+  // The session belongs to a user that no longer exists, so the server may refuse to end it;
+  // clearing it locally is what matters.
+  await attempt(() => client.auth.signOut({ scope: 'local' }));
+  return ok(undefined);
+}

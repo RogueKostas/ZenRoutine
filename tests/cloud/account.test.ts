@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import {
+  deleteAccount,
   resetPasswordWithCode,
   sendSignInCode,
   signInWithPassword,
@@ -124,5 +125,26 @@ describe('describeAuthRedirect', () => {
     expect(describeAuthRedirect('')).toBeNull();
     expect(describeAuthRedirect('#section')).toBeNull();
     expect(describeAuthRedirect('#access_token=x&type=recovery')).toBeNull();
+  });
+});
+
+describe('deleteAccount', () => {
+  it('calls delete_my_account, then drops the local session', async () => {
+    const rpc = vi.fn(async () => ({ data: null, error: null }));
+    const signOutFn = vi.fn(async () => ({ error: { message: 'User not found' } }));
+    const client = { rpc, auth: { signOut: signOutFn } } as unknown as SupabaseClient;
+    expect(await deleteAccount(client)).toEqual({ ok: true, value: undefined });
+    expect(rpc).toHaveBeenCalledWith('delete_my_account');
+    expect(signOutFn).toHaveBeenCalledWith({ scope: 'local' });
+  });
+
+  it('reports a failure and keeps the session when the server refuses', async () => {
+    const signOutFn = vi.fn();
+    const client = {
+      rpc: vi.fn(async () => ({ data: null, error: { name: 'AuthRetryableFetchError', message: 'Failed to fetch', status: 0 } })),
+      auth: { signOut: signOutFn },
+    } as unknown as SupabaseClient;
+    expect(await deleteAccount(client)).toEqual({ ok: false, message: OFFLINE_MESSAGE });
+    expect(signOutFn).not.toHaveBeenCalled();
   });
 });
