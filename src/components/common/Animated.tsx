@@ -177,8 +177,8 @@ interface AnimatedProgressProps {
 
 export function AnimatedProgress({
   progress,
-  color = '#6366F1',
-  backgroundColor = '#E5E7EB',
+  color = '#216653',
+  backgroundColor = '#D6DECE',
   height = 6,
   style,
 }: AnimatedProgressProps) {

@@ -364,7 +364,7 @@ export function GoalsScreen(_props: TabScreenProps<'Goals'>) {
               accessibilityRole="button"
               style={[styles.notesSave, { backgroundColor: colors.primary }]}
             >
-              <Text style={styles.notesSaveText}>Save notes</Text>
+              <Text style={[styles.notesSaveText, { color: colors.onPrimary }]}>Save notes</Text>
             </Pressable>
           </View>
         )}
@@ -445,7 +445,7 @@ const styles = StyleSheet.create({
   notes: { padding: 10, gap: 8 },
   notesInput: { minHeight: 90, borderWidth: 1, borderRadius: 6, padding: 8, fontSize: 14, textAlignVertical: 'top' },
   notesSave: { alignSelf: 'flex-end', paddingHorizontal: 14, paddingVertical: 8, borderRadius: 6 },
-  notesSaveText: { color: '#fff', fontWeight: '600' },
+  notesSaveText: { fontWeight: '600' },
   info: { padding: 12, gap: 8 },
   infoTitle: { fontSize: 15, fontWeight: '700' },
   infoText: { fontSize: 13, lineHeight: 18 },

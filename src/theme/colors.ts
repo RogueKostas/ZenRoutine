@@ -1,49 +1,85 @@
+/**
+ * ZenRoutine shell brand v1 (assets/brand/zenroutine-shell-v1/tokens.json). The kit's tokens are
+ * the source of truth; `onError` and `overlay` are the two additions the app needs that the kit
+ * does not name, and tests/theme/contrast.test.ts holds every text pair here to WCAG AA.
+ *
+ * Activity colours are NOT here: they are the user's data (src/core/engine/defaults.ts seeds new
+ * installs), and the brand never recolours them. `activity` below is only the kit's suggested
+ * palette, for any future picker; nothing reads it today.
+ */
 export const colors = {
-  // Activity type colors
+  // The kit's suggested activity palette (not applied to anyone's data).
   activity: {
-    work: '#E53935',
-    sideProject: '#FF9800',
-    family: '#E91E63',
-    fitness: '#4CAF50',
-    personalDev: '#FFEB3B',
-    entertainment: '#2196F3',
-    social: '#9C27B0',
-    commute: '#607D8B',
-    food: '#795548',
-    hygiene: '#00BCD4',
-    sleep: '#3F51B5',
+    work: '#B95142',
+    sideProject: '#A76320',
+    family: '#A35671',
+    fitness: '#28735B',
+    personalDev: '#8B741A',
+    entertainment: '#397793',
+    social: '#785A94',
+    commute: '#61766C',
+    food: '#8D6345',
+    hygiene: '#277E7C',
+    sleep: '#5F678C',
   },
-  
-  // UI colors
-  primary: '#6366F1',
-  primaryDark: '#4F46E5',
-  secondary: '#8B5CF6',
-  
-  background: '#FFFFFF',
-  backgroundSecondary: '#F9FAFB',
-  surface: '#FFFFFF',
-  
-  text: '#111827',
-  textSecondary: '#6B7280',
-  textMuted: '#9CA3AF',
-  
-  border: '#E5E7EB',
-  borderLight: '#F3F4F6',
-  
-  success: '#10B981',
-  warning: '#F59E0B',
-  error: '#EF4444',
-  info: '#3B82F6',
+
+  // UI colours: light theme (Evergreen accent on Paper).
+  primary: '#216653',
+  primaryDark: '#173F3A',
+  secondary: '#4A7560',
+  /** Text and icons on `primary`: never assume white. */
+  onPrimary: '#F3EEDC',
+
+  background: '#F3EEDC',
+  backgroundSecondary: '#E8ECDF',
+  surface: '#FFFCF4',
+
+  text: '#173F3A',
+  textSecondary: '#53685F',
+  textMuted: '#566B60',
+
+  /** Essential control boundaries (inputs, outlined buttons): 3:1 against the background. */
+  border: '#728779',
+  /** Decorative dividers only, never the sole boundary of a control. */
+  borderLight: '#D6DECE',
+
+  success: '#216653',
+  warning: '#89621E',
+  error: '#A54135',
+  /** Text and icons on `error` (Stop buttons, destructive actions). */
+  onError: '#FFFCF4',
+  info: '#35677B',
+  focus: '#216653',
+
+  /** Behind modal dialogs. */
+  overlay: 'rgba(19, 43, 39, 0.55)',
 };
 
-export const darkColors = {
+export const darkColors: typeof colors = {
   ...colors,
-  background: '#111827',
-  backgroundSecondary: '#1F2937',
-  surface: '#1F2937',
-  text: '#F9FAFB',
-  textSecondary: '#9CA3AF',
-  textMuted: '#6B7280',
-  border: '#374151',
-  borderLight: '#1F2937',
+  // Dark theme: Mint accent on Night.
+  primary: '#8AC8AA',
+  primaryDark: '#A7D9BF',
+  secondary: '#B4CBB4',
+  onPrimary: '#132B27',
+
+  background: '#132B27',
+  backgroundSecondary: '#19332D',
+  surface: '#1D3832',
+
+  text: '#F3EEDC',
+  textSecondary: '#B9CDC0',
+  textMuted: '#9CB5A7',
+
+  border: '#728E7E',
+  borderLight: '#35564A',
+
+  success: '#8AC8AA',
+  warning: '#E5C57C',
+  error: '#EAA99B',
+  onError: '#132B27',
+  info: '#9EC7D5',
+  focus: '#B5DFC6',
+
+  overlay: 'rgba(5, 15, 13, 0.7)',
 };

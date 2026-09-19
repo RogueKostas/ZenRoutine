@@ -7,7 +7,7 @@ import {
   ScrollView,
   Modal,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import type { ThemeColors } from '../../theme';
 import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes, useGoals, useCurrentTracking, useAppStore } from '../../store';
@@ -26,6 +26,8 @@ export function QuickStart({
   maxActivities = 6,
   showGoalSelection = true,
 }: QuickStartProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const { colors: themeColors } = useTheme();
   const activityTypes = useActivityTypes();
   const goals = useGoals();
@@ -233,6 +235,8 @@ export function QuickStartHorizontal({
 }: {
   onTrackingStarted?: (entryId: string) => void;
 }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activityTypes = useActivityTypes();
   const activeTracking = useCurrentTracking();
   const { startTracking } = useAppStore();
@@ -290,6 +294,8 @@ interface QuickStartFABProps {
 }
 
 export function QuickStartFAB({ visible = true, onTrackingStarted }: QuickStartFABProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const [expanded, setExpanded] = useState(false);
   const activityTypes = useActivityTypes();
   const activeTracking = useCurrentTracking();
@@ -349,7 +355,9 @@ export function QuickStartFAB({ visible = true, onTrackingStarted }: QuickStartF
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: the static light palette made these ignore dark mode.
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   // Grid version
   container: {
     padding: spacing.md,
@@ -590,6 +598,6 @@ const styles = StyleSheet.create({
   },
   fabIcon: {
     fontSize: 24,
-    color: '#fff',
+    color: colors.onPrimary,
   },
 });

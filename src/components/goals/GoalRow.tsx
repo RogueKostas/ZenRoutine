@@ -176,7 +176,7 @@ export function GoalRow({
           done && { backgroundColor: colors.primary },
         ]}
       >
-        {done && <Text style={styles.checkmark}>✓</Text>}
+        {done && <Text style={[styles.checkmark, { color: colors.onPrimary }]}>✓</Text>}
       </Pressable>
 
       <View style={styles.body}>
@@ -329,7 +329,6 @@ const styles = StyleSheet.create({
     marginRight: 12,
   },
   checkmark: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
     lineHeight: 16,

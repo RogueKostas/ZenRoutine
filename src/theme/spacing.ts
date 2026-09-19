@@ -1,3 +1,4 @@
+// ZenRoutine shell brand v1 (assets/brand/zenroutine-shell-v1/tokens.json).
 export const spacing = {
   xs: 4,
   sm: 8,
@@ -8,9 +9,9 @@ export const spacing = {
 };
 
 export const borderRadius = {
-  sm: 4,
-  md: 8,
-  lg: 12,
-  xl: 16,
+  sm: 6,
+  md: 10,
+  lg: 16,
+  xl: 24,
   full: 9999,
 };

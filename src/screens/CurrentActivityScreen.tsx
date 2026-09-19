@@ -49,7 +49,8 @@ import {
 import type { RootStackScreenProps } from '../navigation/types';
 
 const UNTRACKED_GREY = '#A3A3A3';
-const BREAK_GREEN = '#10B981';
+// Brand Jade: decorative, always shown with the BREAK label, never colour alone.
+const BREAK_GREEN = '#59AA89';
 const BANNER_MS = 15_000;
 
 /**
@@ -209,7 +210,7 @@ export function CurrentActivityScreen({ navigation }: RootStackScreenProps<'Curr
             accessibilityLabel={paused ? 'Resume tracking' : 'Pause tracking'}
             testID="pause-resume"
           >
-            <Text style={[styles.buttonText, { color: paused ? '#fff' : colors.primary }]}>
+            <Text style={[styles.buttonText, { color: paused ? colors.onPrimary : colors.primary }]}>
               {paused ? '▶ Resume' : '❚❚ Pause'}
             </Text>
           </TouchableOpacity>
@@ -220,7 +221,7 @@ export function CurrentActivityScreen({ navigation }: RootStackScreenProps<'Curr
             accessibilityLabel="Stop tracking"
             testID="stop-tracking"
           >
-            <Text style={[styles.buttonText, { color: '#fff' }]}>■ Stop</Text>
+            <Text style={[styles.buttonText, { color: colors.onError }]}>■ Stop</Text>
           </TouchableOpacity>
         </View>
       ) : focusRow ? (
@@ -230,7 +231,7 @@ export function CurrentActivityScreen({ navigation }: RootStackScreenProps<'Curr
           accessibilityRole="button"
           accessibilityLabel={`Start tracking ${title}, scheduled ${formatRowTimeRange(focusRow)}`}
         >
-          <Text style={[styles.buttonText, { color: '#fff' }]}>● Start tracking</Text>
+          <Text style={[styles.buttonText, { color: colors.onError }]}>● Start tracking</Text>
         </TouchableOpacity>
       ) : null}
 

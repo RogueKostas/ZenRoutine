@@ -5,15 +5,51 @@
     <meta httpEquiv="X-UA-Compatible" content="IE=edge" />
     <meta name="viewport" content="width=device-width, initial-scale=1, shrink-to-fit=no" />
     <title>ZenRoutine</title>
+    <meta name="description" content="A pace you can return to. Plan your week, track your time, and see when your goals will be done." />
+
     <!-- Installable to the Home Screen. On iOS a Home Screen web app keeps its own storage,
          so local data is not cleared by Safari's 7-day rule for unvisited sites. -->
     <link rel="manifest" href="/manifest.webmanifest" />
+    <link rel="icon" type="image/svg+xml" href="/icons/favicon.svg" />
+    <link rel="icon" type="image/png" sizes="32x32" href="/icons/icon-32.png" />
+    <link rel="icon" type="image/png" sizes="16x16" href="/icons/icon-16.png" />
     <link rel="apple-touch-icon" href="/icons/icon-180.png" />
     <meta name="apple-mobile-web-app-capable" content="yes" />
     <meta name="mobile-web-app-capable" content="yes" />
     <meta name="apple-mobile-web-app-title" content="ZenRoutine" />
-    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
-    <meta name="theme-color" content="#111827" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+    <meta name="theme-color" content="#F3EEDC" media="(prefers-color-scheme: light)" />
+    <meta name="theme-color" content="#132B27" media="(prefers-color-scheme: dark)" />
+
+    <!-- Link previews (shell brand v1 social image). -->
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content="ZenRoutine" />
+    <meta property="og:title" content="ZenRoutine" />
+    <meta property="og:description" content="A pace you can return to. Plan gently. Make room for what matters." />
+    <meta property="og:url" content="https://zenroutine-web.onrender.com/" />
+    <meta property="og:image" content="https://zenroutine-web.onrender.com/social-1200x630.png" />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="630" />
+    <meta property="og:image:alt" content="The ZenRoutine shell mark and wordmark" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:image" content="https://zenroutine-web.onrender.com/social-1200x630.png" />
+
+    <!-- DM Sans, served from this site (fonts/OFL.txt): one family, four real weights, so every
+         fontWeight in the app picks a real face. font-display: swap never blocks the first paint;
+         if a file fails to load, text stays in the system fallback. -->
+    <style>
+      @font-face { font-family: 'DM Sans'; font-weight: 400; font-style: normal; font-display: swap; src: url('/fonts/DMSans-Regular.ttf') format('truetype'); }
+      @font-face { font-family: 'DM Sans'; font-weight: 500; font-style: normal; font-display: swap; src: url('/fonts/DMSans-Medium.ttf') format('truetype'); }
+      @font-face { font-family: 'DM Sans'; font-weight: 600; font-style: normal; font-display: swap; src: url('/fonts/DMSans-SemiBold.ttf') format('truetype'); }
+      @font-face { font-family: 'DM Sans'; font-weight: 700 900; font-style: normal; font-display: swap; src: url('/fonts/DMSans-Bold.ttf') format('truetype'); }
+      /* react-native-web gives every Text its own system font class. ':not(#zr-font)' carries id
+         specificity, so this one rule outranks those classes everywhere, dialogs and portals
+         included, without !important and without touching any component. */
+      :not(#zr-font) {
+        font-family: 'DM Sans', system-ui, -apple-system, 'Segoe UI', Roboto, 'Apple Color Emoji', 'Segoe UI Emoji', sans-serif;
+      }
+    </style>
+
     <!-- The `react-native-web` recommended style reset: https://necolas.github.io/react-native-web/docs/setup/#root-element -->
     <style id="expo-reset">
       /* These styles make the body full-height */
@@ -24,7 +60,11 @@
       /* These styles disable body scrolling if you are using <ScrollView> */
       body {
         overflow: hidden;
-        background-color: #111827;
+        /* The brand background before the app draws, so launch never flashes the wrong colour. */
+        background-color: #F3EEDC;
+      }
+      @media (prefers-color-scheme: dark) {
+        body { background-color: #132B27; }
       }
       /* These styles make the root element full-height */
       #root {

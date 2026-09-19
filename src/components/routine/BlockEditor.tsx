@@ -399,7 +399,7 @@ const makeStyles = (colors: ThemeColors) =>
       padding: spacing.md,
     },
     backdrop: {
-      backgroundColor: 'rgba(0, 0, 0, 0.55)',
+      backgroundColor: colors.overlay,
       zIndex: 0,
     },
     card: {
@@ -551,6 +551,6 @@ const makeStyles = (colors: ThemeColors) =>
     saveText: {
       fontSize: 16,
       fontWeight: '600',
-      color: '#FFFFFF',
+      color: colors.onPrimary,
     },
   });

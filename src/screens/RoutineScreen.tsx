@@ -149,7 +149,7 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
             accessibilityRole="button"
             accessibilityLabel="Create routine"
           >
-            <Text style={styles.primaryButtonText}>Create Routine</Text>
+            <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>Create Routine</Text>
           </TouchableOpacity>
         </View>
       </SafeAreaView>
@@ -191,7 +191,7 @@ export function RoutineScreen(_props: TabScreenProps<'Routine'>) {
                 accessibilityRole="button"
                 accessibilityLabel={`Add activity to ${selectedName}`}
               >
-                <Text style={styles.primaryButtonText}>+ Add activity</Text>
+                <Text style={[styles.primaryButtonText, { color: colors.onPrimary }]}>+ Add activity</Text>
               </TouchableOpacity>
               {dayBlocks.length > 0 && (
                 <TouchableOpacity
@@ -426,7 +426,6 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   primaryButtonText: {
-    color: '#fff',
     fontSize: 15,
     fontWeight: '600',
   },

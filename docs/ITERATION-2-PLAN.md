@@ -166,7 +166,7 @@ Iteration 1's invariants still apply: the gate runs on the merged tree, the test
 - Native iOS and Android builds (EAS), unless [#15](https://github.com/RogueKostas/ZenRoutine/issues/15) is picked up.
 - [#57](https://github.com/RogueKostas/ZenRoutine/issues/57) catch-up queue, and [#12](https://github.com/RogueKostas/ZenRoutine/issues/12)–[#14](https://github.com/RogueKostas/ZenRoutine/issues/14): Iteration 3.
 - Activity notes, AI features, sharing between users.
-- **Branding.** Kostas is exploring it separately. When the assets arrive, wiring in the icon and splash screen is a small lane that may run alongside any wave.
+- **Branding.** *19 Sep: the shell identity (assets/brand/zenroutine-shell-v1) is applied*: theme tokens (light Evergreen on Paper, dark Mint on Night) with `onPrimary`/`onError` for text on accents, DM Sans served locally on web, icons, favicon, manifest, social image, native icon and splash config. **Known gap:** on native, DM Sans is not yet used. Custom fonts there need a registered family per weight and every text style to name its face; the app's ~180 ad-hoc `fontWeight` styles don't, so native keeps the system font until a Text migration. Native icon and splash changes also need a rebuilt native app to be seen.
 
 ## Still waiting on Kostas
 
