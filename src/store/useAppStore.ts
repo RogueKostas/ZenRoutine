@@ -1776,8 +1776,21 @@ export const useAppStore = create<AppStore>()(
         quarantinedTrackingEntries = NO_QUARANTINE;
         repairedTrackingEntries = NO_REPAIRS;
         recoveredActivityTypes = NO_RECOVERED;
-        return (_state, error) => {
+        return (state, error) => {
           hydrationFailure = error ?? null;
+          // A recovered placeholder (#34) exists only in memory until something is written, and a
+          // current-version launch writes nothing by itself: without this, every launch would
+          // rebuild it with fresh timestamps and repeat the notice. Saved at once instead, but only
+          // when this launch set no tracking entries aside, so the side-car ordering that
+          // quarantine depends on (#38) is never in play here.
+          if (
+            !error &&
+            state &&
+            recoveredActivityTypes !== NO_RECOVERED &&
+            quarantinedTrackingEntries === NO_QUARANTINE
+          ) {
+            void persistSnapshot(state).catch(() => undefined);
+          }
         };
       },
     }

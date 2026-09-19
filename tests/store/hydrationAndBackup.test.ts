@@ -362,6 +362,19 @@ describe('hydration of a store whose goals or blocks name a missing activity typ
     expect(await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)).toBeNull();
   });
 
+  it('saves the placeholder at once, so the next launch finds nothing missing and says nothing', async () => {
+    await hydrateOrphaned();
+    await vi.waitFor(async () => {
+      const stored = JSON.parse((await AsyncStorage.getItem(APP_STORAGE_KEY)) ?? '{}');
+      expect(stored.state.activityTypes.map((activity: { id: string }) => activity.id)).toContain('activity-vanished');
+    });
+
+    await initializeAppStore({ force: true });
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    expect(getRecoveredActivityTypes()).toEqual([]);
+    expect(useAppStore.getState().activityTypes.filter((activity) => activity.id === 'activity-vanished')).toHaveLength(1);
+  });
+
   it('reports each recovered type once on the migrate path, where two reads run', async () => {
     await hydrateOrphaned(CURRENT_SCHEMA_VERSION - 1);
 
