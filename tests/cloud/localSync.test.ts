@@ -5,6 +5,7 @@ import {
   classifyLocalData,
   contentHash,
   describeData,
+  describeDifference,
   DEVICE_ID_KEY,
   getDeviceId,
   MAX_SAVED_COPIES,
@@ -121,5 +122,30 @@ describe('saved copies', () => {
   it('refuses to report success when the copy could not be written', async () => {
     const failing = { getItem: async () => null, setItem: async () => { throw new Error('quota'); }, removeItem: async () => undefined };
     await expect(saveCopy('b', 'r', failing)).rejects.toThrow('quota');
+  });
+});
+
+describe('describeDifference', () => {
+  it('names the goals only one side has, instead of equal counts', () => {
+    const shared = makeGoal({ id: 'shared', name: 'Shared' });
+    const mine = makeAppState({ goals: [shared, makeGoal({ id: 'a', name: 'Offline on this device' })] });
+    const theirs = makeAppState({ goals: [shared, makeGoal({ id: 'b', name: 'Changed elsewhere' })] });
+    expect(describeDifference(mine, theirs)).toEqual({
+      mine: 'has goal “Offline on this device”',
+      theirs: 'has goal “Changed elsewhere”',
+    });
+  });
+
+  it('counts extra time entries and shortens long lists', () => {
+    const many = ['A', 'B', 'C', 'D', 'E'].map((n) => makeGoal({ id: n, name: n }));
+    const mine = makeAppState({ goals: many, trackingEntries: [makeTrackingEntry()] });
+    const theirs = makeAppState();
+    expect(describeDifference(mine, theirs).mine).toBe('has goals “A”, “B”, “C” and 2 more and 1 more time entry');
+  });
+
+  it('falls back to a summary when the difference is an edit, not an addition', () => {
+    const mine = makeAppState({ goals: [makeGoal({ name: 'Renamed' })] });
+    const theirs = makeAppState({ goals: [makeGoal()] });
+    expect(describeDifference(mine, theirs).mine).toBe('has 1 goal, 0 time entries, with other edits');
   });
 });

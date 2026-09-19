@@ -41,3 +41,4 @@ export {
   AnimatedProgress,
 } from './Animated';
 export { ShellMark, BrandLockup } from './BrandMark';
+export { CloudSync } from './CloudSync';

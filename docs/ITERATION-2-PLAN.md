@@ -37,7 +37,7 @@ Kostas: *"go with your recommendations."* Each row is now a decision. K2, K3 and
 | K5 | **Signing out.** What happens to the data on that device? | **Ask each time:** "Keep a copy on this device" or "Remove from this device". Removing is only offered once everything has synced. | Wave B |
 | K6 | **Deleting your account.** Should it also clear this device? | **Ask, as with K5.** Account data is deleted on the server either way. | Wave D |
 | K7 | **Rotate the Supabase access token after setup.** The token in `OneDrive\Zen Routine\Secrets` controls your whole Supabase account, and it appeared once in a session log on 18 Sep. The app never uses it. | **Rotate it once Wave A's project exists.** | End of Wave A |
-| K8 | **[#34](https://github.com/RogueKostas/ZenRoutine/issues/34), an unreadable skeleton record.** Sync makes one device's data another device's input, so an unresolved brick route could travel. | **Decide #34 before Wave C starts.** | Wave C |
+| K8 | **[#34](https://github.com/RogueKostas/ZenRoutine/issues/34), an unreadable skeleton record.** Sync makes one device's data another device's input, so an unresolved brick route could travel. | **Decide #34 before Wave C starts.** *Decided 19 Sep:* rebuild a visible "Recovered activity" placeholder for a missing activity type, on the hydration path only; import and account downloads stay strict (decision recorded on #34). | Wave C |
 
 ---
 
