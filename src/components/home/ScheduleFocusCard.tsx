@@ -80,7 +80,7 @@ export function ScheduleFocusCard({ focus, activityTypes, onStart }: ScheduleFoc
         accessibilityRole="button"
         accessibilityLabel={`${actionLabel}: ${title}, ${formatRowTimeRange(row)}`}
       >
-        <Text style={[styles.buttonText, { color: isNow ? '#fff' : colors.primary }]}>
+        <Text style={[styles.buttonText, { color: isNow ? colors.onPrimary : colors.primary }]}>
           {actionLabel}
         </Text>
       </TouchableOpacity>

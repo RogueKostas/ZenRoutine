@@ -1,0 +1,39 @@
+/* ZenRoutine Shell v1: exact brand tokens. */
+:root, [data-theme="light"] {
+  --zr-primary: #216653;
+  --zr-primaryDark: #173F3A;
+  --zr-secondary: #4A7560;
+  --zr-onPrimary: #F3EEDC;
+  --zr-background: #F3EEDC;
+  --zr-backgroundSecondary: #E8ECDF;
+  --zr-surface: #FFFCF4;
+  --zr-text: #173F3A;
+  --zr-textSecondary: #53685F;
+  --zr-textMuted: #566B60;
+  --zr-border: #728779;
+  --zr-borderLight: #D6DECE;
+  --zr-success: #216653;
+  --zr-warning: #89621E;
+  --zr-error: #A54135;
+  --zr-info: #35677B;
+  --zr-focus: #216653;
+}
+[data-theme="dark"] {
+  --zr-primary: #8AC8AA;
+  --zr-primaryDark: #A7D9BF;
+  --zr-secondary: #B4CBB4;
+  --zr-onPrimary: #132B27;
+  --zr-background: #132B27;
+  --zr-backgroundSecondary: #19332D;
+  --zr-surface: #1D3832;
+  --zr-text: #F3EEDC;
+  --zr-textSecondary: #B9CDC0;
+  --zr-textMuted: #9CB5A7;
+  --zr-border: #728E7E;
+  --zr-borderLight: #35564A;
+  --zr-success: #8AC8AA;
+  --zr-warning: #E5C57C;
+  --zr-error: #EAA99B;
+  --zr-info: #9EC7D5;
+  --zr-focus: #B5DFC6;
+}

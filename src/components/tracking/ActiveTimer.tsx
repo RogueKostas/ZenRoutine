@@ -1,6 +1,7 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
+import type { ThemeColors } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useCurrentTracking, useActivityTypes, useAppStore, useGoals } from '../../store';
 import {
@@ -40,6 +41,8 @@ interface ActiveTimerProps {
 }
 
 export function ActiveTimer({ onPress, compact = false, onStopped, onOpen }: ActiveTimerProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const goals = useGoals();
@@ -163,6 +166,8 @@ export function ActiveTimer({ onPress, compact = false, onStopped, onOpen }: Act
 
 // Mini version for status bar or floating display
 export function ActiveTimerMini({ onPress }: { onPress?: () => void }) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const elapsedSeconds = useElapsedSeconds(activeTracking);
@@ -182,6 +187,8 @@ export function ActiveTimerMini({ onPress }: { onPress?: () => void }) {
 
 // Large timer display for dedicated tracking screen
 export function ActiveTimerLarge() {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activeTracking = useCurrentTracking();
   const activityTypes = useActivityTypes();
   const { stopTracking } = useAppStore();
@@ -240,7 +247,9 @@ export function ActiveTimerLarge() {
   );
 }
 
-const styles = StyleSheet.create({
+// Built per theme: the static light palette made these ignore dark mode.
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   // Main ActiveTimer styles
   container: {
     backgroundColor: colors.surface,
@@ -494,13 +503,13 @@ const styles = StyleSheet.create({
   largeStopIcon: {
     width: 16,
     height: 16,
-    backgroundColor: '#fff',
+    backgroundColor: colors.onError,
     borderRadius: 2,
     marginRight: spacing.sm,
   },
   largeStopText: {
     fontSize: 16,
     fontWeight: '600',
-    color: '#fff',
+    color: colors.onError,
   },
 });

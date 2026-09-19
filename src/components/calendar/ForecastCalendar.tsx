@@ -408,7 +408,7 @@ export function ForecastCalendar() {
               accessibilityLabel={`${label} view`}
               accessibilityState={{ selected }}
             >
-              <Text style={[styles.segmentText, { color: selected ? '#fff' : colors.primary }]}>{label}</Text>
+              <Text style={[styles.segmentText, { color: selected ? colors.onPrimary : colors.primary }]}>{label}</Text>
             </TouchableOpacity>
           );
         })}
@@ -461,7 +461,7 @@ export function ForecastCalendar() {
                   ]}
                 >
                   {type.color && <View style={[styles.dot, { backgroundColor: type.color, marginLeft: 0 }]} />}
-                  <Text style={[styles.chipText, { color: selected ? '#fff' : colors.text }]}>{type.name}</Text>
+                  <Text style={[styles.chipText, { color: selected ? colors.onPrimary : colors.text }]}>{type.name}</Text>
                 </TouchableOpacity>
               );
             }

@@ -187,7 +187,7 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
               accessibilityLabel={label}
               accessibilityState={{ selected }}
             >
-              <Text style={[styles.segmentText, { color: selected ? '#fff' : colors.primary }]}>
+              <Text style={[styles.segmentText, { color: selected ? colors.onPrimary : colors.primary }]}>
                 {label}
               </Text>
             </TouchableOpacity>
@@ -272,7 +272,7 @@ export function AnalyticsScreen({ navigation }: TabScreenProps<'Analytics'>) {
                       style={[styles.emptyButton, { backgroundColor: colors.primary }]}
                       onPress={() => navigation.navigate('Routine')}
                     >
-                      <Text style={styles.emptyButtonText}>Set up routine</Text>
+                      <Text style={[styles.emptyButtonText, { color: colors.onPrimary }]}>Set up routine</Text>
                     </TouchableOpacity>
                   </View>
                 )}
@@ -547,7 +547,6 @@ const styles = StyleSheet.create({
     borderRadius: 8,
   },
   emptyButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '600',
   },

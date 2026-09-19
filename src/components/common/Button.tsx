@@ -7,7 +7,8 @@ import {
   ViewStyle,
   TextStyle,
 } from 'react-native';
-import { colors } from '../../theme/colors';
+import { useTheme } from '../../theme';
+import type { ThemeColors } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 
 export type ButtonVariant = 'primary' | 'secondary' | 'outline' | 'ghost' | 'destructive';
@@ -41,16 +42,19 @@ export function Button({
   textStyle,
 }: ButtonProps) {
   const isDisabled = disabled || loading;
+  // Colours follow the theme: a primary button is Evergreen with Paper text in light mode and Mint
+  // with Night text in dark mode, never white text on an assumed-dark accent.
+  const { colors } = useTheme();
+  const themed = variantColors(colors, variant, isDisabled);
 
   return (
     <TouchableOpacity
       style={[
         styles.base,
-        styles[`variant_${variant}`],
+        themed.container,
         styles[`size_${size}`],
         fullWidth && styles.fullWidth,
         isDisabled && styles.disabled,
-        isDisabled && styles[`disabled_${variant}`],
         style,
       ]}
       onPress={onPress}
@@ -63,7 +67,7 @@ export function Button({
       {loading ? (
         <ActivityIndicator
           size="small"
-          color={variant === 'primary' || variant === 'destructive' ? '#fff' : colors.primary}
+          color={themed.label.color}
         />
       ) : (
         <>
@@ -71,9 +75,8 @@ export function Button({
           <Text
             style={[
               styles.text,
-              styles[`text_${variant}`],
+              themed.label,
               styles[`textSize_${size}`],
-              isDisabled ? styles.textDisabled : undefined,
               icon && iconPosition === 'left' ? styles.textWithLeftIcon : undefined,
               icon && iconPosition === 'right' ? styles.textWithRightIcon : undefined,
               textStyle,
@@ -86,6 +89,24 @@ export function Button({
       )}
     </TouchableOpacity>
   );
+}
+
+function variantColors(colors: ThemeColors, variant: ButtonVariant, disabled: boolean) {
+  switch (variant) {
+    case 'primary':
+      return { container: { backgroundColor: colors.primary }, label: { color: colors.onPrimary } };
+    case 'secondary':
+      return { container: { backgroundColor: colors.secondary }, label: { color: colors.onPrimary } };
+    case 'destructive':
+      return { container: { backgroundColor: colors.error }, label: { color: colors.onError } };
+    case 'outline':
+      return {
+        container: { backgroundColor: 'transparent', borderWidth: 1, borderColor: disabled ? colors.border : colors.primary },
+        label: { color: disabled ? colors.textMuted : colors.primary },
+      };
+    case 'ghost':
+      return { container: { backgroundColor: 'transparent' }, label: { color: disabled ? colors.textMuted : colors.primary } };
+  }
 }
 
 const styles = StyleSheet.create({
@@ -101,34 +122,6 @@ const styles = StyleSheet.create({
   disabled: {
     opacity: 0.5,
   },
-
-  // Variants
-  variant_primary: {
-    backgroundColor: colors.primary,
-  },
-  variant_secondary: {
-    backgroundColor: colors.secondary,
-  },
-  variant_outline: {
-    backgroundColor: 'transparent',
-    borderWidth: 1,
-    borderColor: colors.primary,
-  },
-  variant_ghost: {
-    backgroundColor: 'transparent',
-  },
-  variant_destructive: {
-    backgroundColor: colors.error,
-  },
-
-  // Disabled variants
-  disabled_primary: {},
-  disabled_secondary: {},
-  disabled_outline: {
-    borderColor: colors.textMuted,
-  },
-  disabled_ghost: {},
-  disabled_destructive: {},
 
   // Sizes
   size_small: {
@@ -150,24 +143,6 @@ const styles = StyleSheet.create({
   // Text
   text: {
     fontWeight: '600',
-  },
-  text_primary: {
-    color: '#fff',
-  },
-  text_secondary: {
-    color: '#fff',
-  },
-  text_outline: {
-    color: colors.primary,
-  },
-  text_ghost: {
-    color: colors.primary,
-  },
-  text_destructive: {
-    color: '#fff',
-  },
-  textDisabled: {
-    color: colors.textMuted,
   },
   textWithLeftIcon: {
     marginLeft: spacing.xs,

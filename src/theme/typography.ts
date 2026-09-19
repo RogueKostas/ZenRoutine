@@ -1,16 +1,28 @@
 import { Platform } from 'react-native';
 
+/**
+ * ZenRoutine shell brand v1: DM Sans (SIL OFL, assets/brand/zenroutine-shell-v1/fonts/OFL.txt).
+ *
+ * Web: public/index.html declares the four static faces from the site's own /fonts folder (no
+ * font CDN) under one family, "DM Sans", with real 400/500/600/700 weights, and applies it to all
+ * text. Every existing `fontWeight` in the app therefore picks a real face, never a synthetic one,
+ * and a failed or slow font load falls back to the system stack without blocking launch.
+ *
+ * Native: not yet. Custom fonts on iOS/Android need one registered family per weight and every
+ * text style to name its face, which the app's ~180 ad-hoc `fontWeight` styles don't do. Native
+ * keeps the system font until that migration; recorded in docs/ITERATION-2-PLAN.md (branding).
+ */
 const fontFamily = Platform.select({
   ios: 'System',
   android: 'Roboto',
-  web: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+  web: '"DM Sans", system-ui, -apple-system, "Segoe UI", Roboto, sans-serif',
 });
 
 export const typography = {
   h1: {
     fontFamily,
     fontSize: 32,
-    fontWeight: '700' as const,
+    fontWeight: '600' as const,
     lineHeight: 40,
   },
   h2: {
@@ -35,6 +47,12 @@ export const typography = {
     fontFamily,
     fontSize: 14,
     fontWeight: '400' as const,
+    lineHeight: 20,
+  },
+  label: {
+    fontFamily,
+    fontSize: 14,
+    fontWeight: '500' as const,
     lineHeight: 20,
   },
   caption: {

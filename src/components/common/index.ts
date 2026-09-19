@@ -40,3 +40,4 @@ export {
   PressableScale,
   AnimatedProgress,
 } from './Animated';
+export { ShellMark, BrandLockup } from './BrandMark';

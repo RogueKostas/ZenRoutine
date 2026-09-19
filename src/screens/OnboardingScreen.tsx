@@ -10,6 +10,7 @@ import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { spacing, borderRadius } from '../theme/spacing';
 import { useAppStore } from '../store';
+import { ShellMark } from '../components/common';
 import {
   canGoBack,
   isLastSlide,
@@ -90,9 +91,16 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           key={slide.id}
           style={[styles.slide, slideWidth === null ? styles.slideStretch : { width: slideWidth }]}
         >
-          <View style={[styles.emojiContainer, { backgroundColor: slide.color + '20' }]}>
-            <Text style={styles.emoji}>{slide.emoji}</Text>
-          </View>
+          {slide.id === '1' ? (
+            // The welcome slide carries the brand; the others keep their pictograms.
+            <View style={styles.markContainer}>
+              <ShellMark width={132} />
+            </View>
+          ) : (
+            <View style={[styles.emojiContainer, { backgroundColor: slide.color + '24' }]}>
+              <Text style={styles.emoji}>{slide.emoji}</Text>
+            </View>
+          )}
           <Text style={[styles.title, { color: colors.text }]} accessibilityRole="header">
             {slide.title}
           </Text>
@@ -133,7 +141,7 @@ export function OnboardingScreen({ onComplete }: OnboardingScreenProps) {
           onPress={handleNext}
           accessibilityRole="button"
         >
-          <Text style={styles.buttonText}>{primaryButtonLabel(currentIndex)}</Text>
+          <Text style={[styles.buttonText, { color: colors.onPrimary }]}>{primaryButtonLabel(currentIndex)}</Text>
         </TouchableOpacity>
       </View>
     </SafeAreaView>
@@ -183,6 +191,12 @@ const styles = StyleSheet.create({
   },
   emoji: {
     fontSize: 60,
+  },
+  markContainer: {
+    height: 120,
+    justifyContent: 'center',
+    alignItems: 'center',
+    marginBottom: spacing.xl,
   },
   title: {
     fontSize: 28,
@@ -240,7 +254,6 @@ const styles = StyleSheet.create({
     paddingVertical: 14,
   },
   buttonText: {
-    color: '#fff',
     fontSize: 18,
     fontWeight: '600',
   },

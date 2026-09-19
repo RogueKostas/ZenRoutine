@@ -93,7 +93,15 @@ function DialogView({ entry, onAction, onDismiss }: DialogViewProps) {
         <Text
           style={[
             styles.buttonText,
-            { color: isPrimary ? '#FFFFFF' : action.selected ? colors.primary : colors.text },
+            {
+              color: isPrimary
+                ? action.role === 'destructive'
+                  ? colors.onError
+                  : colors.onPrimary
+                : action.selected
+                  ? colors.primary
+                  : colors.text,
+            },
           ]}
         >
           {action.label}
@@ -125,7 +133,7 @@ function DialogView({ entry, onAction, onDismiss }: DialogViewProps) {
           accessibilityLabel="Close dialog"
           focusable={false}
           onPress={onDismiss}
-          style={[StyleSheet.absoluteFill, styles.backdrop]}
+          style={[StyleSheet.absoluteFill, styles.backdrop, { backgroundColor: colors.overlay }]}
         />
       </View>
     </Modal>
@@ -140,7 +148,6 @@ const styles = StyleSheet.create({
     padding: 16,
   },
   backdrop: {
-    backgroundColor: 'rgba(0, 0, 0, 0.55)',
     zIndex: 0,
   },
   card: {

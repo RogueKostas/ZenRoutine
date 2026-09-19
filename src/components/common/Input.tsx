@@ -43,8 +43,8 @@ export function Input({
         style={[
           styles.inputContainer,
           { backgroundColor: theme.surface, borderColor: theme.border },
-          isFocused && styles.inputContainerFocused,
-          error && styles.inputContainerError,
+          isFocused && [styles.inputContainerFocused, { borderColor: theme.focus }],
+          error ? [styles.inputContainerError, { borderColor: theme.error }] : undefined,
         ]}
       >
         {leftIcon && <View style={styles.leftIcon}>{leftIcon}</View>}
@@ -63,7 +63,7 @@ export function Input({
         />
         {rightIcon && <View style={styles.rightIcon}>{rightIcon}</View>}
       </View>
-      {error && <Text style={styles.error}>{error}</Text>}
+      {error && <Text style={[styles.error, { color: theme.error }]}>{error}</Text>}
       {hint && !error && <Text style={[styles.hint, { color: theme.textMuted }]}>{hint}</Text>}
     </View>
   );
@@ -110,6 +110,8 @@ const styles = StyleSheet.create({
     borderRadius: borderRadius.md,
   },
   inputContainerFocused: {
+    // Thicker as well as recoloured, so focus never rests on colour alone.
+    borderWidth: 2,
     borderColor: colors.primary,
   },
   inputContainerError: {

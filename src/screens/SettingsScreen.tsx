@@ -13,7 +13,7 @@ import {
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { useTheme } from '../theme';
 import { useAppStore, useActivityTypes, usePomodoroEnabled, useWeekStartsOn } from '../store';
-import { useDialog } from '../components/common';
+import { BrandLockup, useDialog } from '../components/common';
 import type { TabScreenProps } from '../navigation/types';
 import type { ThemeMode } from '../theme';
 import type { WeekStartsOn } from '../core/types';
@@ -373,9 +373,9 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         )}
 
         <View style={styles.footer}>
-          <Text style={[styles.footerText, { color: colors.textSecondary }]}>ZenRoutine</Text>
+          <BrandLockup width={180} />
           <Text style={[styles.footerSubtext, { color: colors.textMuted }]}>
-            Track your time, achieve your goals
+            A pace you can return to.
           </Text>
         </View>
 
@@ -388,7 +388,7 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
         animationType="fade"
         onRequestClose={closeBackup}
       >
-        <View style={styles.modalOverlay}>
+        <View style={[styles.modalOverlay, { backgroundColor: colors.overlay }]}>
           <View
             style={[styles.modalContent, { backgroundColor: colors.surface }]}
             accessibilityViewIsModal
@@ -443,9 +443,9 @@ export function SettingsScreen({ navigation }: TabScreenProps<'Settings'>) {
                 disabled={isImporting}
               >
                 {isImporting ? (
-                  <ActivityIndicator color="#fff" />
+                  <ActivityIndicator color={colors.onPrimary} />
                 ) : (
-                  <Text style={[styles.modalButtonText, styles.primaryModalButtonText]}>
+                  <Text style={[styles.modalButtonText, { color: colors.onPrimary }]}>
                     {backupMode === 'export' ? 'Share' : 'Import'}
                   </Text>
                 )}
@@ -591,8 +591,5 @@ const styles = StyleSheet.create({
   modalButtonText: {
     fontSize: 16,
     fontWeight: '600',
-  },
-  primaryModalButtonText: {
-    color: '#fff',
   },
 });

@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import {
   View,
   Text,
@@ -8,7 +8,7 @@ import {
   Modal,
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
-import { colors } from '../../theme/colors';
+import type { ThemeColors } from '../../theme';
 import { useTheme } from '../../theme';
 import { spacing, borderRadius } from '../../theme/spacing';
 import { useActivityTypes } from '../../store';
@@ -28,6 +28,8 @@ export function ActivityPicker({
   layout = 'grid',
   showLabels = true,
 }: ActivityPickerProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activityTypes = useActivityTypes();
   // Colours follow the app theme; the static sheet below only sets layout and light defaults.
   const { colors: theme } = useTheme();
@@ -149,6 +151,8 @@ export function ActivityPickerModal({
   onClose,
   title = 'Select Activity',
 }: ActivityPickerModalProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const activityTypes = useActivityTypes();
 
   const handleSelect = (at: ActivityType) => {
@@ -210,6 +214,8 @@ export function ActivityBadge({
   showIcon = false,
   onPress,
 }: ActivityBadgeProps) {
+  const { colors } = useTheme();
+  const styles = useMemo(() => createStyles(colors), [colors]);
   const content = (
     <View style={[styles.badge, styles[`badge_${size}`]]}>
       <ColorDot
@@ -237,7 +243,9 @@ export function ActivityBadge({
   return content;
 }
 
-const styles = StyleSheet.create({
+// Built per theme: the static light palette made these ignore dark mode.
+const createStyles = (colors: ThemeColors) =>
+  StyleSheet.create({
   // Horizontal layout
   horizontalContainer: {
     paddingHorizontal: spacing.sm,

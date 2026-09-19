@@ -23,6 +23,7 @@ import {
   RepairNotice,
   useDialog,
   isHydrationNoticeVisible,
+  ShellMark,
   type QuarantineReport,
   type RepairReport,
 } from './src/components/common';
@@ -108,6 +109,9 @@ function AppContent() {
         style={[styles.statusContainer, { backgroundColor: themeColors.background }]}
       >
         <StatusBar style={isDark ? 'light' : 'dark'} />
+        <View style={styles.loadingMark}>
+          <ShellMark width={72} decorative />
+        </View>
         <ActivityIndicator color={themeColors.primary} size="large" />
         <Text
           accessibilityLiveRegion="polite"
@@ -155,7 +159,7 @@ function AppContent() {
           onPress={() => void initializeAppStore({ force: true })}
           style={[styles.primaryButton, { backgroundColor: themeColors.primary }]}
         >
-          <Text style={styles.primaryButtonText}>Try again</Text>
+          <Text style={[styles.primaryButtonText, { color: themeColors.onPrimary }]}>Try again</Text>
         </Pressable>
         <Pressable accessibilityRole="button" onPress={confirmReset} style={styles.secondaryButton}>
           <Text style={[styles.secondaryButtonText, { color: themeColors.error }]}>Reset local data</Text>
@@ -222,6 +226,9 @@ export default function App() {
 }
 
 const styles = StyleSheet.create({
+  loadingMark: {
+    marginBottom: 24,
+  },
   container: {
     flex: 1,
   },
@@ -252,7 +259,6 @@ const styles = StyleSheet.create({
     borderRadius: 12,
   },
   primaryButtonText: {
-    color: '#FFFFFF',
     fontSize: 16,
     fontWeight: '600',
   },

@@ -61,7 +61,7 @@ export function DayOverviewList({ rows, activityTypes, canStart, onStart, rowNot
                 </Text>
                 {isCurrent && (
                   <View style={[styles.badge, { backgroundColor: colors.primary }]}>
-                    <Text style={[styles.badgeText, { color: '#fff' }]}>NOW</Text>
+                    <Text style={[styles.badgeText, { color: colors.onPrimary }]}>NOW</Text>
                   </View>
                 )}
                 {isNext && (
@@ -98,7 +98,7 @@ export function DayOverviewList({ rows, activityTypes, canStart, onStart, rowNot
                 accessibilityRole="button"
                 accessibilityLabel={`Start ${name} from ${timeRange}`}
               >
-                <Text style={styles.startButtonText}>Start</Text>
+                <Text style={[styles.startButtonText, { color: colors.onPrimary }]}>Start</Text>
               </TouchableOpacity>
             )}
           </View>
@@ -190,7 +190,6 @@ const styles = StyleSheet.create({
     justifyContent: 'center',
   },
   startButtonText: {
-    color: '#fff',
     fontSize: 14,
     fontWeight: '700',
   },

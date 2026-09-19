@@ -98,7 +98,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
               accessibilityRole="button"
               accessibilityLabel="Try it with example data"
             >
-              <Text style={styles.exampleButtonText}>Try it with example data</Text>
+              <Text style={[styles.exampleButtonText, { color: colors.onPrimary }]}>Try it with example data</Text>
             </TouchableOpacity>
             <Text style={[styles.exampleHint, { color: colors.textMuted }]}>
               Settings → Reset All Data removes it again.
@@ -148,7 +148,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                 accessibilityRole="button"
                 accessibilityLabel="Set up routine"
               >
-                <Text style={styles.emptyButtonText}>Set up routine</Text>
+                <Text style={[styles.emptyButtonText, { color: colors.onPrimary }]}>Set up routine</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -236,7 +236,7 @@ export function HomeScreen({ navigation }: TabScreenProps<'Home'>) {
                 accessibilityRole="button"
                 accessibilityLabel="Create a goal"
               >
-                <Text style={styles.emptyButtonText}>Create a goal</Text>
+                <Text style={[styles.emptyButtonText, { color: colors.onPrimary }]}>Create a goal</Text>
               </TouchableOpacity>
             </View>
           )}
@@ -314,7 +314,6 @@ const styles = StyleSheet.create({
   },
   exampleButtonText: {
     fontSize: 15,
-    color: '#fff',
     fontWeight: '600',
   },
   exampleHint: {
@@ -468,7 +467,6 @@ const styles = StyleSheet.create({
   },
   emptyButtonText: {
     fontSize: 14,
-    color: '#fff',
     fontWeight: '500',
   },
   quickActions: {

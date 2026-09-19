@@ -4,22 +4,26 @@
     "slug": "ZenRoutine",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/icon.png",
+    "icon": "./assets/brand/zenroutine-shell-v1/icons/app-icon.png",
     "userInterfaceStyle": "light",
     "ios": {
       "supportsTablet": true,
-      "bundleIdentifier": "com.roguekostas.zenroutine"
+      "bundleIdentifier": "com.roguekostas.zenroutine",
+      "icon": {
+        "light": "./assets/brand/zenroutine-shell-v1/icons/app-icon.png",
+        "dark": "./assets/brand/zenroutine-shell-v1/icons/app-icon-dark.png"
+      }
     },
     "android": {
       "package": "com.roguekostas.zenroutine",
       "adaptiveIcon": {
-        "foregroundImage": "./assets/adaptive-icon.png",
-        "backgroundColor": "#ffffff"
+        "foregroundImage": "./assets/brand/zenroutine-shell-v1/icons/adaptive-foreground.png",
+        "backgroundColor": "#F3EEDC"
       },
       "predictiveBackGestureEnabled": false
     },
     "web": {
-      "favicon": "./assets/favicon.png",
+      "favicon": "./assets/brand/zenroutine-shell-v1/icons/icon-32.png",
       "output": "single"
     },
     "plugins": [
@@ -27,10 +31,14 @@
       [
         "expo-splash-screen",
         {
-          "image": "./assets/splash-icon.png",
+          "image": "./assets/brand/zenroutine-shell-v1/splash/splash-mark-light.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff"
+          "backgroundColor": "#F3EEDC",
+          "dark": {
+            "image": "./assets/brand/zenroutine-shell-v1/splash/splash-mark-dark.png",
+            "backgroundColor": "#132B27"
+          }
         }
       ]
     ]
