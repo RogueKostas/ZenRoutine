@@ -1,0 +1,59 @@
+name: Server backup
+
+# Daily encrypted backup of the ZenRoutine Supabase database (Kostas, 19 Sep: stay on the Free
+# plan, which has no backups, and back up daily instead). Restore notes: supabase/README.md.
+#
+# This repository is public, so anything this job uploads can be downloaded by any signed-in
+# GitHub user. The export is therefore encrypted before it leaves the runner, with a passphrase
+# only Kostas holds, and nothing about its content is ever printed to the log.
+#
+# The daily read also counts as activity, so a Free project with no one using the app that week
+# is not paused.
+
+on:
+  schedule:
+    - cron: '17 3 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: server-backup
+  cancel-in-progress: false
+
+jobs:
+  backup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Export and encrypt
+        env:
+          # A read-only login (supabase/migrations/…_backup_reader.sql): it can read the backup's
+          # tables and nothing else, and cannot change anything.
+          DB_URL: ${{ secrets.SUPABASE_BACKUP_DB_URL }}
+          PASSPHRASE: ${{ secrets.BACKUP_PASSPHRASE }}
+        run: |
+          set -euo pipefail
+          if [ -z "${DB_URL}" ] || [ -z "${PASSPHRASE}" ]; then
+            echo "::error::The SUPABASE_BACKUP_DB_URL and BACKUP_PASSPHRASE secrets are not set."
+            exit 1
+          fi
+          stamp="$(date -u +%Y-%m-%dT%H%M%SZ)"
+          umask 077
+          psql "${DB_URL}" -v ON_ERROR_STOP=1 -At -f scripts/backup-export.sql > backup.json
+          # Only sizes and counts reach the log, never content.
+          echo "Exported $(wc -c < backup.json) bytes."
+          openssl enc -aes-256-cbc -pbkdf2 -iter 200000 -salt -pass env:PASSPHRASE \
+            -in backup.json -out "zenroutine-backup-${stamp}.json.enc"
+          shred -u backup.json
+          echo "STAMP=${stamp}" >> "${GITHUB_ENV}"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: zenroutine-backup-${{ env.STAMP }}
+          path: zenroutine-backup-*.json.enc
+          retention-days: 30
+          if-no-files-found: error

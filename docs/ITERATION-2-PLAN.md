@@ -32,8 +32,8 @@ Kostas: *"go with your recommendations."* Each row is now a decision. K2, K3 and
 |---|---|---|---|
 | K1 | **Email codes instead of magic links.** On iPhone and iPad a link in an email opens in Safari, not in the Home Screen app, so the sign-in would land in the wrong app. A 6-digit code typed into the app has no such trap. It covers passwordless sign-in, sign-up confirmation and password reset. | **Codes.** To the user it's the same "no password" experience. *Blocked on 19 Sep:* Supabase refuses custom email templates on the Free plan with its built-in email, so codes are built and tested but switched off until K2 (or K3). | Wave B → needs K2 |
 | K2 | **An email service for sending those codes.** Supabase's built-in email only reaches members of your Supabase team, at about 2 emails an hour, with no guarantee. Friends and family need a real provider (Resend's free tier is 3,000 a month) and a domain you control to send from, e.g. `zenroutine@hypersoniclabs.co`. | **Resend, from a domain you own.** You create the account and add the DNS records. Until then, only your own address can sign in, which is enough for Waves A–C. | Wave D |
-| K3 | **Paying for Supabase.** Free projects pause after a week with no activity and have no backups. Pro is $25 a month, never pauses, and keeps daily backups for 7 days. | **Free while building; Pro before anyone else's data is stored.** | Wave D |
-| K4 | **Who can sign up.** | **Invite-only.** New accounts are refused unless the email is on a list you control. You add a friend's email, and they can then sign up. | Wave B |
+| K3 | **Paying for Supabase.** Free projects pause after a week with no activity and have no backups. Pro is $25 a month, never pauses, and keeps daily backups for 7 days. | ~~Free while building; Pro before anyone else's data is stored.~~ **Changed 19 Sep (Kostas): stay on Free, with a daily encrypted backup** (`.github/workflows/backup.yml`, see `supabase/README.md`). Every device also keeps a full local copy. Revisit Pro only when others depend on the app day to day. | Done |
+| K4 | **Who can sign up.** | ~~Invite-only.~~ **Changed 19 Sep (Kostas): anyone with the link can sign up, once Resend is live.** Until then the invite list stays on; with only the built-in email, nobody but Kostas could confirm an account anyway. | With K2 |
 | K5 | **Signing out.** What happens to the data on that device? | **Ask each time:** "Keep a copy on this device" or "Remove from this device". Removing is only offered once everything has synced. | Wave B |
 | K6 | **Deleting your account.** Should it also clear this device? | **Ask, as with K5.** Account data is deleted on the server either way. | Wave D |
 | K7 | **Rotate the Supabase access token after setup.** The token in `OneDrive\Zen Routine\Secrets` controls your whole Supabase account, and it appeared once in a session log on 18 Sep. The app never uses it. | **Rotate it once Wave A's project exists.** | End of Wave A |
@@ -125,7 +125,7 @@ It does **not** authorise: touching the existing `pCloud Helper` project; creati
 | D2 | **Delete my account (K6):** removes the server data immediately, and says so. |
 | D3 | **Onboarding for a real user.** A last slide offers "Create an account to keep your data safe" or "Continue without an account". Example data is still offered, and can be cleared in one step before real use. |
 | D4 | **Email from your own domain (K2)**, with branded code emails. |
-| D5 | Pro plan in place (K3) before the first invite. |
+| D5 | ~~Pro plan in place (K3) before the first invite.~~ Replaced by the daily encrypted backup (K3, 19 Sep). |
 
 *19 Sep:* D1, D2 and D3 are built and verified (privacy screen; delete my account, checked on the live database; onboarding sign-in link and one-step "Start with my own data"). D4 and D5 wait on Kostas: an email provider on his own domain (K2) and the Pro plan (K3).
 
