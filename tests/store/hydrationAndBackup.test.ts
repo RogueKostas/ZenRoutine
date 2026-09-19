@@ -4,6 +4,7 @@ import { afterEach, beforeAll, beforeEach, describe, expect, it, vi } from 'vite
 import {
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
+  getRecoveredActivityTypes,
   getRepairedTrackingEntries,
   initializeAppStore,
   subscribeHydration,
@@ -25,6 +26,7 @@ import {
   makeAppState,
   makeGoal,
   makeRoutine,
+  makeRoutineBlock,
   makeTrackingEntry,
   withListOrder,
 } from '../helpers/builders';
@@ -311,6 +313,110 @@ describe('hydration of a store whose references have gone stale', () => {
     }]);
     expect(getQuarantinedTrackingEntries()).toEqual(archive.generations[0].entries);
     expect(await AsyncStorage.getItem(APP_STORAGE_KEY)).toBe(raw);
+  });
+});
+
+describe('hydration of a store whose goals or blocks name a missing activity type (#34)', () => {
+  const orphaned = () => makeAppState({
+    goals: [makeGoal({ id: 'goal-orphaned', activityTypeId: 'activity-vanished' })],
+    routines: [makeRoutine({
+      blocks: [makeRoutineBlock({ activityTypeId: 'activity-vanished' })],
+    })],
+  });
+
+  async function hydrateOrphaned(version = CURRENT_SCHEMA_VERSION): Promise<void> {
+    await AsyncStorage.setItem(APP_STORAGE_KEY, JSON.stringify({ state: orphaned(), version }));
+    vi.clearAllMocks();
+    await initializeAppStore({ force: true });
+  }
+
+  it('opens, keeps the goal and block, and reports the recovered type', async () => {
+    const observed: number[] = [];
+    const unsubscribe = subscribeHydration(() => {
+      observed.push(getRecoveredActivityTypes().length);
+    });
+    await hydrateOrphaned();
+    unsubscribe();
+
+    // Before #34 this was `status: 'error'` on this and every later launch.
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    const state = useAppStore.getState();
+    expect(state.goals.map((goal) => [goal.id, goal.activityTypeId]))
+      .toEqual([['goal-orphaned', 'activity-vanished']]);
+    expect(state.routines[0].blocks.map((block) => block.activityTypeId))
+      .toEqual(['activity-vanished']);
+    expect(state.activityTypes.find((activity) => activity.id === 'activity-vanished'))
+      .toMatchObject({ name: 'Recovered activity', isDefault: false });
+
+    expect(getRecoveredActivityTypes()).toEqual([{
+      id: 'activity-vanished',
+      name: 'Recovered activity',
+      goalCount: 1,
+      routineBlockCount: 1,
+    }]);
+    // A listener was told while the report was published.
+    expect(observed.at(-1)).toBe(1);
+    // Its own channel: nothing was set aside or altered, and nothing goes to the side-car.
+    expect(getQuarantinedTrackingEntries()).toEqual([]);
+    expect(getRepairedTrackingEntries()).toEqual([]);
+    expect(await AsyncStorage.getItem(QUARANTINE_STORAGE_KEY)).toBeNull();
+  });
+
+  it('saves the placeholder at once, so the next launch finds nothing missing and says nothing', async () => {
+    await hydrateOrphaned();
+    await vi.waitFor(async () => {
+      const stored = JSON.parse((await AsyncStorage.getItem(APP_STORAGE_KEY)) ?? '{}');
+      expect(stored.state.activityTypes.map((activity: { id: string }) => activity.id)).toContain('activity-vanished');
+    });
+
+    await initializeAppStore({ force: true });
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    expect(getRecoveredActivityTypes()).toEqual([]);
+    expect(useAppStore.getState().activityTypes.filter((activity) => activity.id === 'activity-vanished')).toHaveLength(1);
+  });
+
+  it('reports each recovered type once on the migrate path, where two reads run', async () => {
+    await hydrateOrphaned(CURRENT_SCHEMA_VERSION - 1);
+
+    expect(getHydrationSnapshot()).toEqual({ status: 'ready', error: null });
+    expect(getRecoveredActivityTypes().map((recovered) => recovered.id))
+      .toEqual(['activity-vanished']);
+    // The migrate path rewrites the blob, so the placeholder is now durable and the next launch
+    // has nothing to recover.
+    const rewritten = JSON.parse((await AsyncStorage.getItem(APP_STORAGE_KEY))!) as {
+      state: { activityTypes: { id: string }[] };
+    };
+    expect(rewritten.state.activityTypes.map((activity) => activity.id))
+      .toContain('activity-vanished');
+    await initializeAppStore({ force: true });
+    expect(getRecoveredActivityTypes()).toEqual([]);
+  });
+
+  it('clears the report on reset', async () => {
+    await hydrateOrphaned();
+    expect(getRecoveredActivityTypes()).toHaveLength(1);
+
+    await useAppStore.getState().resetState();
+
+    expect(getRecoveredActivityTypes()).toEqual([]);
+  });
+
+  it('clears the report on a successful import, and refuses a backup with the same gap', async () => {
+    await hydrateOrphaned();
+    expect(getRecoveredActivityTypes()).toHaveLength(1);
+
+    // Import stays strict: a backup whose goal names a missing type is refused, not recovered,
+    // and a refused import leaves the report (and live state) alone.
+    const refused = await useAppStore.getState().importData(encodeBackup(orphaned()));
+    expect(refused).toEqual({
+      ok: false,
+      error: 'Invalid goals: referenced activity type does not exist',
+    });
+    expect(getRecoveredActivityTypes()).toHaveLength(1);
+
+    const accepted = await useAppStore.getState().importData(encodeBackup(makeAppState()));
+    expect(accepted).toEqual({ ok: true });
+    expect(getRecoveredActivityTypes()).toEqual([]);
   });
 });
 

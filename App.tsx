@@ -8,6 +8,7 @@ import { RootNavigator } from './src/navigation';
 import {
   getHydrationSnapshot,
   getQuarantinedTrackingEntries,
+  getRecoveredActivityTypes,
   getRepairedTrackingEntries,
   initializeAppStore,
   resetAppStoreAfterHydrationError,
@@ -20,12 +21,14 @@ import { OnboardingScreen } from './src/screens';
 import {
   DialogProvider,
   QuarantineNotice,
+  RecoveredActivityNotice,
   RepairNotice,
   useDialog,
   isHydrationNoticeVisible,
   ShellMark,
   CloudSync,
   type QuarantineReport,
+  type RecoveredActivityReport,
   type RepairReport,
 } from './src/components/common';
 import { cloudConfig } from './src/config/cloud';
@@ -88,6 +91,14 @@ function AppContent() {
   // consequences, and silencing "we set records aside" must not also silence "we changed an end
   // time in your history".
   const [dismissedRepairReport, setDismissedRepairReport] = useState<RepairReport | null>(null);
+  const recovered = useSyncExternalStore(
+    subscribeHydration,
+    getRecoveredActivityTypes,
+    getRecoveredActivityTypes
+  );
+  // Its own dismissal again: "we recreated a missing activity type" is a third, separate event.
+  const [dismissedRecoveredReport, setDismissedRecoveredReport] =
+    useState<RecoveredActivityReport | null>(null);
 
   useEffect(() => {
     void initializeAppStore();
@@ -187,6 +198,10 @@ function AppContent() {
   // to data the user authored, and it is not allowed to be silent (issue #4); the originals are
   // kept alongside the quarantined records under QUARANTINE_STORAGE_KEY.
   const showRepairNotice = isHydrationNoticeVisible(repaired, dismissedRepairReport);
+  // Hydration succeeded only because it put back an activity type that goals or routine blocks
+  // still named (#34). The placeholder is visible in the Activity Types list, but a type the user
+  // never made appearing there unannounced would be a silent change, so it is announced.
+  const showRecoveredNotice = isHydrationNoticeVisible(recovered, dismissedRecoveredReport);
 
   return (
     <View style={[styles.container, { backgroundColor: themeColors.background }]}>
@@ -202,6 +217,13 @@ function AppContent() {
           count={repaired.length}
           colors={themeColors}
           onDismiss={() => setDismissedRepairReport(repaired)}
+        />
+      ) : null}
+      {showRecoveredNotice ? (
+        <RecoveredActivityNotice
+          report={recovered}
+          colors={themeColors}
+          onDismiss={() => setDismissedRecoveredReport(recovered)}
         />
       ) : null}
       <NavigationContainer theme={isDark ? DarkNavigationTheme : LightNavigationTheme}>
